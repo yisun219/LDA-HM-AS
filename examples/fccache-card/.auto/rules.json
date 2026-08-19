@@ -1,0 +1,14 @@
+{
+  "_readme": "判据单一来源。G1 首次计时前冻结;冻结后按门只增不改。",
+  "G1": {
+    "metric": "消除的等待时间(每次 fc-cache -f / postinst -s -f)",
+    "direction": "补丁臂更快",
+    "expected_delta_ms": [1900, 2100],
+    "patched_nanosleep2s_count": 0,
+    "pairing": "同实例 A,B,A,B + A->B->A' 三段;对照臂仪器相同",
+    "teeth": ["INJECTED-SLEEP-CAUGHT", "NULL-CLEAN"],
+    "cold_scan_excluded": "冷扫描耗时不算本卡收益,只算 sleep 差"
+  },
+  "G3_boundary": "同秒改字体目录的时间戳边界场景必须行为见证(这是 sleep 想防的事;答不上=停卡)",
+  "presentation": {"layer_rules": "micro 与端到端不并排;引用对准层"}
+}

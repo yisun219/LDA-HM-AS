@@ -1,0 +1,4 @@
+**/.lda-run/
+.DS_Store
+work/
+__pycache__/

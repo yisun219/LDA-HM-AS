@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# lda —— Linux Development Agent 的命令入口。
+# 用法:
+#   ./lda doctor                 环境自检(git/python3/引擎 CLI 可用性)
+#   ./lda new <卡名>             从模板开一张新卡(tasks/<卡名>,自成 git 仓)
+#   ./lda run <卡目录> [轮数]     跑 autoresearch 循环(Engineer 角色)
+#   ./lda status [卡目录]        看门状态与进度(无参=全部卡总览)
+#   ./lda review <卡目录>        对全门终态的卡发起对抗审查(Reviewer 角色,独立会话)
+#   ./lda fleet start <卡...>    常驻运行多张卡(tmux;关终端/合笔记本照跑)
+#   ./lda fleet status|logs|stop 舰队总览/看日志/停卡
+# 引擎用环境变量 ENGINE_CMD 覆盖(须接受提示词为最后一个参数);默认订阅版 Claude Code:
+#   ENGINE_CMD='claude -p --model opus --effort max --dangerously-skip-permissions'
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+# 引擎选择:ENGINE_CMD 直接给完整命令(最高优先);或用 LDA_ENGINE 选预设(claude|pi|codex)。
+# 默认=订阅版 Claude Code(无需 API key);pi/codex 为 API 接入引擎的等价预设,协议完全相同。
+if [ -z "${ENGINE_CMD:-}" ]; then
+  case "${LDA_ENGINE:-claude}" in
+    claude) ENGINE_CMD='claude -p --model opus --effort max --dangerously-skip-permissions' ;;
+    pi)     ENGINE_CMD='pi -p' ;;
+    codex)  ENGINE_CMD='codex exec --full-auto' ;;
+    *)      echo "lda: 未知 LDA_ENGINE=${LDA_ENGINE}(可用: claude|pi|codex,或直接设 ENGINE_CMD)" >&2; exit 1 ;;
+  esac
+fi
+CMD=${1:-help}; shift || true
+
+die(){ echo "lda: $*" >&2; exit 1; }
+
+case "$CMD" in
+  doctor)
+    ok=1
+    for t in git python3 awk sed; do
+      if command -v "$t" >/dev/null; then echo "ok   $t"; else echo "MISS $t"; ok=0; fi
+    done
+    ENG_BIN=${ENGINE_CMD%% *}
+    if command -v "$ENG_BIN" >/dev/null; then
+      echo "ok   引擎命令存在: $ENG_BIN"
+      echo "     探针中(一次最小调用)…"
+      R=$($ENGINE_CMD "只回复:ok" 2>&1 | tail -1)
+      case "$R" in *ok*|*OK*|*Ok*) echo "ok   引擎应答: ${R:0:60}";; *) echo "WARN 引擎应答异常: ${R:0:120}"; ok=0;; esac
+    else
+      echo "MISS 引擎命令: $ENG_BIN(装好并登录你的 agent CLI,或用 ENGINE_CMD 指向别的引擎)"; ok=0
+    fi
+    [ -f "$ROOT/FLOW.md" ] && echo "ok   FLOW.md" || { echo "MISS FLOW.md"; ok=0; }
+    [ -d "$ROOT/templates/task-card" ] && echo "ok   templates/task-card" || { echo "MISS templates"; ok=0; }
+    command -v tmux >/dev/null && echo "ok   tmux(fleet 常驻可用)" || echo "note tmux 未装:单卡前台 run 不受影响;常驻多卡(fleet)需安装 tmux"
+    if [ -n "${E2B_API_KEY:-}" ]; then echo "ok   实验侧:E2B 凭据已接线(环境变量在)"
+    elif command -v docker >/dev/null 2>&1 || command -v podman >/dev/null 2>&1; then echo "ok   实验侧:检测到本机容器运行时"
+    else echo "note 实验侧未就绪(E2B/容器/远程 26.04 机三选一,见 README 前置):工具链不受影响,跑优化卡前接一个"
+    fi
+    [ $ok -eq 1 ] && echo "doctor: 全部就绪。先读 examples/fccache-card(真实 Ubuntu 26.04 加速示例)后 ./lda run 之。" || die "doctor: 存在缺项,见上"
+    ;;
+  new)
+    NAME=${1:?用法: lda new <卡名>}
+    DST="$ROOT/tasks/$NAME"
+    [ -e "$DST" ] && die "已存在: $DST"
+    mkdir -p "$ROOT/tasks"
+    cp -r "$ROOT/templates/task-card" "$DST"
+    mkdir -p "$DST/evidence" "$DST/work"
+    ( cd "$DST" && git init -q && git add -A && git commit -q -m "开卡:$NAME(模板五件套)" )
+    echo "已开卡: $DST(自成 git 仓)"
+    echo "下一步:把 .auto/ 五件套按 FLOW §2 定死(任务书/检查点/进度指标/防作弊/轮数上限),"
+    echo "尤其 checks.sh 的门号映射逐门核对后把 GATE_MAP_VERIFIED 改为 yes,再 ./lda run tasks/$NAME"
+    ;;
+  run)
+    CARD=${1:?用法: lda run <卡目录> [轮数]}
+    exec bash "$ROOT/tools/autoresearch.sh" "$CARD" "${2:-}"
+    ;;
+  status)
+    if [ $# -eq 0 ]; then   # 无参:总览所有卡
+      printf "%-34s %5s %5s\n" "CARD" "PASS" "TODO"
+      for d in "$ROOT"/tasks/*/ "$ROOT"/examples/*/; do
+        [ -f "$d/.auto/state/GATES.tsv" ] || continue
+        P=$(sed 1d "$d/.auto/state/GATES.tsv" | awk -F"\t" '$2=="PASS"' | wc -l | tr -d " ")
+        T=$(sed 1d "$d/.auto/state/GATES.tsv" | awk -F"\t" '$2=="TODO"' | wc -l | tr -d " ")
+        rel=${d#"$ROOT"/}; rel=${rel%/}
+        printf "%-34s %5s %5s\n" "$rel" "$P" "$T"
+      done
+      exit 0
+    fi
+    CARD=${1:?用法: lda status [卡目录]}
+    CARD=$(cd "$CARD" && pwd)
+    column -t -s $'\t' "$CARD/.auto/state/GATES.tsv" 2>/dev/null | cut -c1-160
+    ( cd "$CARD" && bash .auto/measure.sh 2>/dev/null )
+    T=$(sed 1d "$CARD/.auto/state/GATES.tsv" | awk -F'\t' '$2=="TODO"' | wc -l | tr -d ' ')
+    echo "remaining_TODO=$T"
+    ;;
+  review)
+    CARD=${1:?用法: lda review <卡目录>}
+    CARD=$(cd "$CARD" && pwd)
+    T=$(sed 1d "$CARD/.auto/state/GATES.tsv" | awk -F'\t' '$2=="TODO"' | wc -l | tr -d ' ')
+    [ "$T" = "0" ] || echo "提醒:该卡还有 $T 个 TODO(通常应全门终态后再审);继续。"
+    if [ -f "$CARD/review/VERDICT.md" ] && [ "${LDA_REREVIEW:-}" != "1" ]; then
+      die "该卡已有判决 review/VERDICT.md($(stat -c %y "$CARD/review/VERDICT.md" 2>/dev/null | cut -c1-16));返工后复审请加 LDA_REREVIEW=1"
+    fi
+    TPL="$ROOT/prompts/reviewer.md"
+    [ -f "$TPL" ] || die "缺 $TPL"
+    PROMPT=$(python3 - "$TPL" "$CARD" <<'PY'
+import sys
+tpl=open(sys.argv[1]).read()
+print(tpl.replace("{{CARD_DIR}}", sys.argv[2]))
+PY
+)
+    STATE="$(echo; echo '== GATES 当前 =='; cat "$CARD/.auto/state/GATES.tsv"; echo; echo '== 最近提交 =='; git -C "$CARD" log --oneline -8 2>/dev/null)"
+    echo "对抗审查开始(独立引擎会话)…日志: $CARD/.lda-run/review.log"
+    mkdir -p "$CARD/.lda-run"
+    $ENGINE_CMD "$PROMPT
+$STATE" 2>&1 | tee -a "$CARD/.lda-run/review.log"
+    ;;
+  fleet)
+    SUB=${1:-status}; shift || true
+    case "$SUB" in
+      start)
+        command -v tmux >/dev/null || die "fleet 需要 tmux(单卡前台跑请用 ./lda run)"
+        [ $# -ge 1 ] || die "用法: lda fleet start <卡目录...>"
+        for c in "$@"; do
+          [ -f "$c/.auto/prompt.md" ] || { echo "SKIP $c(不是任务卡)"; continue; }
+          n="lda-$(basename "$c")"
+          if tmux has-session -t "$n" 2>/dev/null; then echo "SKIP $n(已在跑)"
+          else tmux new-session -d -s "$n" "bash '$ROOT/tools/autoresearch.sh' '$(cd "$c" && pwd)'"; echo "START $n"; fi
+        done ;;
+      status)
+        if command -v tmux >/dev/null; then tmux ls 2>/dev/null | grep '^lda-' || echo '(无常驻循环)'; else echo '(未装 tmux,无常驻循环)'; fi
+        "$0" status ;;
+      logs)
+        C=${1:?用法: lda fleet logs <卡目录> [-f]}
+        L="$(cd "$C" && pwd)/.lda-run/loop.log"
+        [ -f "$L" ] || die "尚无日志: $L"
+        if [ "${2:-}" = "-f" ]; then exec tail -f "$L"; else exec tail -60 "$L"; fi ;;
+      stop)
+        command -v tmux >/dev/null || die "未装 tmux"
+        if [ "${1:-}" = "--all" ]; then
+          tmux ls 2>/dev/null | awk -F: '/^lda-/{print $1}' | while read -r n; do tmux kill-session -t "$n" && echo "STOP $n"; done
+        else
+          n="lda-$(basename "${1:?用法: lda fleet stop <卡目录>|--all}")"
+          tmux kill-session -t "$n" && echo "STOP $n"
+        fi ;;
+      *) die "fleet 子命令: start|status|logs|stop" ;;
+    esac
+    ;;
+  help|*)
+    sed -n '2,12p' "$0"
+    ;;
+esac

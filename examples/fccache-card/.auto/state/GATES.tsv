@@ -1,0 +1,8 @@
+gate_id	status	evidence_path	note
+G0	TODO	-	前提复核:fc-cache.c 行号+postinst 两路径+nanosleep(2s) strace 见证+删除不破坏缓存判定的论证;PREMISE-CONFIRMED
+G1	TODO	-	micro=消除的等待:冷/热+postinst 形态 ABBA+三段;nanosleep 计数补丁臂=0;预注册 1900-2100ms;注入已知 sleep 的坏样本必须被检出+空对照无差;raw 逐次
+G2	TODO	-	ABI:整族 a0turbo1 重建;libfontconfig.so 与未打补丁重建逐字节同(动了=夹带);编译旗两臂零差
+G3	TODO	-	行为等价:fc-list 全同+缓存跨臂互读+截断毒样本 POISON-CAUGHT+同秒改目录命门必答+FFI 不重编译调用方
+G4	TODO	-	交付:版本序矩阵(覆盖基版/不压制 ubuntu0.X 真跑)+装升卸重装+dpkg -V 带对照臂;归因第 1 类+上游材料
+G5	TODO	-	端到端记录义务:reinstall fontconfig 事务 ABBA,带环境标识与日期;不与 micro 并排
+G6	TODO	-	收尾:checks 先做坏样本自检再收尾记 rc;work/ 残留=0;八条线逐判;KI 登记册
