@@ -48,8 +48,24 @@ def pack(card: str) -> bytes:
 
 
 def unpack(card: str, blob: bytes) -> None:
+    """把箱内的卡覆盖回宿主。git 对象是只读文件,直接覆盖会被拒,所以逐个先让路。"""
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
-        tar.extractall(card)
+        for m in tar.getmembers():
+            dst = os.path.join(card, m.name)
+            if m.isdir():
+                os.makedirs(dst, exist_ok=True)
+                continue
+            if os.path.lexists(dst):
+                try:
+                    os.chmod(dst, 0o644)
+                except OSError:
+                    pass
+                try:
+                    os.remove(dst)
+                except OSError:
+                    continue  # 删不掉就跳过,不让一份残留毁掉整次取回
+            os.makedirs(os.path.dirname(dst) or card, exist_ok=True)
+            tar.extract(m, card)
 
 
 def box_script(engine: str, timeout_s: int) -> str:
