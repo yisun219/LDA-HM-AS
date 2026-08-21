@@ -1,15 +1,18 @@
-# 实验环境快照(模板)配方
+# lda-base:标准执行环境
 
-流程的实验段统一在 Ubuntu 26.04 沙箱里跑;公共依赖预装一次做成模板,
-新沙箱从快照秒级克隆,脏了就丢。本目录就是那份模板的完整配方。
+流程的执行端统一在这一张模板上:编译打包工具链、兼容性比对与测量工具、
+agent 运行时(node + Claude Code CLI)与预置技能包(`skills/`,箱内位于 `/opt/lda/skills`,
+并链到 `~/.claude/skills`)。公共依赖只装这一次,之后每个沙箱从快照秒级克隆,脏了就丢。
 
 ```bash
-# 在本目录构建并命名模板(E2B 官方云或自建网关均可)
-e2b template build --name lda-ubuntu2604
+# 构建(需要 E2B 凭据在环境里)
+python3 tools/e2b/template/build.py            # 默认命名 lda-base
+python3 tools/e2b/template/build.py my-base    # 换个名字
 
-# 之后让流程默认用它
-export E2B_TEMPLATE=lda-ubuntu2604
+# 让流程默认用它
+export E2B_TEMPLATE=lda-base
 ```
 
-没有 E2B 服务时,同一份 Dockerfile 可直接 `docker build` 当本地容器用,
-实验命令与证据要求不变(FLOW §8 的三选一实验环境)。
+改环境就是改 `lda-base.Dockerfile`;加技能就是往 `skills/` 里放一个 .md,重建模板即生效。
+
+没有 E2B 服务时,同一份 Dockerfile 可 `docker build` 当本地容器用,实验命令与证据要求不变。

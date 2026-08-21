@@ -1,0 +1,5 @@
+# agent harness 与 CLI 清单:一行一个,构建模板时装进 lda-base。
+# 格式:npm:<包名>  |  pip:<包名>  |  git:<仓库地址>(克隆到 /opt/lda/harness/)
+# 装不上的条目只跳过、不阻断构建;构建日志里会写明跳过了哪一条。
+npm:@anthropic-ai/claude-code
+npm:@earendil-works/pi-coding-agent

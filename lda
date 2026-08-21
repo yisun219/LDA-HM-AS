@@ -8,6 +8,8 @@
 #   ./lda review <卡目录>        对全门终态的卡发起对抗审查(Reviewer 角色,独立会话)
 #   ./lda fleet start <卡...>    常驻运行多张卡(tmux;关终端/合笔记本照跑)
 #   ./lda fleet status|logs|stop 舰队总览/看日志/停卡
+# 执行端默认进 E2B 沙箱(卡进箱→箱内干活→取回→销毁);LDA_EXEC=host 退回宿主执行。
+# 模板用 E2B_TEMPLATE 指定(标准环境 = lda-base,配方见 tools/e2b/template/)。
 # 引擎用环境变量 ENGINE_CMD 覆盖(须接受提示词为最后一个参数);默认订阅版 Claude Code:
 #   ENGINE_CMD='claude -p --model opus --effort max --dangerously-skip-permissions'
 set -uo pipefail
@@ -64,6 +66,17 @@ case "$CMD" in
     ;;
   run)
     CARD=${1:?用法: lda run <卡目录> [轮数]}
+    # 执行端进箱(默认):整轮 agent 会话跑在沙箱里,宿主只留卡的持久副本。
+    # LDA_EXEC=host 可退回宿主执行(调试用,或没有沙箱服务时)。
+    if [ "${LDA_EXEC:-sandbox}" = "sandbox" ] && [ -z "${LDA_BOX_OFF:-}" ]; then
+      if [ -n "${E2B_API_KEY:-}" ]; then
+        CARD_ABS=$(cd "$CARD" && pwd)
+        export LDA_BOX_ENGINE="${LDA_BOX_ENGINE:-$ENGINE_CMD}"
+        export ENGINE_CMD="python3 $ROOT/tools/e2b/session.py --card $CARD_ABS"
+      else
+        echo "lda: 未见 E2B 凭据,本轮在宿主上执行(要进箱先接好 E2B_API_KEY 等环境变量)" >&2
+      fi
+    fi
     exec bash "$ROOT/tools/autoresearch.sh" "$CARD" "${2:-}"
     ;;
   status)

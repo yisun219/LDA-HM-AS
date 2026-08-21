@@ -55,11 +55,14 @@ Ubuntu 有几十万个 package,绝不一开始就全量优化。先按**使用�
 出了问题第一反应不是人上手修,而是补上缺失的规则,让同类问题永远过不来。
 规则一落仓,正在运行的 agent 下一轮读到即自动采纳,不需要重启任何东西。(FLOW §7)
 
-**6. 全流程放进 E2B Sandbox。**
-所有 build、测试、环境恢复、fork、agent 会话都通过 Sandbox API 完成,尽量不依赖裸机。
-选 E2B 而非 Docker:更适合大规模并发与秒级环境重建,更容易扩展到大量 agent 会话。
-公共依赖预装一次做成快照,沙箱从快照秒级克隆,脏了就丢,永远不修。只有沙箱做不到的负载
-(需要 KVM 的虚机、整机 GUI、文件同步类计时)允许在受控真机上做,且证据里必须写明理由。(FLOW §8)
+**6. 执行端全部放进 E2B Sandbox。**
+不只是实验:**一轮 agent 会话本身就跑在箱里**——卡进箱、箱内干活(写脚本、跑实验、git 提交)、
+整卡取回、销毁沙箱。宿主只保留卡的持久副本,不承担计算,所以并发能横向铺开。
+执行环境标准化成一张模板 **`lda-base`**:编译打包工具链、兼容性比对与测量工具、agent 运行时、
+**预置技能包**与 agent harness 一次装好做成快照,所有卡从同一张模板秒级克隆,脏了就丢、永远不修——
+环境一致,卡与卡之间才有可比性。选 E2B 而非 Docker:更适合大规模并发与秒级环境重建。
+只有沙箱做不到的负载(需要 KVM 的虚机、整机 GUI、文件同步类计时)才允许在受控真机上做,
+且证据里必须写明理由。(FLOW §8)
 
 ## 任务卡:工作的基本单位
 
@@ -219,10 +222,25 @@ ENGINE_CMD='<任意命令>' ./lda run …  # 完全自定义,命令须接受提�
 
 ## 沙箱
 
-实验环境的快照配方随仓附带:`tools/e2b/template/`,一条 `e2b template build` 构建,
-`E2B_TEMPLATE` 指向它。`tools/e2b/fanout.py` 把一批作业扇出到多个沙箱(一沙箱一作业、
-内置心跳、证据先取出再销毁沙箱、出箱文件两头校验哈希)。凭据只经环境变量提供,不进仓库。
-同一份 Dockerfile 也可直接 `docker build` 当本地容器用。
+**标准环境 `lda-base`**——配方在 `tools/e2b/template/`:
+
+```bash
+python3 tools/e2b/template/build.py lda-base   # 构建模板(几分钟,只需一次)
+export E2B_TEMPLATE=lda-base                   # 之后所有卡都从它克隆
+```
+
+里面装了:Ubuntu 26.04(`deb-src` 已开)、编译打包工具链(gcc/cmake/ninja/dpkg-buildpackage/
+debuild/fakeroot/quilt/patchelf/ccache)、兼容性与测量工具(abigail-tools/strace/ltrace)、
+agent 运行时(node + Claude Code CLI + pi)、以及**预置技能包**——`skills/` 里的每份技能
+(整族重建 .deb、八项兼容检查、micro benchmark 纪律、证据写法)都随模板进箱,
+落在 `/opt/lda/skills` 并链到 `~/.claude/skills`,agent 一进箱就能用。
+加 harness 只要往 `harness.txt` 写一行(`npm:` / `pip:` / `git:`),重建模板即生效。
+
+**执行形态**——`./lda run` 默认把整轮会话放进箱里(`tools/e2b/session.py`):
+卡打包进箱 → 箱内跑 agent、做实验、git 提交 → 整卡取回宿主 → 销毁沙箱;
+取证永远先于销毁,失败也照取。`LDA_EXEC=host` 可退回宿主执行(调试或没有沙箱服务时)。
+批量实验用 `tools/e2b/fanout.py` 扇出(一沙箱一作业、内置心跳、出箱文件两头校验哈希)。
+凭据只经环境变量提供,不进仓库也不进模板。
 
 ## 仓库结构
 

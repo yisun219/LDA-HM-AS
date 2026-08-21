@@ -67,13 +67,17 @@ verification are done by agents. When something goes wrong, the first response i
 but to add the missing rule so the same failure can never pass again. A rule committed to the repo is picked
 up by running agents on their next iteration. (FLOW §7)
 
-**6. Everything runs in E2B Sandbox.**
-All builds, tests, environment resets, forks and agent sessions go through the Sandbox API, avoiding
-bare-metal dependence. E2B over Docker because it suits massive concurrency and second-level environment
-rebuilds, and scales to many agent sessions. Shared dependencies are pre-installed once into a snapshot;
-sandboxes clone from it in seconds and are thrown away when dirty, never repaired. Only workloads a
-sandbox cannot host (KVM virtual machines, full GUI sessions, file-sync timing) may run on controlled
-real hardware, and the evidence must state why. (FLOW §8)
+**6. The whole execution end runs in E2B Sandbox.**
+Not just the experiments: **the agent session itself runs inside the box** — the card is shipped in, the
+agent works there (writes scripts, runs experiments, commits), the whole card is fetched back, the sandbox
+is destroyed. The host only keeps the card's persistent copy and does no computation, so concurrency scales
+out horizontally. The execution environment is standardized into one template, **`lda-base`**: build and
+packaging toolchain, compatibility and measurement tools, agent runtime, a **preloaded skillset** and agent
+harnesses, installed once into a snapshot. Every card clones from the same template in seconds and throws
+it away when dirty, never repairing it — identical environments are what make cards comparable. E2B over
+Docker because it suits massive concurrency and second-level environment rebuilds. Only workloads a sandbox
+cannot host (KVM virtual machines, full GUI sessions, file-sync timing) may run on controlled real hardware,
+and the evidence must state why. (FLOW §8)
 
 On top of these, a layer of reinforcements learned from real incidents: every anti-cheating check must
 first fail on a deliberately broken sample before it is trusted; criteria are registered before data is
@@ -263,11 +267,27 @@ All commands:
 
 ## Sandbox
 
-The experiment-environment snapshot recipe ships with the repo: `tools/e2b/template/`, built with one
-`e2b template build`, selected via `E2B_TEMPLATE`. `tools/e2b/fanout.py` fans a job list out over sandboxes
-(one sandbox per job, built-in heartbeat, evidence fetched before teardown, hashes checked on both ends).
-Credentials come from environment variables only and never enter the repository. The same Dockerfile also
-works as a local container via `docker build`.
+**The standard environment, `lda-base`** — recipe in `tools/e2b/template/`:
+
+```bash
+python3 tools/e2b/template/build.py lda-base   # build the template (minutes, once)
+export E2B_TEMPLATE=lda-base                   # every card clones from it
+```
+
+It contains Ubuntu 26.04 (with `deb-src` enabled), the build and packaging toolchain (gcc, cmake, ninja,
+dpkg-buildpackage, debuild, fakeroot, quilt, patchelf, ccache), compatibility and measurement tools
+(abigail-tools, strace, ltrace), the agent runtime (node + Claude Code CLI + pi), and a **preloaded
+skillset**: every skill in `skills/` (rebuilding a .deb family, the eight compatibility checks, micro
+benchmark discipline, how to write evidence) ships with the template into `/opt/lda/skills`, linked to
+`~/.claude/skills`, so an agent can use them the moment it enters the box. Adding a harness is one line in
+`harness.txt` (`npm:` / `pip:` / `git:`) plus a rebuild.
+
+**Execution shape** — `./lda run` puts the whole iteration inside a sandbox (`tools/e2b/session.py`):
+the card is packed in, the agent works and commits inside, the whole card is fetched back to the host, the
+sandbox is destroyed. Evidence is always fetched before teardown, including on failure. `LDA_EXEC=host`
+falls back to host execution (for debugging, or without a sandbox service). Batch experiments fan out via
+`tools/e2b/fanout.py` (one sandbox per job, built-in heartbeat, hashes checked on both ends). Credentials
+come from environment variables only — never in the repository, never in the template.
 
 ## Repository layout
 
