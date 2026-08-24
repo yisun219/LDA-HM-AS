@@ -3,6 +3,7 @@
 from .artifacts import ArtifactStore
 from .flow import HumanizeFlow, InvalidTransition
 from .gates import GateContext, GateResult, GateRunner
+from .stages import HumanizeStages
 from .types import (
     FlowConfig,
     FlowState,
@@ -20,6 +21,7 @@ __all__ = [
     "GateResult",
     "GateRunner",
     "HumanizeFlow",
+    "HumanizeStages",
     "InvalidTransition",
     "MainlineVerdict",
     "Phase",

@@ -32,7 +32,9 @@ src/lda_hm/
   artifacts.py   durable run artifacts and atomic writes
   flow.py        state machine and transition rules
   gates.py       deterministic gate model
+  prompts.py     backend-neutral stage prompt contracts
   runtime.py     Agent and Session protocols
+  stages.py      Gen-Idea, Gen-Plan, and RLCR stage entry points
   types.py       configuration, state, and review schemas
 docs/FLOW.md     architecture and invariants
 tests/           state-machine and persistence tests
