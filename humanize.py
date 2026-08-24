@@ -117,12 +117,32 @@ class Humanize:
         if status in ('PASS','NA') and not evidence and name not in ('goal_locked','reviewer_independence'): raise FlowError('passing gate needs evidence')
         self.state.gates[name]=Gate(name,status,evidence,note); self.save('gate_updated',gate=name,status=status,evidence=evidence)
     def human_approve(self): self.state.gates['human_approval']=Gate('human_approval','PASS',note='explicit CLI approval'); self.save('human_approved')
+    def full_alignment(self,summary,accepted=True):
+        if self.state.phase not in (Phase.ALIGN.value,Phase.RECOVERY.value): raise FlowError('full alignment is not allowed in '+self.state.phase)
+        value={'goal':self.state.goal,'plan_hash':self.state.plan_hash,'summary':summary,'accepted':accepted,'drift_counter':self.state.drift_counter,'created_at':now()}
+        path=self.store.artifact('artifacts/full-alignment.json',value)
+        if not accepted: self.state.phase=Phase.RECOVERY.value
+        else:
+            self.state.gates['drift_check']=Gate('drift_check','PASS',path,'alignment accepted')
+            self.state.gates['full_alignment']=Gate('full_alignment','PASS',path,'alignment accepted')
+            self.state.phase=Phase.CODE_REVIEW.value
+        self.state.artifacts.append(path); self.save('full_alignment',artifact=path,accepted=accepted); return path
+    def code_review(self,summary,blockers=None):
+        if self.state.phase!=Phase.CODE_REVIEW.value: raise FlowError('code review is not allowed in '+self.state.phase)
+        blockers=blockers or []; value={'summary':summary,'blockers':blockers,'created_at':now()}; path=self.store.artifact('artifacts/code-review.json',value); self.state.artifacts.append(path)
+        if blockers: self.state.phase=Phase.RECOVERY.value
+        else: self.state.phase=Phase.FINALIZE.value; self.state.gates['regression_check']=Gate('regression_check','PASS',path,'code review passed')
+        self.save('code_review',artifact=path,blockers=blockers); return path
     def finalize(self):
+        if self.state.phase!=Phase.FINALIZE.value: raise FlowError('code review must pass before finalize')
         if not all(x.status in ('PASS','NA') for x in self.state.gates.values()): raise FlowError('all gates must pass or be NA')
         if not self.state.rounds or self.state.rounds[-1].verdict!=Verdict.COMPLETE.value: raise FlowError('fresh reviewer COMPLETE required')
-        self.state.phase=Phase.FINALIZE.value; self.save('finalize_started')
+        path=self.store.artifact('artifacts/finalize.json',{'plan_hash':self.state.plan_hash,'created_at':now()}); self.state.artifacts.append(path); self.state.phase=Phase.METHODOLOGY.value; self.save('finalize_started',artifact=path)
+    def methodology(self,summary):
+        if self.state.phase!=Phase.METHODOLOGY.value: raise FlowError('methodology analysis is not allowed in '+self.state.phase)
+        path=self.store.artifact('artifacts/methodology.json',{'summary':summary,'rounds':len(self.state.rounds),'created_at':now()}); self.state.artifacts.append(path); self.state.phase=Phase.COMPLETE.value; self.save('methodology_analysis',artifact=path); return path
     def complete(self):
-        if self.state.phase!=Phase.FINALIZE.value: raise FlowError('run finalize first')
+        if self.state.phase!=Phase.METHODOLOGY.value: raise FlowError('run finalize first')
         self.state.phase=Phase.COMPLETE.value; self.save('completed')
     def resume(self): self.state=self.store.load(); self.save('resumed',phase=self.state.phase,iteration=self.state.iteration); return self
     def stop(self,reason): self.state.circuit_breaker=True; self.state.phase=Phase.STOP.value; self.state.stop_reason=reason
@@ -140,6 +160,9 @@ def cli():
     q=s.add_parser('builder-stop'); q.add_argument('root'); q.add_argument('--summary',required=True); q.add_argument('--path',action='append',default=[]); q.add_argument('--test',action='append',default=[])
     q=s.add_parser('review'); q.add_argument('root'); q.add_argument('--verdict',choices=[x.value for x in Verdict],required=True); q.add_argument('--summary',required=True); q.add_argument('--issue',action='append',default=[]); q.add_argument('--evidence',action='append',default=[])
     q=s.add_parser('gate'); q.add_argument('root'); q.add_argument('--name',required=True); q.add_argument('--status',required=True); q.add_argument('--evidence',default=''); q.add_argument('--note',default='')
+    q=s.add_parser('full-alignment'); q.add_argument('root'); q.add_argument('--summary',required=True); q.add_argument('--reject',action='store_true')
+    q=s.add_parser('code-review'); q.add_argument('root'); q.add_argument('--summary',required=True); q.add_argument('--blocker',action='append',default=[])
+    q=s.add_parser('methodology'); q.add_argument('root'); q.add_argument('--summary',required=True)
     for name in ('human-approve','finalize','complete','resume','status'): q=s.add_parser(name); q.add_argument('root')
     a=p.parse_args();
     try:
@@ -154,7 +177,10 @@ def cli():
             elif a.cmd=='review': out={'artifact':h.review(a.verdict,a.summary,a.issue,a.evidence)}
             elif a.cmd=='gate': h.gate(a.name,a.status,a.evidence,a.note); out={'updated':a.name}
             elif a.cmd=='human-approve': h.human_approve(); out={'approved':True}
+            elif a.cmd=='full-alignment': out={'artifact':h.full_alignment(a.summary,not a.reject)}
+            elif a.cmd=='code-review': out={'artifact':h.code_review(a.summary,a.blocker)}
             elif a.cmd=='finalize': h.finalize(); out={'phase':h.state.phase}
+            elif a.cmd=='methodology': out={'artifact':h.methodology(a.summary)}
             elif a.cmd=='complete': h.complete(); out={'phase':h.state.phase}
             elif a.cmd=='resume': h.resume(); out={'phase':h.state.phase,'iteration':h.state.iteration}
             elif a.cmd=='status': out=h.state.dump()
