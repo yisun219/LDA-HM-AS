@@ -35,6 +35,29 @@ Analysis:
 {analysis}
 """
 
+GEN_PLAN_REVIEW = """You are a fresh independent Analyst.
+
+Review the candidate plan against the complete original idea. Use the headings
+AGREE, DISAGREE, REQUIRED_CHANGES, OPTIONAL_IMPROVEMENTS, and UNRESOLVED.
+End with CONVERGED only when there are no required changes and no disagreement
+that changes the work.
+
+Original idea:
+{idea}
+
+Candidate plan:
+{plan}
+"""
+
+GEN_PLAN_REVISE = """Revise the candidate plan using the independent review.
+
+Preserve the original idea and all identifiers. Resolve every required change,
+retain unresolved human decisions explicitly, and do not implement code.
+
+Review:
+{review}
+"""
+
 REGULAR_REVIEW = """You are an independent Reviewer in round {round}.
 
 Check the implementation against the sealed plan, goal tracker, and round
