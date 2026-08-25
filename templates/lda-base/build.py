@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -18,6 +19,8 @@ from lda_flow.gateway import concise_e2b_error, configure_shared_gateway
 
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
 INTEL_SKILLS_SHA256 = "9f505d7d708935b9199efbd088c1c2b24df689e25530ba2ab4fe0c2b6f5532aa"
+HMZ_COMMIT = "881ddebd46c1580ab20eb5421de938c30314eb82"
+HMZ_SOURCE_SHA256 = "d8f4ffd17978711341f3aa8fc785a7ac0a666b5c15572c053f9129c0d6b42957"
 LDA_COMMIT = "0f61b08"
 DEFAULT_TEMPLATE = "lda-base-lda-hm-as"
 ROOT = Path(__file__).resolve().parents[2]
@@ -114,12 +117,40 @@ def _lda_archive() -> bytes:
     return result.stdout
 
 
-def _write_template_assets(directory: Path) -> tuple[Path, Path]:
+def _humanize2_wheel(directory: Path) -> Path:
+    source = directory / "humanize2.tar.gz"
+    with urllib.request.urlopen(  # noqa: S310
+        "https://codeload.github.com/humanfia/humanize2/tar.gz/" + HMZ_COMMIT,
+        timeout=120,
+    ) as response:
+        payload = response.read()
+    if hashlib.sha256(payload).hexdigest() != HMZ_SOURCE_SHA256:
+        raise RuntimeError("Humanize2 source archive SHA256 mismatch")
+    source.write_bytes(payload)
+    extracted = directory / "humanize2-src"
+    extracted.mkdir()
+    subprocess.run(
+        ["tar", "-xzf", str(source), "-C", str(extracted), "--strip-components=1"],
+        check=True,
+    )
+    wheel_dir = directory / "wheel"
+    wheel_dir.mkdir()
+    subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "--no-deps", str(extracted), "-w", str(wheel_dir)],
+        check=True,
+    )
+    wheels = sorted(wheel_dir.glob("hmz-*.whl"))
+    if len(wheels) != 1:
+        raise RuntimeError("Humanize2 wheel build did not produce exactly one wheel")
+    return wheels[0]
+
+
+def _write_template_assets(directory: Path) -> tuple[Path, Path, Path]:
     intel = directory / "intel-performance-skills.tar.gz"
     lda = directory / "lda-flow.tar.gz"
     intel.write_bytes(_intel_skills_archive())
     lda.write_bytes(_lda_archive())
-    return intel, lda
+    return intel, lda, _humanize2_wheel(directory)
 
 
 def _inject_archive(template: Template, payload: bytes, destination: str, name: str) -> Template:
@@ -138,12 +169,27 @@ def _inject_archive(template: Template, payload: bytes, destination: str, name: 
     )
 
 
+def _inject_file(template: Template, payload: bytes, destination: str, name: str) -> Template:
+    encoded = base64.b64encode(payload).decode("ascii")
+    encoded_path = f"/opt/.lda-template-assets/{name}.b64"
+    template = template.run_cmd(
+        f"mkdir -p /opt/.lda-template-assets && : > {encoded_path}"
+    )
+    for offset in range(0, len(encoded), 32_000):
+        template = template.run_cmd(
+            f"printf '%s' '{encoded[offset : offset + 32_000]}' >> {encoded_path}"
+        )
+    return template.run_cmd(
+        f"base64 -d {encoded_path} > {destination} && rm -f {encoded_path}"
+    )
+
+
 def build() -> None:
     configure_shared_gateway()
     _patch_gateway_step_parser()
     assets = tempfile.TemporaryDirectory(dir=ROOT, prefix=".lda-template-assets-")
     try:
-        intel_archive, lda_archive = _write_template_assets(Path(assets.name))
+        intel_archive, lda_archive, hmz_wheel = _write_template_assets(Path(assets.name))
         template = Template().from_image("ubuntu:26.04")
         template = template.apt_install(BASE_PACKAGES)
         template = template.run_cmd(
@@ -152,6 +198,14 @@ def build() -> None:
             "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
         )
         template = template.run_cmd("npm install --global @openai/codex")
+        template = _inject_file(
+            template, hmz_wheel.read_bytes(), "/opt/hmz.whl", "humanize2-wheel"
+        )
+        template = template.run_cmd(
+            "/opt/lda-venv/bin/pip install --no-cache-dir /opt/hmz.whl && "
+            "rm -f /opt/hmz.whl && "
+            f"printf '%s\\n' '{HMZ_COMMIT}' > /opt/hmz-pinned-commit"
+        )
         template = _inject_archive(
             template,
             intel_archive.read_bytes(),
@@ -172,7 +226,7 @@ def build() -> None:
             f"printf '%s\\n' '{LDA_COMMIT}' > /opt/lda/.lda-pinned-commit"
         )
         template = template.run_cmd(
-            "/opt/lda-venv/bin/pip install --no-cache-dir /opt/lda && "
+            "/opt/lda-venv/bin/pip install --no-cache-dir --no-deps /opt/lda && "
             "ln -sf /opt/lda-venv/bin/lda-flow /usr/local/bin/lda-flow && "
             "ln -sf /opt/lda-venv/bin/hmz /usr/local/bin/hmz"
         )

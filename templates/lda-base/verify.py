@@ -47,6 +47,7 @@ def main() -> int:
         raise SystemExit("missing Intel skills: " + ", ".join(missing_skills))
     for provenance in (
         "/opt/intel-performance-skills/.lda-pinned-commit",
+        "/opt/hmz-pinned-commit",
         "/opt/lda/.lda-pinned-commit",
     ):
         if not os.path.isfile(provenance) or not Path(provenance).read_text().strip():
