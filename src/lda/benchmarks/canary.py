@@ -293,6 +293,10 @@ def upload_source_snapshot(client: E2BClient, sandbox: Sandbox, source_root: str
         raise FileNotFoundError(manifest)
     refs = []
     manifest_target = f"/workspace/source-snapshot/{snapshot}/SHA256SUMS"
+    directories = sorted({f"/workspace/source-snapshot/{snapshot}/{Path(line.split('  ', 1)[1]).parent}"
+                         for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()})
+    if directories:
+        client.command(sandbox, "mkdir -p " + " ".join(shlex.quote(item) for item in directories))
     client.filesystem_write(sandbox, manifest_target, manifest.read_bytes())
     refs.append({"path": manifest_target,
                  "sha256": hashlib.sha256(manifest.read_bytes()).hexdigest()})
