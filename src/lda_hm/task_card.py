@@ -8,6 +8,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from .baseline import BaselineSpec
+
 
 class Lane(str, Enum):
     MAINLINE = "mainline"
@@ -110,6 +112,7 @@ class TaskCard:
     result_equivalence_checks: tuple[tuple[str, ...], ...]
     micro_benchmarks: tuple[BenchmarkSpec, ...]
     end_to_end_benchmarks: tuple[BenchmarkSpec, ...]
+    baseline: BaselineSpec = field(default_factory=BaselineSpec)
     compatibility: CompatibilityBoundary = field(default_factory=CompatibilityBoundary)
     lane: Lane = Lane.MAINLINE
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -147,6 +150,7 @@ class TaskCard:
         data["package"] = asdict(self.package)
         data["micro_benchmarks"] = [asdict(x) for x in self.micro_benchmarks]
         data["end_to_end_benchmarks"] = [asdict(x) for x in self.end_to_end_benchmarks]
+        data["baseline"] = self.baseline.canonical()
         return data
 
     def digest(self) -> str:

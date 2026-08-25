@@ -18,10 +18,12 @@ def _card(path: Path) -> TaskCard:
     # Cards are created by the checked-in generator; arbitrary Python is never
     # loaded from a card file.
     value = json.loads(path.read_text(encoding="utf-8"))
+    from .baseline import BaselineSpec
     from .task_card import BenchmarkSpec, CompatibilityBoundary, Lane, PackagePriority
 
     value["package"] = PackagePriority(**value["package"])
     value["compatibility"] = CompatibilityBoundary(**value.get("compatibility", {}))
+    value["baseline"] = BaselineSpec(**value.get("baseline", {}))
     value["lane"] = Lane(value.get("lane", "mainline"))
     value["micro_benchmarks"] = tuple(BenchmarkSpec(**x) for x in value["micro_benchmarks"])
     value["end_to_end_benchmarks"] = tuple(BenchmarkSpec(**x) for x in value["end_to_end_benchmarks"])
@@ -40,8 +42,8 @@ def _card(path: Path) -> TaskCard:
     return TaskCard(**value)
 
 
-def _connect() -> E2BSandbox:
-    return E2BSandbox.connect(template=os.getenv("E2B_TEMPLATE", "lda-base"))
+def _connect(template: str) -> E2BSandbox:
+    return E2BSandbox.connect(template=os.getenv("E2B_TEMPLATE", template))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
 
         workspace = args.workspace.resolve()
         card = _card(workspace / ".lda-hm" / "task-card.json")
-        sandbox = _connect()
+        sandbox = _connect(card.baseline.template)
         flow = HumanizeFlow(workspace, run_id=args.run_id)
         agents = {
             role: CommandAgent.from_env(sandbox, role=role)

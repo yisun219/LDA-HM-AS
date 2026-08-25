@@ -71,8 +71,17 @@ class LDAExecution:
         cpu = self.sandbox.run(("sh", "-c", "lscpu | sed -n 's/^Model:[[:space:]]*//p'"))
         if not cpu.ok or cpu.stdout.strip() != "207":
             raise SandboxUnavailable("sandbox CPU model is not the Xeon 6548Y+ compatible model 207")
+        baseline_check = self.sandbox.run(self.card.baseline.verification_command(), timeout_seconds=300)
+        if not baseline_check.ok:
+            raise SandboxUnavailable(
+                "baseline identity verification failed: " + baseline_check.stderr[-1200:]
+            )
+        self.flow.state.metadata["baseline"] = self.card.baseline.canonical()
+        self.flow.state.metadata["baseline_digest"] = self.card.baseline.digest()
+        self.flow.state.metadata["baseline_verified"] = True
+        self.flow.store.write_json("baseline.json", self.card.baseline.canonical())
         for command in self.card.setup_commands:
-            result = self.sandbox.run(command, timeout_seconds=3600)
+            result = self.sandbox.run(("env", *self._baseline_env(), *command), timeout_seconds=3600)
             if not result.ok:
                 raise RuntimeError(f"source setup failed: {command}: {result.stderr[-1000:]}")
         branch = self.sandbox.run(("git", "-C", target_workspace, "branch", "--show-current"))
@@ -85,6 +94,18 @@ class LDAExecution:
         self.flow.state.metadata["source_reference"] = self.card.source_reference
         self.flow.store.save_state(self.flow.state)
 
+    def _baseline_env(self) -> tuple[str, ...]:
+        baseline = self.card.baseline
+        return tuple(
+            f"{key}={value}"
+            for key, value in {
+                "LDA_BASELINE_MODE": baseline.mode,
+                "LDA_BASELINE_RELEASE": baseline.release,
+                "LDA_BASELINE_CODENAME": baseline.codename,
+                "LDA_BASELINE_APT_SNAPSHOT": baseline.apt_snapshot,
+            }.items()
+        )
+
     def sync_control_artifacts(self) -> None:
         control = "/opt/lda/control"
         self.sandbox.run(("mkdir", "-p", control))
@@ -92,6 +113,7 @@ class LDAExecution:
             "task-card.json": self.flow.store.root / "task-card.json",
             "plan.md": self.flow.store.root / "plan.md",
             "goal-tracker.md": self.flow.store.root / "goal-tracker.md",
+            "baseline.json": self.flow.store.root / "baseline.json",
         }
         for name, local in files.items():
             if not local.is_file():
@@ -103,6 +125,8 @@ class LDAExecution:
                 raise RuntimeError(f"could not protect control artifact {name}")
 
     def capture_baseline(self) -> tuple[BenchmarkReport, ...]:
+        if not self.flow.state.metadata.get("baseline_verified"):
+            raise SandboxUnavailable("cannot capture benchmarks before baseline verification")
         runner = BenchmarkRunner(self.sandbox)
         reports = [runner.run_baseline(spec) for spec in self.card.micro_benchmarks]
         reports.extend(runner.run_baseline(spec) for spec in self.card.end_to_end_benchmarks)

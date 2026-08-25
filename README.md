@@ -53,6 +53,10 @@ executed in E2B. The flow will not silently run on the host. Set
 `LDA_AGENT_PROVIDER`/`LDA_AGENT_MODEL` and the corresponding provider
 credential in the E2B environment before running.
 
+The example card currently uses the explicit transitional source_package
+baseline. Production Ubuntu Desktop work must use iso_snapshot with an
+ISO-derived E2B template and complete identity metadata; see docs/BASELINE.md.
+
 ## Development
 
 ```bash

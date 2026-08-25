@@ -42,6 +42,14 @@
       ,"max_regression_percent": 5.0
     }
   ],
+  "baseline": {
+    "mode": "source_package",
+    "template": "lda-base",
+    "release": "26.04",
+    "codename": "resolute",
+    "edition": "generic",
+    "architecture": "amd64"
+  },
   "compatibility": {
     "soname_unchanged": true,
     "exported_symbols_unchanged": true,

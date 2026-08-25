@@ -1,6 +1,7 @@
 """LDA-HM flow primitives."""
 
 from .artifacts import ArtifactStore
+from .baseline import BaselineSpec
 from .benchmark import BenchmarkReport, BenchmarkRunner
 from .agent_command import CommandAgent, CommandSession
 from .fence import FenceResult, FenceSuite
@@ -28,6 +29,7 @@ from .types import (
 
 __all__ = [
     "ArtifactStore",
+    "BaselineSpec",
     "BenchmarkReport",
     "BenchmarkRunner",
     "BenchmarkSpec",
