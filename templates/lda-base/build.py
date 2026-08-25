@@ -10,7 +10,7 @@ from e2b import Template
 from lda_flow.gateway import concise_e2b_error, configure_shared_gateway
 
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
-LDA_COMMIT = "651a9dc"
+LDA_COMMIT = "035a8e6"
 DEFAULT_TEMPLATE = "lda-base-lda-hm-as"
 
 BASE_PACKAGES = [
@@ -82,16 +82,25 @@ def build() -> None:
     )
     template = template.run_cmd("npm install --global @openai/codex")
     template = template.run_cmd(
-        "git clone https://github.com/intel/intel-performance-skills.git "
-        "/opt/intel-performance-skills && cd /opt/intel-performance-skills && "
-        f"git checkout {INTEL_SKILLS_COMMIT} && "
+        "mkdir -p /opt/intel-performance-skills && "
+        "cd /opt/intel-performance-skills && git init && "
+        "git remote add origin https://github.com/intel/intel-performance-skills.git && "
+        "for attempt in 1 2 3; do "
+        f"git -c http.version=HTTP/1.1 fetch --depth 1 origin {INTEL_SKILLS_COMMIT} && break; "
+        "test \"$attempt\" -eq 3 && exit 1; sleep 5; done && "
+        "git checkout --detach FETCH_HEAD && "
         "test -f skills/linux-perf/SKILL.md && "
         "test -f skills/performance-patterns/SKILL.md && "
         "test -f skills/phoronix-test-suite/SKILL.md"
     )
     template = template.run_cmd(
-        "git clone https://github.com/yisun219/Linux-Development-Agent-Flow.git "
-        "/opt/lda && cd /opt/lda && git checkout " + LDA_COMMIT
+        "mkdir -p /opt/lda && cd /opt/lda && git init && "
+        "git remote add origin "
+        "https://github.com/yisun219/Linux-Development-Agent-Flow.git && "
+        "for attempt in 1 2 3; do "
+        f"git -c http.version=HTTP/1.1 fetch --depth 1 origin {LDA_COMMIT} && break; "
+        "test \"$attempt\" -eq 3 && exit 1; sleep 5; done && "
+        "git checkout --detach FETCH_HEAD"
     )
     template = template.run_cmd(
         "/opt/lda-venv/bin/pip install --no-cache-dir /opt/lda && "
