@@ -10,7 +10,7 @@ from e2b import Template
 from lda_flow.gateway import concise_e2b_error, configure_shared_gateway
 
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
-LDA_COMMIT = "de7575c"
+LDA_COMMIT = "651a9dc"
 DEFAULT_TEMPLATE = "lda-base-lda-hm-as"
 
 BASE_PACKAGES = [
@@ -43,6 +43,7 @@ BASE_PACKAGES = [
     "xvfb",
     "chromium",
     "python3",
+    "python3-venv",
     "python3-pip",
     "nodejs",
     "npm",
@@ -75,7 +76,9 @@ def build() -> None:
     template = Template().from_image("ubuntu:26.04")
     template = template.apt_install(BASE_PACKAGES)
     template = template.run_cmd(
-        "python3 -m pip install --no-cache-dir 'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
+        "python3 -m venv /opt/lda-venv && "
+        "/opt/lda-venv/bin/pip install --no-cache-dir "
+        "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
     )
     template = template.run_cmd("npm install --global @openai/codex")
     template = template.run_cmd(
@@ -90,7 +93,11 @@ def build() -> None:
         "git clone https://github.com/yisun219/Linux-Development-Agent-Flow.git "
         "/opt/lda && cd /opt/lda && git checkout " + LDA_COMMIT
     )
-    template = template.run_cmd("python3 -m pip install --no-cache-dir /opt/lda")
+    template = template.run_cmd(
+        "/opt/lda-venv/bin/pip install --no-cache-dir /opt/lda && "
+        "ln -sf /opt/lda-venv/bin/lda-flow /usr/local/bin/lda-flow && "
+        "ln -sf /opt/lda-venv/bin/hmz /usr/local/bin/hmz"
+    )
     template = template.run_cmd(
         "command -v lda-flow && command -v hmz && "
         "test -f /opt/lda/flows/lda/__init__.py"
