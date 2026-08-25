@@ -7,7 +7,7 @@ import os
 
 from e2b import Template
 
-from lda_flow.gateway import configure_shared_gateway
+from lda_flow.gateway import concise_e2b_error, configure_shared_gateway
 
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
 LDA_COMMIT = "de7575c"
@@ -102,20 +102,23 @@ def build() -> None:
         "mkdir -p /opt/lda /workspace/mission /workspace/mission/.lda /workspace/.lda"
     )
     name = os.getenv("E2B_TEMPLATE", DEFAULT_TEMPLATE)
-    if os.getenv("E2B_TEMPLATE_BACKGROUND") == "1":
-        info = Template.build_in_background(template, name=name)
-        print(
-            json.dumps(
-                {
-                    "template_id": info.template_id,
-                    "build_id": info.build_id,
-                    "name": name,
-                    "status": "submitted",
-                }
+    try:
+        if os.getenv("E2B_TEMPLATE_BACKGROUND") == "1":
+            info = Template.build_in_background(template, name=name)
+            print(
+                json.dumps(
+                    {
+                        "template_id": info.template_id,
+                        "build_id": info.build_id,
+                        "name": name,
+                        "status": "submitted",
+                    }
+                )
             )
-        )
-        return
-    Template.build(template, name=name)
+            return
+        Template.build(template, name=name)
+    except Exception as exc:
+        raise SystemExit(str(concise_e2b_error(exc))) from exc
 
 
 if __name__ == "__main__":
