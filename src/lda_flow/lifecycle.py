@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .benchmarks import summarize
 from .fence import (
     FenceResult,
     cpu_fence,
@@ -67,10 +68,19 @@ def run_benchmark(benchmark: Benchmark, executor: Executor) -> FenceResult:
             return FenceResult(benchmark.name, False, "benchmark did not emit RESULT=", 0.0)
         baseline_values.append(baseline_value)
         candidate_values.append(candidate_value)
+    report = summarize(
+        benchmark.name,
+        tuple(baseline_values),
+        tuple(candidate_values),
+        lower_is_better=benchmark.lower_is_better,
+        max_relative_mad=benchmark.max_relative_mad,
+        min_speedup=benchmark.min_speedup,
+    )
     return FenceResult(
         benchmark.name,
-        True,
-        json.dumps({"baseline": baseline_values, "candidate": candidate_values}),
+        report.passed,
+        json.dumps({"result": report.__dict__}),
+        report.reward if report.passed else 0.0,
     )
 
 
