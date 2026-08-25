@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
 import subprocess
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -113,95 +113,86 @@ def _lda_archive() -> bytes:
     return result.stdout
 
 
-def _inject_archive(
-    template: Template,
-    payload: bytes,
-    destination: str,
-    label: str,
-    *,
-    strip_components: int = 0,
-) -> Template:
-    encoded = base64.b64encode(payload).decode("ascii")
-    archive_path = f"/opt/.lda-template-assets/{label}.tar.gz.b64"
-    template = template.run_cmd(
-        f"mkdir -p {destination} /opt/.lda-template-assets && : > {archive_path}"
-    )
-    for offset in range(0, len(encoded), 24_000):
-        chunk = encoded[offset : offset + 24_000]
-        template = template.run_cmd(f"printf '%s' '{chunk}' >> {archive_path}")
-    strip = f" --strip-components={strip_components}" if strip_components else ""
-    return template.run_cmd(
-        f"base64 -d {archive_path} | tar -xz -C {destination}{strip} && rm {archive_path}"
-    )
+def _write_template_assets(directory: Path) -> tuple[Path, Path]:
+    intel = directory / "intel-performance-skills.tar.gz"
+    lda = directory / "lda-flow.tar.gz"
+    intel.write_bytes(_intel_skills_archive())
+    lda.write_bytes(_lda_archive())
+    return intel, lda
 
 
 def build() -> None:
     configure_shared_gateway()
     _patch_gateway_step_parser()
-    template = Template().from_image("ubuntu:26.04")
-    template = template.apt_install(BASE_PACKAGES)
-    template = template.run_cmd(
-        "python3 -m venv /opt/lda-venv && "
-        "/opt/lda-venv/bin/pip install --no-cache-dir "
-        "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
-    )
-    template = template.run_cmd("npm install --global @openai/codex")
-    template = _inject_archive(
-        template,
-        _intel_skills_archive(),
-        "/opt/intel-performance-skills",
-        "intel-performance-skills",
-        strip_components=1,
-    )
-    template = template.run_cmd(
-        "cd /opt/intel-performance-skills && "
-        "test -f skills/linux-perf/SKILL.md && "
-        "test -f skills/performance-patterns/SKILL.md && "
-        "test -f skills/phoronix-test-suite/SKILL.md && "
-        f"printf '%s\\n' '{INTEL_SKILLS_COMMIT}' > .lda-pinned-commit"
-    )
-    template = _inject_archive(
-        template,
-        _lda_archive(),
-        "/opt/lda",
-        "lda-flow",
-    )
-    template = template.run_cmd(
-        f"printf '%s\\n' '{LDA_COMMIT}' > /opt/lda/.lda-pinned-commit"
-    )
-    template = template.run_cmd(
-        "/opt/lda-venv/bin/pip install --no-cache-dir /opt/lda && "
-        "ln -sf /opt/lda-venv/bin/lda-flow /usr/local/bin/lda-flow && "
-        "ln -sf /opt/lda-venv/bin/hmz /usr/local/bin/hmz"
-    )
-    template = template.run_cmd(
-        "command -v lda-flow && command -v hmz && "
-        "test -f /opt/lda/flows/lda/__init__.py"
-    )
-    template = template.run_cmd(
-        "test -r /etc/os-release && grep -q 'VERSION_ID=\"26.04\"' /etc/os-release"
-    )
-    template = template.run_cmd(
-        "mkdir -p /opt/lda /workspace/mission /workspace/mission/.lda /workspace/.lda"
-    )
-    name = os.getenv("E2B_TEMPLATE", DEFAULT_TEMPLATE)
+    assets = tempfile.TemporaryDirectory(dir=ROOT, prefix=".lda-template-assets-")
     try:
-        if os.getenv("E2B_TEMPLATE_BACKGROUND") == "1":
-            info = Template.build_in_background(template, name=name)
-            print(
-                json.dumps(
-                    {
-                        "template_id": info.template_id,
-                        "build_id": info.build_id,
-                        "name": name,
-                        "status": "submitted",
-                    }
+        intel_archive, lda_archive = _write_template_assets(Path(assets.name))
+        template = Template(file_context_path=ROOT).from_image("ubuntu:26.04")
+        template = template.apt_install(BASE_PACKAGES)
+        template = template.run_cmd(
+            "python3 -m venv /opt/lda-venv && "
+            "/opt/lda-venv/bin/pip install --no-cache-dir "
+            "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
+        )
+        template = template.run_cmd("npm install --global @openai/codex")
+        template = template.copy(
+            intel_archive.relative_to(ROOT), "/opt/intel-performance-skills.tar.gz"
+        )
+        template = template.run_cmd(
+            "mkdir -p /opt/intel-performance-skills && "
+            "tar -xzf /opt/intel-performance-skills.tar.gz -C /opt/intel-performance-skills "
+            "--strip-components=1 && rm /opt/intel-performance-skills.tar.gz"
+        )
+        template = template.run_cmd(
+            "cd /opt/intel-performance-skills && "
+            "test -f skills/linux-perf/SKILL.md && "
+            "test -f skills/performance-patterns/SKILL.md && "
+            "test -f skills/phoronix-test-suite/SKILL.md && "
+            f"printf '%s\\n' '{INTEL_SKILLS_COMMIT}' > .lda-pinned-commit"
+        )
+        template = template.copy(lda_archive.relative_to(ROOT), "/opt/lda-flow.tar.gz")
+        template = template.run_cmd(
+            "mkdir -p /opt/lda && tar -xzf /opt/lda-flow.tar.gz -C /opt/lda && "
+            "rm /opt/lda-flow.tar.gz"
+        )
+        template = template.run_cmd(
+            f"printf '%s\\n' '{LDA_COMMIT}' > /opt/lda/.lda-pinned-commit"
+        )
+        template = template.run_cmd(
+            "/opt/lda-venv/bin/pip install --no-cache-dir /opt/lda && "
+            "ln -sf /opt/lda-venv/bin/lda-flow /usr/local/bin/lda-flow && "
+            "ln -sf /opt/lda-venv/bin/hmz /usr/local/bin/hmz"
+        )
+        template = template.run_cmd(
+            "command -v lda-flow && command -v hmz && "
+            "test -f /opt/lda/flows/lda/__init__.py"
+        )
+        template = template.run_cmd(
+            "test -r /etc/os-release && grep -q 'VERSION_ID=\"26.04\"' /etc/os-release"
+        )
+        template = template.run_cmd(
+            "mkdir -p /opt/lda /workspace/mission /workspace/mission/.lda /workspace/.lda"
+        )
+        name = os.getenv("E2B_TEMPLATE", DEFAULT_TEMPLATE)
+        try:
+            if os.getenv("E2B_TEMPLATE_BACKGROUND") == "1":
+                info = Template.build_in_background(template, name=name)
+                print(
+                    json.dumps(
+                        {
+                            "template_id": info.template_id,
+                            "build_id": info.build_id,
+                            "name": name,
+                            "status": "submitted",
+                        }
+                    )
                 )
-            )
-            return
-        Template.build(template, name=name, on_build_logs=_build_log)
-    except Exception as exc:
-        raise SystemExit(str(concise_e2b_error(exc))) from exc
+                return
+            Template.build(template, name=name, on_build_logs=_build_log)
+        except Exception as exc:
+            raise SystemExit(str(concise_e2b_error(exc))) from exc
+    finally:
+        assets.cleanup()
 
 
 if __name__ == "__main__":
