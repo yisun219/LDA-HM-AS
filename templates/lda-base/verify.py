@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 REQUIRED = (
     "readelf",
@@ -44,6 +45,12 @@ def main() -> int:
     missing_skills = [path for path in skills if not os.path.isfile(path)]
     if missing_skills:
         raise SystemExit("missing Intel skills: " + ", ".join(missing_skills))
+    for provenance in (
+        "/opt/intel-performance-skills/.lda-pinned-commit",
+        "/opt/lda/.lda-pinned-commit",
+    ):
+        if not os.path.isfile(provenance) or not Path(provenance).read_text().strip():
+            raise SystemExit(f"missing pinned source provenance: {provenance}")
     model = subprocess.check_output(
         ["grep", "-m1", "model name", "/proc/cpuinfo"], text=True
     ).strip()

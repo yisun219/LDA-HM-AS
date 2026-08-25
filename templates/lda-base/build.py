@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
+import subprocess
+import time
+import urllib.request
+from pathlib import Path
 
 from e2b import Template
 
 from lda_flow.gateway import concise_e2b_error, configure_shared_gateway
 
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
-LDA_COMMIT = "035a8e6"
+INTEL_SKILLS_SHA256 = "9f505d7d708935b9199efbd088c1c2b24df689e25530ba2ab4fe0c2b6f5532aa"
+LDA_COMMIT = "7f12181"
 DEFAULT_TEMPLATE = "lda-base-lda-hm-as"
+ROOT = Path(__file__).resolve().parents[2]
 
 BASE_PACKAGES = [
     "build-essential",
@@ -74,6 +82,59 @@ def _build_log(entry: object) -> None:
     print(str(entry), flush=True)
 
 
+def _intel_skills_archive() -> bytes:
+    url = (
+        "https://codeload.github.com/intel/intel-performance-skills/tar.gz/"
+        + INTEL_SKILLS_COMMIT
+    )
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310
+                payload = response.read()
+            digest = hashlib.sha256(payload).hexdigest()
+            if digest != INTEL_SKILLS_SHA256:
+                raise RuntimeError("Intel Performance Skills archive SHA256 mismatch")
+            return payload
+        except Exception as exc:  # pragma: no cover - exercised by real template builds
+            last_error = exc
+            if attempt < 3:
+                time.sleep(2 * attempt)
+    raise RuntimeError("failed to fetch pinned Intel Performance Skills archive") from last_error
+
+
+def _lda_archive() -> bytes:
+    result = subprocess.run(
+        ["git", "archive", "--format=tar.gz", LDA_COMMIT],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    return result.stdout
+
+
+def _inject_archive(
+    template: Template,
+    payload: bytes,
+    destination: str,
+    label: str,
+    *,
+    strip_components: int = 0,
+) -> Template:
+    encoded = base64.b64encode(payload).decode("ascii")
+    archive_path = f"/opt/.lda-template-assets/{label}.tar.gz.b64"
+    template = template.run_cmd(
+        f"mkdir -p {destination} /opt/.lda-template-assets && : > {archive_path}"
+    )
+    for offset in range(0, len(encoded), 24_000):
+        chunk = encoded[offset : offset + 24_000]
+        template = template.run_cmd(f"printf '%s' '{chunk}' >> {archive_path}")
+    strip = f" --strip-components={strip_components}" if strip_components else ""
+    return template.run_cmd(
+        f"base64 -d {archive_path} | tar -xz -C {destination}{strip} && rm {archive_path}"
+    )
+
+
 def build() -> None:
     configure_shared_gateway()
     _patch_gateway_step_parser()
@@ -85,26 +146,28 @@ def build() -> None:
         "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
     )
     template = template.run_cmd("npm install --global @openai/codex")
-    template = template.run_cmd(
-        "mkdir -p /opt/intel-performance-skills && "
-        "cd /opt/intel-performance-skills && git init && "
-        "git remote add origin https://github.com/intel/intel-performance-skills.git && "
-        "for attempt in 1 2 3; do "
-        f"git -c http.version=HTTP/1.1 fetch --depth 1 origin {INTEL_SKILLS_COMMIT} && break; "
-        "test \"$attempt\" -eq 3 && exit 1; sleep 5; done && "
-        "git checkout --detach FETCH_HEAD && "
-        "test -f skills/linux-perf/SKILL.md && "
-        "test -f skills/performance-patterns/SKILL.md && "
-        "test -f skills/phoronix-test-suite/SKILL.md"
+    template = _inject_archive(
+        template,
+        _intel_skills_archive(),
+        "/opt/intel-performance-skills",
+        "intel-performance-skills",
+        strip_components=1,
     )
     template = template.run_cmd(
-        "mkdir -p /opt/lda && cd /opt/lda && git init && "
-        "git remote add origin "
-        "https://github.com/yisun219/Linux-Development-Agent-Flow.git && "
-        "for attempt in 1 2 3; do "
-        f"git -c http.version=HTTP/1.1 fetch --depth 1 origin {LDA_COMMIT} && break; "
-        "test \"$attempt\" -eq 3 && exit 1; sleep 5; done && "
-        "git checkout --detach FETCH_HEAD"
+        "test -f skills/linux-perf/SKILL.md && "
+        "test -f skills/performance-patterns/SKILL.md && "
+        "test -f skills/phoronix-test-suite/SKILL.md && "
+        f"printf '%s\\n' '{INTEL_SKILLS_COMMIT}' > .lda-pinned-commit",
+        workdir="/opt/intel-performance-skills",
+    )
+    template = _inject_archive(
+        template,
+        _lda_archive(),
+        "/opt/lda",
+        "lda-flow",
+    )
+    template = template.run_cmd(
+        f"printf '%s\\n' '{LDA_COMMIT}' > /opt/lda/.lda-pinned-commit"
     )
     template = template.run_cmd(
         "/opt/lda-venv/bin/pip install --no-cache-dir /opt/lda && "
