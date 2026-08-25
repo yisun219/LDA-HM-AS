@@ -198,12 +198,13 @@ def build() -> None:
             "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
         )
         template = template.run_cmd("npm install --global @openai/codex")
+        hmz_filename = "hmz-0.1.0-py3-none-any.whl"
         template = _inject_file(
-            template, hmz_wheel.read_bytes(), "/opt/hmz.whl", "humanize2-wheel"
+            template, hmz_wheel.read_bytes(), f"/opt/{hmz_filename}", "humanize2-wheel"
         )
         template = template.run_cmd(
-            "/opt/lda-venv/bin/pip install --no-cache-dir /opt/hmz.whl && "
-            "rm -f /opt/hmz.whl && "
+            f"/opt/lda-venv/bin/pip install --no-cache-dir /opt/{hmz_filename} && "
+            f"rm -f /opt/{hmz_filename} && "
             f"printf '%s\\n' '{HMZ_COMMIT}' > /opt/hmz-pinned-commit"
         )
         template = _inject_archive(
