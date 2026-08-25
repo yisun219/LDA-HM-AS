@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import os
-from pathlib import Path
 
 from e2b import Template
 
+from lda_flow.gateway import configure_shared_gateway
+
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
+LDA_COMMIT = "cb55e07"
+DEFAULT_TEMPLATE = "lda-base-lda-hm-as"
 
 BASE_PACKAGES = [
     "build-essential",
@@ -50,8 +54,25 @@ BASE_PACKAGES = [
 ]
 
 
+def _patch_gateway_step_parser() -> None:
+    """Keep SDK error reporting usable when the Gateway returns step text."""
+    from e2b.template_sync import build_api
+
+    original = build_api.get_build_step_index
+
+    def safe_step_index(step: object, stack_trace_count: int) -> int:
+        try:
+            return original(step, stack_trace_count)
+        except (TypeError, ValueError):
+            return 0
+
+    build_api.get_build_step_index = safe_step_index
+
+
 def build() -> None:
-    template = Template(file_context_path=Path(__file__).parents[2]).from_image("ubuntu:26.04")
+    configure_shared_gateway()
+    _patch_gateway_step_parser()
+    template = Template().from_image("ubuntu:26.04")
     template = template.apt_install(BASE_PACKAGES)
     template = template.run_cmd(
         "python3 -m pip install --no-cache-dir 'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
@@ -65,8 +86,9 @@ def build() -> None:
         "test -f skills/performance-patterns/SKILL.md && "
         "test -f skills/phoronix-test-suite/SKILL.md"
     )
-    template = template.copy(
-        ["pyproject.toml", "src", "flows", "validation"], "/opt/lda"
+    template = template.run_cmd(
+        "git clone https://github.com/yisun219/Linux-Development-Agent-Flow.git "
+        "/opt/lda && cd /opt/lda && git checkout " + LDA_COMMIT
     )
     template = template.run_cmd("python3 -m pip install --no-cache-dir /opt/lda")
     template = template.run_cmd(
@@ -79,7 +101,21 @@ def build() -> None:
     template = template.run_cmd(
         "mkdir -p /opt/lda /workspace/mission /workspace/mission/.lda /workspace/.lda"
     )
-    Template.build(template, name=os.getenv("E2B_TEMPLATE", "lda-base"))
+    name = os.getenv("E2B_TEMPLATE", DEFAULT_TEMPLATE)
+    if os.getenv("E2B_TEMPLATE_BACKGROUND") == "1":
+        info = Template.build_in_background(template, name=name)
+        print(
+            json.dumps(
+                {
+                    "template_id": info.template_id,
+                    "build_id": info.build_id,
+                    "name": name,
+                    "status": "submitted",
+                }
+            )
+        )
+        return
+    Template.build(template, name=name)
 
 
 if __name__ == "__main__":

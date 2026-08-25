@@ -15,7 +15,7 @@ agents:
   reviewer: claude/claude-opus-4-8:high
   forward_env: [ANTHROPIC_API_KEY]
 e2b:
-  template: lda-base
+  template: lda-base-lda-hm-as
   timeout_seconds: 21600
 baseline:
   kind: ubuntu2604_iso
