@@ -125,12 +125,16 @@ def _write_template_assets(directory: Path) -> tuple[Path, Path]:
 def _inject_archive(template: Template, payload: bytes, destination: str, name: str) -> Template:
     encoded = base64.b64encode(payload).decode("ascii")
     archive = f"/opt/.lda-template-assets/{name}.tar.gz.b64"
+    template = template.run_cmd(
+        f"mkdir -p {destination} /opt/.lda-template-assets && : > {archive}"
+    )
+    for offset in range(0, len(encoded), 32_000):
+        template = template.run_cmd(
+            f"printf '%s' '{encoded[offset : offset + 32_000]}' >> {archive}"
+        )
+    strip = " --strip-components=1" if name == "intel-performance-skills" else ""
     return template.run_cmd(
-        f"mkdir -p {destination} /opt/.lda-template-assets && "
-        f"printf '%s' '{encoded}' | base64 -d > {archive} && "
-        f"tar -xzf {archive} -C {destination} "
-        f"{'--strip-components=1 ' if name == 'intel-performance-skills' else ''}&& "
-        f"rm -f {archive}"
+        f"base64 -d {archive} | tar -xz -C {destination}{strip} && rm -f {archive}"
     )
 
 
