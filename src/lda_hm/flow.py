@@ -27,11 +27,16 @@ class HumanizeFlow:
         config: FlowConfig | None = None,
         *,
         run_id: str | None = None,
+        results_root: Path | None = None,
     ) -> None:
         self.workspace = workspace.resolve()
         self.config = config or FlowConfig()
         self.run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-        self.store = ArtifactStore(self.workspace, self.run_id)
+        self.store = ArtifactStore(
+            self.workspace,
+            self.run_id,
+            results_root=results_root,
+        )
 
         if self.store.state_file.exists():
             self.state = self.store.load_state()
@@ -45,8 +50,15 @@ class HumanizeFlow:
         workspace: Path,
         run_id: str,
         config: FlowConfig | None = None,
+        *,
+        results_root: Path | None = None,
     ) -> HumanizeFlow:
-        return cls(workspace, config, run_id=run_id)
+        return cls(
+            workspace,
+            config,
+            run_id=run_id,
+            results_root=results_root,
+        )
 
     def begin(self, task: str) -> None:
         self._require(Phase.SETUP)

@@ -10,9 +10,20 @@ from .types import FlowState
 
 
 class ArtifactStore:
-    def __init__(self, workspace: Path, run_id: str) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        run_id: str,
+        *,
+        results_root: Path | None = None,
+    ) -> None:
         self.workspace = workspace.resolve()
-        self.root = self.workspace / ".lda-hm" / "runs" / run_id
+        self.results_root = (
+            results_root.resolve()
+            if results_root is not None
+            else self.workspace / ".lda-hm"
+        )
+        self.root = self.results_root / "runs" / run_id
         self.rounds = self.root / "rounds"
         self.root.mkdir(parents=True, exist_ok=True)
         self.rounds.mkdir(parents=True, exist_ok=True)

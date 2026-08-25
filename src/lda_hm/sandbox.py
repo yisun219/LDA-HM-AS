@@ -6,7 +6,7 @@ import shlex
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 
 class SandboxUnavailable(RuntimeError):
@@ -50,6 +50,23 @@ class E2BSandbox:
         self.cwd = cwd
 
     @staticmethod
+    def load_private_env(path: Optional[Path] = None) -> None:
+        """Load user-scoped E2B settings without ever storing them in Git."""
+        config = path or Path.home() / ".config" / "lda-hm" / "e2b.env"
+        if not config.is_file():
+            return
+        if config.stat().st_mode & 0o077:
+            raise SandboxUnavailable(f"E2B config must be private (0600): {config}")
+        for raw in config.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, separator, value = line.partition("=")
+            if not separator or not key:
+                raise SandboxUnavailable(f"invalid E2B config line in {config}")
+            os.environ.setdefault(key.strip(), value.strip())
+
+    @staticmethod
     def configure_shared_gateway() -> None:
         if os.getenv("E2B_API_URL") != os.getenv("E2B_SANDBOX_URL"):
             return
@@ -80,6 +97,7 @@ class E2BSandbox:
         timeout: int = 3600,
         cwd: str = "/opt/lda/work",
     ) -> "E2BSandbox":
+        cls.load_private_env()
         cls.configure_shared_gateway()
         forwarded = {
             name: value
@@ -129,11 +147,16 @@ class E2BSandbox:
         """Create the configured cwd even when connecting to an older template."""
         if not hasattr(self.client, "commands"):
             return
-        result = self.client.commands.run(
-            f"mkdir -p {shlex.quote(self.cwd)}",
-            cwd="/",
-            timeout=60,
-        )
+        try:
+            result = self.client.commands.run(
+                f"mkdir -p {shlex.quote(self.cwd)}",
+                cwd="/",
+                timeout=60,
+            )
+        except Exception as error:
+            raise SandboxUnavailable(
+                f"could not prepare E2B workdir {self.cwd}: {error}"
+            ) from error
         if int(getattr(result, "exit_code", 1)) != 0:
             raise SandboxUnavailable(
                 f"could not create E2B workdir {self.cwd}: {getattr(result, 'stderr', '')}"
@@ -190,6 +213,25 @@ class E2BSandbox:
                 self.put(local, remote)
         self.run(("chmod", "+x", "/opt/lda/harness/lda-agent-harness.sh"))
         self.run(("find", "/opt/lda/harness/checks", "-type", "f", "-name", "*.sh", "-exec", "chmod", "+x", "{}", ";"))
+
+    def bootstrap_credentials(self) -> None:
+        """Inject existing user-scoped Agent logins without copying them to Git."""
+        mappings = (
+            (Path.home() / ".pi" / "agent" / "auth.json", "/home/user/.pi/agent/auth.json"),
+            (Path.home() / ".claude" / ".credentials.json", "/home/user/.claude/.credentials.json"),
+        )
+        installed = 0
+        for local, remote in mappings:
+            if not local.is_file():
+                continue
+            self.run(("mkdir", "-p", str(Path(remote).parent)))
+            self.put(local, remote)
+            result = self.run(("chmod", "0600", remote))
+            if not result.ok:
+                raise SandboxUnavailable(f"could not protect Agent credential {remote}")
+            installed += 1
+        if installed == 0:
+            raise SandboxUnavailable("no Pi or Claude login is available for E2B Agent execution")
 
 
 class FakeSandbox:

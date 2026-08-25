@@ -88,9 +88,19 @@ stateDiagram-v2
 
 ## Durable artifacts
 
-Each run is stored below `.lda-hm/runs/<run-id>/`. The state file is written
-atomically whenever a transition succeeds. The flow never treats a transcript
-as its state; backend logs and flow checkpoints have different responsibilities.
+Each run is stored below `<results-root>/runs/<run-id>/`. By default,
+`results-root` is the package workspace's `.lda-hm` directory. Production runs
+set `--results-root` or `LDA_RESULTS_ROOT` to a dedicated result repository so
+flow source, package source, and execution evidence have separate histories.
+The state file is written atomically whenever a transition succeeds. The flow
+never treats a transcript as its state; backend logs and flow checkpoints have
+different responsibilities.
+
+The result repository tracks small reviewable artifacts: state, plans, round
+contracts and summaries, fence results, benchmark summaries, digests, and
+external artifact references. ISO images, SquashFS files, Debian packages,
+credentials, and large raw traces remain in external artifact storage and are
+referenced by immutable digest.
 
 Core artifacts are:
 

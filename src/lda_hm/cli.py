@@ -55,6 +55,14 @@ def main(argv: list[str] | None = None) -> int:
     run = sub.add_parser("run", help="run the full LDA flow in E2B")
     run.add_argument("workspace", type=Path)
     run.add_argument("--run-id", default=None)
+    run.add_argument(
+        "--results-root",
+        type=Path,
+        default=Path(os.environ["LDA_RESULTS_ROOT"])
+        if os.getenv("LDA_RESULTS_ROOT")
+        else None,
+        help="durable result repository root; defaults to WORKSPACE/.lda-hm",
+    )
     run.add_argument("--task", required=True)
     run.add_argument("--contract", default="Advance the highest-priority unmet acceptance criterion")
     run.add_argument("--max-convergence-rounds", type=int, default=3)
@@ -73,7 +81,21 @@ def main(argv: list[str] | None = None) -> int:
         workspace = args.workspace.resolve()
         card = _card(workspace / ".lda-hm" / "task-card.json")
         sandbox = _connect(card.baseline.template)
-        flow = HumanizeFlow(workspace, run_id=args.run_id)
+        flow = HumanizeFlow(
+            workspace,
+            run_id=args.run_id,
+            results_root=args.results_root,
+        )
+        flow.store.write_json(
+            "run.json",
+            {
+                "schema_version": 1,
+                "run_id": flow.run_id,
+                "package": card.package.package,
+                "task_card_digest": card.digest(),
+                "baseline_digest": card.baseline.digest(),
+            },
+        )
         agents = {
             role: CommandAgent.from_env(sandbox, role=role)
             for role in ("drafter", "planner", "analyst", "builder", "reviewer")
@@ -91,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         execution.bootstrap_template_assets(Path(__file__).resolve().parents[2] / "sandbox" / "lda-base")
+        sandbox.bootstrap_credentials()
         if not flow.state.metadata.get("workspace_prepared"):
             execution.prepare_workspace()
             flow.state.metadata["workspace_prepared"] = True

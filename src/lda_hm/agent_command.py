@@ -51,9 +51,10 @@ class CommandAgent:
 
     @classmethod
     def from_env(cls, sandbox: Sandbox, *, role: str) -> "CommandAgent":
-        raw = os.getenv("LDA_AGENT_COMMAND", "").strip()
-        if not raw:
-            raise RuntimeError("LDA_AGENT_COMMAND must name the E2B agent harness command")
+        raw = os.getenv(
+            "LDA_AGENT_COMMAND",
+            "/opt/lda/harness/lda-agent-harness.sh",
+        ).strip()
         return cls(sandbox, tuple(shlex.split(raw)), role=role)
 
     def new_session(self, cwd: Path) -> CommandSession:

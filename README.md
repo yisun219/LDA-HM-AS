@@ -40,11 +40,9 @@ Builder -> Fence -> Fresh Reviewer loop:
 python -m lda_hm.cli init-card ./work examples/libpng-card.json
 export LDA_AGENT_COMMAND="/opt/lda/harness/lda-agent-harness.sh"
 python -m lda_hm.cli run ./work \
+  --results-root /fact_data/yisun/Linux-Development-Agent-Runs \
   --task "Optimize libpng for Ubuntu 26.04" \
-  --idea "$(cat idea.txt)" \
-  --plan ./plan.txt \
-  --goal-tracker ./goal-tracker.txt \
-  --contract ./round-contract.txt
+  --contract "Advance the highest-priority unmet acceptance criterion"
 ```
 
 The harness accepts `--prompt-file`, `--role`, and `--session`, and returns one
@@ -52,6 +50,11 @@ response on stdout. Every build, test, benchmark, upload, and agent turn is
 executed in E2B. The flow will not silently run on the host. Set
 `LDA_AGENT_PROVIDER`/`LDA_AGENT_MODEL` and the corresponding provider
 credential in the E2B environment before running.
+
+Production run state and compact evidence belong in a separate result
+repository. Set `--results-root` (or `LDA_RESULTS_ROOT`) to that repository.
+Large immutable artifacts stay outside Git; their SHA256 and storage location
+are recorded with the run.
 
 The example card currently uses the explicit transitional source_package
 baseline. Production Ubuntu Desktop work must use iso_snapshot with an

@@ -30,6 +30,25 @@ Implement one bounded objective.
 
 
 class HumanizeFlowTest(unittest.TestCase):
+    def test_external_results_root_is_resumable(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace_name, tempfile.TemporaryDirectory() as results_name:
+            workspace = Path(workspace_name)
+            results = Path(results_name)
+            flow = HumanizeFlow(workspace, run_id="external-run", results_root=results)
+            flow.begin("Optimize libpng")
+
+            self.assertEqual(
+                flow.store.root,
+                results.resolve() / "runs" / "external-run",
+            )
+            self.assertFalse((workspace / ".lda-hm").exists())
+            resumed = HumanizeFlow.resume(
+                workspace,
+                "external-run",
+                results_root=results,
+            )
+            self.assertEqual(resumed.state.phase, Phase.IDEA)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.workspace = Path(self.temporary.name)
