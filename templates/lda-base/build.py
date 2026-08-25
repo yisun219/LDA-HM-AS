@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -121,13 +122,25 @@ def _write_template_assets(directory: Path) -> tuple[Path, Path]:
     return intel, lda
 
 
+def _inject_archive(template: Template, payload: bytes, destination: str, name: str) -> Template:
+    encoded = base64.b64encode(payload).decode("ascii")
+    archive = f"/opt/.lda-template-assets/{name}.tar.gz.b64"
+    return template.run_cmd(
+        f"mkdir -p {destination} /opt/.lda-template-assets && "
+        f"printf '%s' '{encoded}' | base64 -d > {archive} && "
+        f"tar -xzf {archive} -C {destination} "
+        f"{'--strip-components=1 ' if name == 'intel-performance-skills' else ''}&& "
+        f"rm -f {archive}"
+    )
+
+
 def build() -> None:
     configure_shared_gateway()
     _patch_gateway_step_parser()
     assets = tempfile.TemporaryDirectory(dir=ROOT, prefix=".lda-template-assets-")
     try:
         intel_archive, lda_archive = _write_template_assets(Path(assets.name))
-        template = Template(file_context_path=ROOT).from_image("ubuntu:26.04")
+        template = Template().from_image("ubuntu:26.04")
         template = template.apt_install(BASE_PACKAGES)
         template = template.run_cmd(
             "python3 -m venv /opt/lda-venv && "
@@ -135,13 +148,11 @@ def build() -> None:
             "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
         )
         template = template.run_cmd("npm install --global @openai/codex")
-        template = template.copy(
-            intel_archive.relative_to(ROOT), "/opt/intel-performance-skills.tar.gz"
-        )
-        template = template.run_cmd(
-            "mkdir -p /opt/intel-performance-skills && "
-            "tar -xzf /opt/intel-performance-skills.tar.gz -C /opt/intel-performance-skills "
-            "--strip-components=1 && rm /opt/intel-performance-skills.tar.gz"
+        template = _inject_archive(
+            template,
+            intel_archive.read_bytes(),
+            "/opt/intel-performance-skills",
+            "intel-performance-skills",
         )
         template = template.run_cmd(
             "cd /opt/intel-performance-skills && "
@@ -150,10 +161,8 @@ def build() -> None:
             "test -f skills/phoronix-test-suite/SKILL.md && "
             f"printf '%s\\n' '{INTEL_SKILLS_COMMIT}' > .lda-pinned-commit"
         )
-        template = template.copy(lda_archive.relative_to(ROOT), "/opt/lda-flow.tar.gz")
-        template = template.run_cmd(
-            "mkdir -p /opt/lda && tar -xzf /opt/lda-flow.tar.gz -C /opt/lda && "
-            "rm /opt/lda-flow.tar.gz"
+        template = _inject_archive(
+            template, lda_archive.read_bytes(), "/opt/lda", "lda-flow"
         )
         template = template.run_cmd(
             f"printf '%s\\n' '{LDA_COMMIT}' > /opt/lda/.lda-pinned-commit"
