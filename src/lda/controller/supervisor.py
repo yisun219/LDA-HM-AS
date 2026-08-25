@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -82,13 +83,27 @@ class ArgusSupervisor:
             e2e = self.client.create({"project": "lda", "run_id": self.world.run_id,
                 "life_cycle": str(self.world.life_cycle), "mission_id": "portfolio",
                 "candidate_id": "none", "role": "e2e", "template": "lda-e2e", "lease_id": new_id("lease")})
-            self.client.command(e2e, "./run-portfolio-e2e", background=False)
-            portfolio = BenchmarkRunner().portfolio({"web": 1.01, "server": 1.012})
+            command_result = self.client.command(e2e, "./run-portfolio-e2e", background=False)
+            portfolio = self._portfolio_from_result(command_result)
             self.client.kill(e2e)
             self.world.portfolio_e2e.append(portfolio)
             self.world.convergence_signals.update({"portfolio_geomean_speedup": portfolio["geomean_speedup"], "improved_workloads": portfolio["improved_workloads"]})
             return {"action": action.__dict__, "portfolio": portfolio}
         return {"action": action.__dict__, "status": "accepted"}
+
+    @staticmethod
+    def _portfolio_from_result(command_result: dict[str, Any]) -> dict[str, Any]:
+        """Consume only JSON emitted by the E2E harness; never invent reward data."""
+        if command_result.get("exit_code") != 0:
+            return {"invalid": True, "geomean_speedup": 0.0, "improved_workloads": 0,
+                    "reason": "portfolio_e2e_command_failed"}
+        try:
+            payload = json.loads(command_result.get("stdout", ""))
+            workloads = payload["workloads"]
+            return BenchmarkRunner().portfolio(workloads)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return {"invalid": True, "geomean_speedup": 0.0, "improved_workloads": 0,
+                    "reason": f"missing_or_invalid_portfolio_evidence: {exc}"}
 
     def create_dynamic_mission(self, package: str, *, priority: float = 0.5, estimated_cost: float = 1.0,
                                evidence_refs: list[str] | None = None) -> Mission:

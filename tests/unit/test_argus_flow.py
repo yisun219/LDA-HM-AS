@@ -5,6 +5,7 @@ from pathlib import Path
 from lda.agents.factory import AgentFactory
 from lda.argus.capabilities.registry import CapabilityRegistry
 from lda.argus.convergence.evaluator import ConvergenceEvaluator
+from lda.controller.supervisor import ArgusSupervisor
 from lda.argus.policy.engine import PolicyEngine, PolicyViolation
 from lda.e2b.client import E2BClient
 from lda.e2b.gateway import GatewayConfig, SharedGateway
@@ -58,3 +59,7 @@ class ArgusFlowTest(unittest.TestCase):
         world = WorldState("r", life_cycle=20)
         self.assertEqual(ConvergenceEvaluator().evaluate(world), (True, "max_life_cycles"))
 
+    def test_portfolio_reward_requires_harness_evidence(self):
+        result = ArgusSupervisor._portfolio_from_result({"exit_code": 0, "stdout": ""})
+        self.assertTrue(result["invalid"])
+        self.assertEqual(result["geomean_speedup"], 0.0)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from lda.agents.factory import AgentFactory
@@ -26,8 +27,8 @@ class HumanizeMission:
         work = self.agents.client.create({"project": "lda", "run_id": self.world.run_id,
             "life_cycle": str(self.world.life_cycle), "mission_id": self.mission.mission_id,
             "candidate_id": candidate.candidate_id, "role": "candidate-work", "template": "lda-base-lda-hm-as-prod-20260825-v12", "lease_id": new_id("lease")})
-        self.agents.client.command(work, "./configure && cmake --build build", background=False)
-        self.agents.client.command(work, "ctest --test-dir build", background=False)
+        configure = self.agents.client.command(work, "./configure && cmake --build build", background=False)
+        local_verify = self.agents.client.command(work, "ctest --test-dir build", background=False)
         manager = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
                                    mission_id=self.mission.mission_id, candidate_id=candidate.candidate_id,
                                    role="Mission Planner", independence_group="planner")
@@ -53,9 +54,17 @@ class HumanizeMission:
             "symbol_versions": manifest.symbol_versions, "headers": manifest.headers,
             "install_paths": manifest.install_paths, "package_install": True, "rollback": True}},
             anti_cheat=AntiCheat().inspect({}))
-        benchmark = BenchmarkRunner().measure([100.0] * 30, [96.0] * 30)
-        benchmark_result = {"micro_speedup": benchmark.get("speedup", 1.0), "micro_ci_lower": benchmark.get("ci_lower", 1.0),
-                            "e2e_speedup": 1.012, "invalid": benchmark.get("invalid", False), "accepted": True}
+        benchmark_result = self._read_benchmarks(work)
+        benchmark_result.update({
+            "build_exit_code": configure.get("exit_code"),
+            "local_verify_exit_code": local_verify.get("exit_code"),
+            "build_passed": configure.get("exit_code") == 0,
+            "local_verify_passed": local_verify.get("exit_code") == 0,
+        })
+        if not benchmark_result["build_passed"] or not benchmark_result["local_verify_passed"]:
+            benchmark_result["accepted"] = False
+            benchmark_result["invalid"] = True
+            benchmark_result["reason"] = "build_or_local_verify_failed"
         candidate.fence_passed = judge_result["fence_passed"]
         candidate.judge_status = "PASS" if judge_result["valid"] else "REJECT"
         candidate.micro_speedup = benchmark_result["micro_speedup"]
@@ -71,3 +80,29 @@ class HumanizeMission:
         self.agents.release(reviewer)
         return {"contract": contract.dump(), "candidate": candidate, "judge": judge_result, "benchmark": benchmark_result,
                 "sandboxes": {"work": work.sandbox_id, "judge": judge_box.sandbox_id}}
+
+    def _read_benchmarks(self, work) -> dict[str, Any]:
+        """Only accept benchmark evidence produced inside the candidate sandbox."""
+        try:
+            micro = json.loads(self.agents.client.filesystem_read(work, "/workspace/benchmarks/micro.json"))
+            e2e = json.loads(self.agents.client.filesystem_read(work, "/workspace/benchmarks/e2e.json"))
+            baseline = micro["baseline"]
+            candidate = micro["candidate"]
+            e2e_values = e2e["workloads"]
+            micro_result = BenchmarkRunner().measure(baseline, candidate, kind="micro")
+            portfolio = BenchmarkRunner().portfolio(e2e_values)
+            return {
+                "micro_speedup": micro_result.get("speedup", 0.0),
+                "micro_ci_lower": micro_result.get("ci_lower", 0.0),
+                "e2e_speedup": portfolio.get("geomean_speedup", 0.0),
+                "improved_workloads": portfolio.get("improved_workloads", 0),
+                "invalid": bool(micro_result.get("invalid") or portfolio.get("invalid")),
+                "accepted": bool(micro_result.get("accepted") and not portfolio.get("invalid")),
+                "micro": micro_result,
+                "portfolio": portfolio,
+                "evidence_refs": ["/workspace/benchmarks/micro.json", "/workspace/benchmarks/e2e.json"],
+            }
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return {"invalid": True, "accepted": False, "reason": f"missing_or_invalid_benchmark_evidence: {exc}",
+                    "micro_speedup": 0.0, "micro_ci_lower": 0.0, "e2e_speedup": 0.0,
+                    "improved_workloads": 0, "evidence_refs": []}
