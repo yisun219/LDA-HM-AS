@@ -154,11 +154,11 @@ def build() -> None:
         strip_components=1,
     )
     template = template.run_cmd(
+        "cd /opt/intel-performance-skills && "
         "test -f skills/linux-perf/SKILL.md && "
         "test -f skills/performance-patterns/SKILL.md && "
         "test -f skills/phoronix-test-suite/SKILL.md && "
-        f"printf '%s\\n' '{INTEL_SKILLS_COMMIT}' > .lda-pinned-commit",
-        workdir="/opt/intel-performance-skills",
+        f"printf '%s\\n' '{INTEL_SKILLS_COMMIT}' > .lda-pinned-commit"
     )
     template = _inject_archive(
         template,
