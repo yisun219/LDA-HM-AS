@@ -74,21 +74,29 @@ class HumanizeStages:
             GEN_PLAN_ANALYSIS.format(idea=idea)
         )
         analysis = self._text(analysis_answer, "analyst returned an empty analysis")
+        self.flow.store.write_text("planning/analysis.md", analysis + "\n")
         candidate = self.topology.planner.ask(
             GEN_PLAN.format(idea=idea, analysis=analysis)
         )
         plan = self._text(candidate, "planner returned an empty plan")
+        self.flow.store.write_text("planning/candidate-0.md", plan + "\n")
         converged = False
-        for _ in range(max_convergence_rounds):
+        for round_number in range(max_convergence_rounds):
             review_answer = self.topology.fresh_analyst().ask(
                 GEN_PLAN_REVIEW.format(idea=idea, plan=plan)
             )
             review = self._text(review_answer, "analyst returned an empty plan review")
+            self.flow.store.write_text(
+                f"planning/review-{round_number}.md", review + "\n"
+            )
             if review.splitlines()[-1].strip() == "CONVERGED":
                 converged = True
                 break
             revised = self.topology.planner.ask(GEN_PLAN_REVISE.format(review=review))
             plan = self._text(revised, "planner returned an empty revision")
+            self.flow.store.write_text(
+                f"planning/candidate-{round_number + 1}.md", plan + "\n"
+            )
         if not converged:
             raise RuntimeError(
                 f"plan did not converge within {max_convergence_rounds} rounds"

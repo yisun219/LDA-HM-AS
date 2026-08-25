@@ -16,6 +16,8 @@ done
 test "${LDA_EXECUTION_MODE:-e2b}" = e2b || { echo "LDA refuses non-E2B execution" >&2; exit 78; }
 test -s "$prompt_file" || { echo "prompt file is required" >&2; exit 64; }
 test -n "$role" && test -n "$session" || { echo "role and session are required" >&2; exit 64; }
+role_model_var="LDA_AGENT_MODEL_${role^^}"
+selected_model="${!role_model_var:-${LDA_AGENT_MODEL:-}}"
 session_dir=/opt/lda/agent-state/sessions
 trace_dir=/opt/lda/agent-state/traces
 mkdir -p "$session_dir" "$trace_dir"
@@ -36,7 +38,7 @@ if test "$backend" = claude; then
   thread_file="$session_dir/$session.thread"
   raw_trace="$trace_dir/$session.jsonl"
   last_message="$session_dir/$session.last.txt"
-  model_args=(--model "${LDA_AGENT_MODEL:-claude-opus-4-8}")
+  model_args=(--model "${selected_model:-claude-opus-4-8}")
   effort_args=(--effort "${LDA_AGENT_THINKING:-high}")
   common_args=(
     --print --bare --output-format json
@@ -81,7 +83,7 @@ if test "$backend" = codex; then
   raw_trace="$trace_dir/$session.jsonl"
   last_message="$session_dir/$session.last.txt"
   model_args=()
-  test -z "${LDA_AGENT_MODEL:-}" || model_args=(--model "$LDA_AGENT_MODEL")
+  test -z "$selected_model" || model_args=(--model "$selected_model")
   if test -s "$thread_file"; then
     thread_id="$(cat "$thread_file")"
     codex exec resume --json "${model_args[@]}" \
@@ -110,7 +112,7 @@ provider_args=()
 model_args=()
 thinking_args=(--thinking "${LDA_AGENT_THINKING:-high}")
 test -z "${LDA_AGENT_PROVIDER:-}" || provider_args=(--provider "$LDA_AGENT_PROVIDER")
-test -z "${LDA_AGENT_MODEL:-}" || model_args=(--model "$LDA_AGENT_MODEL")
+test -z "$selected_model" || model_args=(--model "$selected_model")
 
 tool_args=()
 case "$role" in

@@ -68,7 +68,9 @@ are recorded with the run.
 The harness selects an environment-backed Claude endpoint first, then Codex,
 then Pi. It can also be pinned with `LDA_AGENT_BACKEND=claude|codex|pi`.
 The validated Claude default is `claude-opus-4-8`; override it with
-`LDA_AGENT_MODEL` when another gateway exposes a different model set.
+`LDA_AGENT_MODEL` when another gateway exposes a different model set. A role
+can be pinned independently with `LDA_AGENT_MODEL_DRAFTER`, `_PLANNER`,
+`_ANALYST`, `_BUILDER`, or `_REVIEWER`.
 Claude, Codex, and Pi sessions all run inside E2B; private credentials are
 injected only when the Sandbox starts.
 
