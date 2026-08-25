@@ -1,0 +1,19 @@
+{
+  "name": "lda-controller",
+  "version": "1",
+  "roles": [
+    "Argus Supervisor",
+    "Humanize Runtime",
+    "Mission Scheduler",
+    "Policy Engine",
+    "AgentFactory",
+    "E2B Client",
+    "Tool Gateway",
+    "World State",
+    "Outcome Ledger",
+    "Capability Registry",
+    "State Store",
+    "Artifact Store",
+    "Secret Redactor"
+  ]
+}

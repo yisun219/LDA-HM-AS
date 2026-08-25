@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.lda/
+.humanize/
+.pytest_cache/
+configs/lda.yaml
+.campaign-input/
+runs/

@@ -1,0 +1,4 @@
+# The shared gateway currently exposes the tested 2.10.x SDK. Keep this pin
+# until the gateway publishes a compatible 2.45.x wheel.
+e2b==2.10.2
+

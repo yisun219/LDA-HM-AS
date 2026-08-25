@@ -1,0 +1,11 @@
+{
+  "name": "lda-e2e",
+  "version": "1",
+  "tools": [
+    "Chrome",
+    "Playwright",
+    "Web server",
+    "GUI",
+    "system workload"
+  ]
+}

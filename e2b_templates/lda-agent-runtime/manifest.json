@@ -1,0 +1,12 @@
+{
+  "name": "lda-agent-runtime",
+  "version": "1",
+  "roles": [
+    "Codex SDK/CLI",
+    "Agent Runner",
+    "JSON Schema",
+    "MCP Client",
+    "Role Prompt",
+    "Intel Performance Skills"
+  ]
+}

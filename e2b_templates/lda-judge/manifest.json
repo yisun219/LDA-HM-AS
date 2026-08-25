@@ -1,0 +1,13 @@
+{
+  "name": "lda-judge",
+  "version": "1",
+  "checks": [
+    "ABI/API/FFI Fence",
+    "self test",
+    "reverse dependency",
+    "benchmark",
+    "anti-cheat",
+    "package install/rollback"
+  ],
+  "llm": false
+}

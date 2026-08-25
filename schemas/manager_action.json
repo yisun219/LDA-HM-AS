@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["action", "expected_value", "estimated_cost", "risk", "reason_summary"],
+  "properties": {
+    "action": {"enum": ["CREATE_MISSION", "REPRIORITIZE_MISSION", "PAUSE_MISSION", "RESUME_MISSION", "STOP_MISSION", "CONTINUE_CANDIDATE", "CREATE_RESEARCH_SNAPSHOT", "PROPOSE_CAPABILITY", "START_CAPABILITY_MISSION", "RUN_PORTFOLIO_E2E", "PROPOSE_STOP"]},
+    "target_id": {"type": ["string", "null"]},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "expected_value": {"type": "number", "minimum": 0},
+    "estimated_cost": {"type": "number", "minimum": 0},
+    "risk": {"type": "number", "minimum": 0, "maximum": 1},
+    "reason_summary": {"type": "string"},
+    "requested_budget": {"type": "object"},
+    "preconditions": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

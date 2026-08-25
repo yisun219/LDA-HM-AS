@@ -1,0 +1,22 @@
+{
+  "name": "lda-base",
+  "version": "1",
+  "tools": [
+    "Ubuntu 26.04",
+    "GCC",
+    "Clang",
+    "LLD",
+    "CMake",
+    "Ninja",
+    "Meson",
+    "autotools",
+    "debhelper",
+    "perf",
+    "strace",
+    "valgrind",
+    "bpftrace",
+    "numactl",
+    "abi-compliance-checker",
+    "Benchmark Harness"
+  ]
+}
