@@ -64,7 +64,12 @@ class AgentFactory:
             _, sandbox = self.create(spec)
         command = self.client.codex_command(prompt)
         try:
-            result = self.client.command(sandbox, command, background=False)
+            # The gateway's default command deadline is short.  AgentSpec is
+            # the authoritative bounded lifetime for a Codex session; without
+            # forwarding it real Builder/Reviewer sessions are killed at the
+            # transport default before they can return structured JSON.
+            result = self.client.command(sandbox, command, background=False,
+                                         timeout=spec.timeout_seconds)
         except Exception as exc:
             if self.client.allow_agent_stub and os.environ.get("LDA_ALLOW_AGENT_STUB") == "1":
                 result = {"status": "agent_stub", "exit_code": 0, "stdout": "{}", "stderr": str(exc)}

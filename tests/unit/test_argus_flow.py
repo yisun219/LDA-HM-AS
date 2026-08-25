@@ -10,6 +10,8 @@ from lda.argus.policy.engine import PolicyEngine, PolicyViolation
 from lda.e2b.client import E2BClient
 from lda.e2b.gateway import GatewayConfig, SharedGateway
 from lda.models import ManagerAction, WorldState
+from lda.models import Mission
+from lda.research.campaign import CANARY, TOP10
 from lda.state.store import EventStore
 
 
@@ -63,3 +65,33 @@ class ArgusFlowTest(unittest.TestCase):
         result = ArgusSupervisor._portfolio_from_result({"exit_code": 0, "stdout": ""})
         self.assertTrue(result["invalid"])
         self.assertEqual(result["geomean_speedup"], 0.0)
+
+    def test_top10_expansion_requires_system_outcome_and_measured_e2e(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            qualification = {"results": [{"package": package, "checks": {
+                name: {"available": True} for name in
+                ("binary_package", "source_mapping", "dependency_metadata", "build_tools")
+            }} for package in TOP10]}
+            supervisor = ArgusSupervisor.bootstrap(
+                tmp, "r", client=E2BClient(fake=True), packages=CANARY,
+                campaign={"canary": CANARY, "top10": TOP10}, qualification=qualification)
+            canary_missions = [m for m in supervisor.world.missions if m.package in CANARY]
+            for mission in canary_missions:
+                mission.status = "SUCCEEDED"
+                supervisor.world.outcome_ledger.append({"mission_id": mission.mission_id,
+                                                        "classification": "SUCCESS_LOCAL"})
+                supervisor.world.benchmark_ledger.append({"mission_id": mission.mission_id,
+                                                          "accepted": True, "invalid": False,
+                                                          "portfolio": {"invalid": False,
+                                                                        "geomean_speedup": 1.03,
+                                                                        "improved_workloads": 2}})
+            supervisor._expand_after_canary()
+            self.assertEqual(set(supervisor.world.convergence_signals["canary_pending"]), set(CANARY))
+            self.assertEqual({m.package for m in supervisor.world.missions}, set(CANARY))
+
+            for mission in canary_missions:
+                supervisor.world.outcome_ledger.append({"mission_id": mission.mission_id,
+                                                        "classification": "SUCCESS_SYSTEM"})
+            supervisor._expand_after_canary()
+            self.assertEqual(supervisor.world.convergence_signals["canary_pending"], [])
+            self.assertEqual({m.package for m in supervisor.world.missions}, set(TOP10))

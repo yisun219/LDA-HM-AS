@@ -14,6 +14,7 @@ from lda.models import WorldState
 from lda.research.ingest import ingest
 from lda.research.campaign import prepare as prepare_campaign
 from lda.research.qualification import QualificationRunner
+from lda.research.release import evaluate_canary_release
 from lda.state.store import EventStore
 from lda.templates import build_templates
 
@@ -49,15 +50,17 @@ def _run(args: argparse.Namespace) -> dict:
     qualification = QualificationRunner(client).run(campaign, args.run_id)
     qualification_artifact = root / ".lda" / "artifacts" / "qualification.json"
     qualification_artifact.parent.mkdir(parents=True, exist_ok=True)
+    # Qualification may contain incomplete rows for the whole Top 10.  Only
+    # the canary rows authorize execution, and every hard gate must carry an
+    # explicit evidence reference.
+    qualification["qualification_blockers"] = list(qualification.get("release_blockers", []))
+    release = evaluate_canary_release(qualification, campaign.canary)
+    qualification.update(release)
     qualification_artifact.write_text(json.dumps(qualification, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if qualification.get("release_blockers"):
+    if not release["canary_release_ready"]:
         client.kill(controller)
-        raise RuntimeError("Campaign stopped after Top 10 Qualification; release blockers recorded at " + str(qualification_artifact))
-    qualified = [row["package"] for row in qualification["results"]
-                 if all(check.get("available", False) for check in row["checks"].values())]
-    if not qualified:
-        client.kill(controller)
-        raise RuntimeError("qualification produced no package eligible for a canary")
+        raise RuntimeError("Campaign stopped before canary missions; release blockers recorded at " + str(qualification_artifact))
+    qualified = release["eligible_packages"]
     campaign_dict = campaign.dump()
     supervisor = ArgusSupervisor.bootstrap(root, args.run_id, client=client,
         packages=qualified, campaign=campaign_dict, qualification=qualification)

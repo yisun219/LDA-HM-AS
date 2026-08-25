@@ -28,16 +28,34 @@ class ArgusSupervisor:
         self.convergence = ConvergenceEvaluator()
         self.scheduler = MissionScheduler()
         self.world = world or self.store.recover()
+        # Recovery requeues a canary whose previous attempt produced invalid
+        # evidence, rather than treating a transport/build failure as a
+        # terminal success.  The attempt counter and event chain remain intact.
+        for mission in self.world.missions:
+            if mission.status == "SUCCEEDED" and mission.last_outcome == "BENCHMARK_INVALID" and mission.attempts < mission.max_attempts:
+                mission.status = "QUEUED"
+                self.world.active = True
+                self.store.append(self.world.run_id, str(self.world.life_cycle), "recovery", "MISSION_REQUEUED",
+                                  payload={"mission_id": mission.mission_id, "reason": "invalid_benchmark_evidence"})
 
     @classmethod
     def bootstrap(cls, root: str | Path, run_id: str, *, client: E2BClient, packages: list[str],
                   campaign: dict[str, Any] | None = None, qualification: dict[str, Any] | None = None) -> "ArgusSupervisor":
         world = WorldState(run_id=run_id, campaign_input=campaign or {}, qualification=qualification or {})
-        canary = set((campaign or {}).get("canary", []))
+        canary = list(dict.fromkeys((campaign or {}).get("canary", [])))
+        canary_set = set(canary)
         for package in packages:
-            priority = 0.95 if package in canary else 0.5
+            priority = 0.95 if package in canary_set else 0.5
             world.missions.append(Mission(new_id("mission"), package, priority=priority, expected_value=priority))
-        world.convergence_signals["qualified_packages"] = list(packages)
+        # ``packages`` is the initial canary authorization set.  The report's
+        # Top 10 remain queued until both canaries pass the inner flow.
+        qualified_top10 = []
+        for row in (qualification or {}).get("results", []):
+            checks = row.get("checks", {})
+            if row.get("package") and all(isinstance(checks.get(name), dict) and checks[name].get("available") is True
+                                           for name in ("binary_package", "source_mapping", "dependency_metadata", "build_tools")):
+                qualified_top10.append(row["package"])
+        world.convergence_signals["qualified_packages"] = qualified_top10 or list(packages)
         world.convergence_signals["canary_pending"] = list(canary)
         supervisor = cls(root, client=client, world=world)
         supervisor.store.save_world(world)
@@ -47,7 +65,12 @@ class ArgusSupervisor:
 
     def _expand_after_canary(self) -> None:
         pending = self.world.convergence_signals.get("canary_pending", [])
-        if pending and all(m.status == "SUCCEEDED" for m in self.world.missions if m.package in pending):
+        # A Judge-passing mission is not enough to release the portfolio: the
+        # canary must have a recorded system-level outcome backed by valid
+        # measured benchmark evidence for every package.
+        canary_missions = [m for m in self.world.missions if m.package in pending]
+        passed = all(self._canary_mission_passed(m) for m in canary_missions)
+        if pending and len(canary_missions) == len(set(pending)) and passed:
             qualified = self.world.convergence_signals.get("qualified_packages", [])
             existing = {m.package for m in self.world.missions}
             for package in qualified:
@@ -56,6 +79,25 @@ class ArgusSupervisor:
             self.world.convergence_signals["canary_pending"] = []
             self.store.append(self.world.run_id, str(self.world.life_cycle), "policy", "CANARY_RELEASE",
                               payload={"packages": qualified})
+
+    def _canary_mission_passed(self, mission: Mission) -> bool:
+        if mission.status != "SUCCEEDED":
+            return False
+        outcomes = [o for o in self.world.outcome_ledger if o.get("mission_id") == mission.mission_id]
+        if not any(o.get("classification") == "SUCCESS_SYSTEM" for o in outcomes):
+            return False
+        benchmarks = [b for b in self.world.benchmark_ledger if b.get("mission_id") == mission.mission_id]
+        if not benchmarks:
+            return False
+        benchmark = benchmarks[-1]
+        if benchmark.get("invalid") or benchmark.get("accepted") is not True:
+            return False
+        portfolio = benchmark.get("portfolio", benchmark)
+        return (
+            portfolio.get("invalid") is not True
+            and float(portfolio.get("geomean_speedup", 0.0)) >= 1.01
+            and int(portfolio.get("improved_workloads", 0)) >= 2
+        )
 
     def manager_action(self) -> ManagerAction:
         queued = sorted((m for m in self.world.missions if m.status == "QUEUED"), key=lambda m: -m.priority)
@@ -77,7 +119,10 @@ class ArgusSupervisor:
             result = HumanizeMission(self.world, mission, self.agents).run()
             classified = self.outcomes.classify(result["judge"], result["benchmark"])
             self.world.outcome_ledger.append({"mission_id": mission.mission_id, **classified})
-            self.world.benchmark_ledger.append(result["benchmark"])
+            benchmark = dict(result["benchmark"])
+            benchmark["mission_id"] = mission.mission_id
+            self.world.benchmark_ledger.append(benchmark)
+            mission.last_outcome = classified.get("classification")
             return {"action": action.__dict__, "outcome": classified, "mission_id": mission.mission_id}
         if action.action == "RUN_PORTFOLIO_E2E":
             e2e = self.client.create({"project": "lda", "run_id": self.world.run_id,
@@ -130,10 +175,20 @@ class ArgusSupervisor:
         self.store.append(self.world.run_id, str(self.world.life_cycle), "controller", "OBSERVE")
         manager = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle), role="Argus Manager", independence_group="manager")
         self.agents.create(manager)
-        self.agents.run(manager, "Observe the world and emit one allowed ManagerAction as JSON.")
+        try:
+            self.agents.run(manager, "Observe the world and emit one allowed ManagerAction as JSON.")
+        except Exception as exc:
+            # Manager output is advisory.  A provider/network stall must not
+            # prevent the deterministic policy from making a bounded action.
+            self.store.append(self.world.run_id, str(self.world.life_cycle), "argus-manager", "AGENT_FAILURE",
+                              payload={"role": manager.role, "error": str(exc)})
         summary = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle), role="World State Summarizer", independence_group="summarizer")
         self.agents.create(summary)
-        self.agents.run(summary, "Summarize structured world facts without hidden reasoning.")
+        try:
+            self.agents.run(summary, "Summarize structured world facts without hidden reasoning.")
+        except Exception as exc:
+            self.store.append(self.world.run_id, str(self.world.life_cycle), "world-summarizer", "AGENT_FAILURE",
+                              payload={"role": summary.role, "error": str(exc)})
         self.agents.release(manager)
         self.agents.release(summary)
         action = self.manager_action()

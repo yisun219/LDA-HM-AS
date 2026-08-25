@@ -28,7 +28,7 @@ class E2BClient:
         self.template_fallback = template_fallback or os.environ.get("LDA_E2B_TEMPLATE_FALLBACK")
         self.allow_agent_stub = allow_agent_stub
         self.sandboxes: dict[str, Sandbox] = {}
-        self._fake_files: dict[tuple[str, str], str] = {}
+        self._fake_files: dict[tuple[str, str], str | bytes] = {}
 
     def _require_runtime(self) -> None:
         if self.fake:
@@ -82,9 +82,13 @@ class E2BClient:
                 role = metadata.get("role", "")
                 agent_role = role in {"Argus Manager", "World State Summarizer", "Research Curator", "Mission Planner", "Profiler", "Builder", "Reviewer", "Trace Auditor", "Outcome Classifier", "Capability Planner", "Capability Builder"}
                 agent_env = self._agent_env() if agent_role else {}
+                # Qualification/build sandboxes may reach the pinned package mirror
+                # for dependency resolution, but receive no credentials. Judges do
+                # not receive network access.
+                network_role = agent_role or role in {"qualification", "candidate-work", "e2e"}
                 native = NativeSandbox.create(template=template,
                     timeout=metadata.get("timeout", 3600), metadata=dict(metadata), envs=agent_env,
-                    secure=True, allow_internet_access=agent_role,
+                    secure=True, allow_internet_access=network_role,
                     api_key=self.gateway.api_key, access_token=self.gateway.config.access_token,
                     api_url=self.gateway.config.api_url, sandbox_url=self.gateway.config.sandbox_url,
                     headers=headers)
@@ -114,14 +118,27 @@ class E2BClient:
         except Exception as exc:
             raise RuntimeError(f"E2B Sandbox.connect failed: {exc}") from exc
 
-    def command(self, sandbox: Sandbox, command: str, *, background: bool = False) -> dict[str, Any]:
+    def command(self, sandbox: Sandbox, command: str, *, background: bool = False,
+                timeout: float | None = None) -> dict[str, Any]:
         self._require_runtime()
         if not sandbox.alive:
             raise RuntimeError("sandbox is not alive")
         if not self.fake:
             try:
-                result = sandbox.native.commands.run(command, background=background)
+                kwargs = {"background": background}
+                if timeout is not None:
+                    kwargs["timeout"] = timeout
+                result = sandbox.native.commands.run(command, **kwargs)
             except Exception as exc:
+                # e2b raises CommandExitException for ordinary non-zero exits.
+                # Preserve the exit status and captured streams so callers can
+                # apply explicit fallback or fail-closed policy instead of
+                # treating an expected probe failure as transport loss.
+                exit_code = getattr(exc, "exit_code", None)
+                if exit_code is not None:
+                    return {"status": "completed", "exit_code": int(exit_code),
+                            "stdout": getattr(exc, "stdout", "") or "",
+                            "stderr": getattr(exc, "stderr", "") or str(exc), "command": command}
                 if self.allow_agent_stub and os.environ.get("LDA_ALLOW_AGENT_STUB") == "1":
                     return {"status": "diagnostic_stub", "exit_code": 0, "stdout": "", "stderr": str(exc), "command": command}
                 raise
@@ -132,18 +149,24 @@ class E2BClient:
             return {"pid": 1, "status": "started", "command": command}
         return {"status": "completed", "exit_code": 0, "stdout": "", "stderr": "", "command": command}
 
-    def filesystem_write(self, sandbox: Sandbox, path: str, content: str) -> None:
+    def filesystem_write(self, sandbox: Sandbox, path: str, content: str | bytes) -> None:
         self._require_runtime()
         if not self.fake:
-            sandbox.native.files.write(path, content)
+            # Source snapshots can contain large pinned tarballs.  The shared
+            # gateway's short default request deadline truncates these uploads
+            # before a candidate sandbox is usable, so use the scoped command
+            # lifetime for the filesystem request as well.
+            sandbox.native.files.write(path, content, request_timeout=1800)
         else:
             self._fake_files[(sandbox.sandbox_id, path)] = content
 
     def filesystem_read(self, sandbox: Sandbox, path: str) -> str:
         self._require_runtime()
         if not self.fake:
-            return sandbox.native.files.read(path)
-        return self._fake_files.get((sandbox.sandbox_id, path), "")
+            data = sandbox.native.files.read(path)
+            return data.decode() if isinstance(data, bytes) else data
+        value = self._fake_files.get((sandbox.sandbox_id, path), "")
+        return value.decode() if isinstance(value, bytes) else value
 
     def snapshot(self, sandbox: Sandbox) -> dict[str, Any]:
         self._require_runtime()

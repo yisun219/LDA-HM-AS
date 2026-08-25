@@ -12,6 +12,12 @@ class OutcomeClassifier:
             category = "ABI_FAILURE"
         elif benchmark.get("invalid"):
             category = "BENCHMARK_INVALID"
+        # A numeric gain is not a releasable system result unless the
+        # benchmark explicitly passed all acceptance gates (including the
+        # target CPU fingerprint and E2E guardrails).  Never classify an
+        # unverified measurement as SUCCESS_SYSTEM.
+        elif benchmark.get("accepted") is not True:
+            category = "BENCHMARK_INVALID"
         elif benchmark.get("e2e_speedup", 1.0) < 0.995:
             category = "E2E_REGRESSION"
         elif benchmark.get("e2e_speedup", 1.0) >= 1.01:
@@ -31,4 +37,3 @@ class OutcomeClassifier:
             "capability_gap": judge.get("capability_gap"),
             "confidence": float(judge.get("confidence", 1.0)),
         }
-
