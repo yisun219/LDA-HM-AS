@@ -1,0 +1,114 @@
+schema_version: 1
+name: ubuntu2604-core-libs
+ubuntu_release: "26.04"
+top_k: 2
+concurrency: 2
+weights:
+  usage_frequency: 0.30
+  performance_criticality: 0.30
+  dependency_centrality: 0.25
+  optimization_feasibility: 0.10
+  verification_readiness: 0.05
+  estimated_cost: -0.15
+agents:
+  builder: claude/claude-opus-4-8:high
+  reviewer: claude/claude-opus-4-8:high
+  forward_env: [ANTHROPIC_API_KEY]
+e2b:
+  template: lda-base
+  timeout_seconds: 21600
+portfolio_min_geomean_speedup: 1.01
+portfolio_max_regression: 0.02
+campaign_benchmarks:
+  - name: imagemagick-png-pipeline
+    layer: campaign_e2e
+    baseline: {argv: [bash, -lc, "base64 -d validation/libpng/fixtures/input.png.b64 > /tmp/input.png && /usr/bin/time -f 'RESULT=%e' convert /tmp/input.png -resize 2048x2048 /tmp/out.png"]}
+    candidate: {argv: [bash, -lc, "base64 -d validation/libpng/fixtures/input.png.b64 > /tmp/input.png && /usr/bin/time -f 'RESULT=%e' convert /tmp/input.png -resize 2048x2048 /tmp/out.png"]}
+    checksum: campaign-png-v1
+  - name: fio-libaio
+    layer: campaign_e2e
+    baseline: {argv: [bash, -lc, "/usr/bin/time -f 'RESULT=%e' fio --name=lda-libaio --ioengine=libaio --rw=read --size=64M --filename=/tmp/lda-fio --output-format=json"]}
+    candidate: {argv: [bash, -lc, "/usr/bin/time -f 'RESULT=%e' fio --name=lda-libaio --ioengine=libaio --rw=read --size=64M --filename=/tmp/lda-fio --output-format=json"]}
+    checksum: campaign-fio-v1
+  - name: chromium-render
+    layer: campaign_e2e
+    baseline: {argv: [bash, -lc, "/usr/bin/time -f 'RESULT=%e' chromium --headless --no-sandbox --disable-gpu --dump-dom 'data:text/html,<html><body><h1>LDA</h1></body></html>' >/dev/null"]}
+    candidate: {argv: [bash, -lc, "/usr/bin/time -f 'RESULT=%e' chromium --headless --no-sandbox --disable-gpu --dump-dom 'data:text/html,<html><body><h1>LDA</h1></body></html>' >/dev/null"]}
+    checksum: campaign-chromium-v1
+
+missions:
+  - id: libpng1-6
+    source_package: libpng1.6
+    package:
+      binary_package: libpng16-16t64
+      architecture: amd64
+      multi_arch: same
+      baseline_version_command: {argv: [bash, -lc, "dpkg-query -W -f='${Version}' libpng16-16t64"]}
+      candidate_version_command: {argv: [bash, -lc, "dpkg-deb -f .lda/candidate-debs/libpng16-16t64.deb Version"]}
+      shared_objects: [/usr/lib/x86_64-linux-gnu/libpng16.so.16]
+      headers: [/usr/include/png.h, /usr/include/pngconf.h]
+    signals:
+      usage_frequency: {score: 92, source: ubuntu reverse dependency census, evidence: "Used by ImageMagick, browsers, desktop image stacks"}
+      performance_criticality: {score: 88, source: hot-path profile, evidence: "PNG decode and resize are common image workloads"}
+      dependency_centrality: {score: 84, source: apt reverse dependency graph, evidence: "Large reverse dependency surface"}
+      optimization_feasibility: {score: 72, source: upstream benchmark history, evidence: "Stable C library with isolated hot paths"}
+      verification_readiness: {score: 90, source: validation inventory, evidence: "pngtest, pngvalid, ABI and ImageMagick consumer"}
+      estimated_cost: {score: 35, source: engineering estimate, evidence: "Moderate build and benchmark cost"}
+    cpu_policy: {strategy: generic_amd64_with_runtime_dispatch, expected_model_substring: "Intel(R) Xeon(R) Gold 6548Y+"}
+    protected_paths: [tests, benchmarks, debian/tests, .lda/baseline-debs, .lda/baseline-root, flows, src/lda_flow, templates, validation]
+    allowed_source_paths: [pngrutil.c, pngread.c, pngwrite.c, pngpriv.h, debian]
+    allowed_untracked_globs: ["*.o", "*.deb", build/**, .lda/candidate-debs/**, .lda/candidate-root/**]
+    commands:
+      source_acquire: [{argv: [bash, -lc, "apt-get update && apt-get source libpng1.6"]}]
+      baseline_download: [{argv: [bash, -lc, "mkdir -p .lda/baseline-debs && apt-get download libpng16-16t64 -o Dir::Cache::archives=.lda/baseline-debs"]}]
+      baseline_extract: [{argv: [bash, -lc, "mkdir -p .lda/baseline-root && dpkg-deb -x .lda/baseline-debs/*.deb .lda/baseline-root"]}]
+      clean_candidate: [{argv: [bash, -lc, "rm -f .lda/candidate-debs/*.deb; rm -rf .lda/candidate-root; mkdir -p .lda/candidate-debs .lda/candidate-root"]}]
+      build_candidate: [{argv: [bash, -lc, "cd libpng-1.6* && dpkg-buildpackage -us -uc -b"]}]
+      candidate_extract: [{argv: [bash, -lc, "cp ../libpng16-16t64_*.deb .lda/candidate-debs/ && dpkg-deb -x .lda/candidate-debs/*.deb .lda/candidate-root"]}]
+      package_fence: [{argv: [bash, -lc, "base=$(dpkg-deb -f .lda/baseline-debs/*.deb Version); cand=$(dpkg-deb -f .lda/candidate-debs/*.deb Version); dpkg --compare-versions \"$base\" lt \"$cand\"; test \"$(dpkg-deb -f .lda/candidate-debs/*.deb Package)\" = libpng16-16t64; test \"$(dpkg-deb -f .lda/candidate-debs/*.deb Architecture)\" = amd64; dpkg-deb -f .lda/baseline-debs/*.deb Package Architecture Multi-Arch Depends Pre-Depends Provides Conflicts Replaces Breaks; dpkg-deb -f .lda/candidate-debs/*.deb Package Architecture Multi-Arch Depends Pre-Depends Provides Conflicts Replaces Breaks"]}]
+      abi_fence: [{argv: [bash, -lc, "readelf -d .lda/baseline-root/usr/lib/x86_64-linux-gnu/libpng16.so.16; readelf -d .lda/candidate-root/usr/lib/x86_64-linux-gnu/libpng16.so.16; objdump -T .lda/baseline-root/usr/lib/x86_64-linux-gnu/libpng16.so.16; objdump -T .lda/candidate-root/usr/lib/x86_64-linux-gnu/libpng16.so.16; abidiff .lda/baseline-root/usr/lib/x86_64-linux-gnu/libpng16.so.16 .lda/candidate-root/usr/lib/x86_64-linux-gnu/libpng16.so.16"]}]
+      header_fence: [{argv: [bash, -lc, "printf '#include <png.h>\nint main(){return png_sig_cmp(0,0,0);}\n' | cc -I.lda/candidate-root/usr/include -x c - -lpng16 -o /tmp/png-header"]}]
+      ffi_fence: [{argv: [bash, -lc, "python3 validation/libpng/ffi_consumer.py .lda/baseline-root .lda/candidate-root"]}]
+      self_test: [{argv: [bash, -lc, "cd libpng-1.6* && make -j2 test"]}]
+      dependency_test: [{argv: [bash, -lc, "base64 -d validation/libpng/fixtures/input.png.b64 > /tmp/input.png && convert /tmp/input.png -resize 256x256 /tmp/libpng-consumer.png"]}]
+    benchmarks:
+      - {name: png-sig-cmp, layer: micro, baseline: {argv: [bash, -lc, "python3 validation/libpng/micro.py .lda/baseline-root"], timeout_seconds: 600}, candidate: {argv: [bash, -lc, "python3 validation/libpng/micro.py .lda/candidate-root"], timeout_seconds: 600}, checksum: png-micro-v1, min_speedup: 1.001}
+      - {name: imagemagick-png, layer: package_e2e, baseline: {argv: [bash, -lc, "base64 -d validation/libpng/fixtures/input.png.b64 > /tmp/input.png && /usr/bin/time -f 'RESULT=%e' convert /tmp/input.png -resize 2048x2048 /tmp/out.png"]}, candidate: {argv: [bash, -lc, "base64 -d validation/libpng/fixtures/input.png.b64 > /tmp/input.png && /usr/bin/time -f 'RESULT=%e' convert /tmp/input.png -resize 2048x2048 /tmp/out.png"]}, checksum: png-e2e-v1, min_speedup: 1.0}
+
+  - id: libaio
+    source_package: libaio
+    package:
+      binary_package: libaio1t64
+      architecture: amd64
+      multi_arch: same
+      baseline_version_command: {argv: [bash, -lc, "dpkg-query -W -f='${Version}' libaio1t64"]}
+      candidate_version_command: {argv: [bash, -lc, "dpkg-deb -f .lda/candidate-debs/libaio1t64.deb Version"]}
+      shared_objects: [/usr/lib/x86_64-linux-gnu/libaio.so.1]
+      headers: [/usr/include/libaio.h]
+    signals:
+      usage_frequency: {score: 76, source: Ubuntu server package census, evidence: "Used by fio, databases, and storage services"}
+      performance_criticality: {score: 94, source: storage profile, evidence: "Asynchronous IO is latency-sensitive"}
+      dependency_centrality: {score: 68, source: apt reverse dependency graph, evidence: "Focused but important reverse dependencies"}
+      optimization_feasibility: {score: 70, source: upstream history, evidence: "Small C library with testable lifecycle"}
+      verification_readiness: {score: 86, source: validation inventory, evidence: "partcheck, ABI, FFI, and fio consumer"}
+      estimated_cost: {score: 30, source: engineering estimate, evidence: "Small source tree and focused workloads"}
+    cpu_policy: {strategy: generic_amd64_with_runtime_dispatch, expected_model_substring: "Intel(R) Xeon(R) Gold 6548Y+"}
+    protected_paths: [tests, benchmarks, debian/tests, .lda/baseline-debs, .lda/baseline-root, flows, src/lda_flow, templates, validation]
+    allowed_source_paths: [src, harness, debian]
+    allowed_untracked_globs: ["*.o", "*.deb", build/**, .lda/candidate-debs/**, .lda/candidate-root/**]
+    commands:
+      source_acquire: [{argv: [bash, -lc, "apt-get update && apt-get source libaio"]}]
+      baseline_download: [{argv: [bash, -lc, "mkdir -p .lda/baseline-debs && apt-get download libaio1t64 -o Dir::Cache::archives=.lda/baseline-debs"]}]
+      baseline_extract: [{argv: [bash, -lc, "mkdir -p .lda/baseline-root && dpkg-deb -x .lda/baseline-debs/*.deb .lda/baseline-root"]}]
+      clean_candidate: [{argv: [bash, -lc, "rm -f .lda/candidate-debs/*.deb; rm -rf .lda/candidate-root; mkdir -p .lda/candidate-debs .lda/candidate-root"]}]
+      build_candidate: [{argv: [bash, -lc, "cd libaio-* && dpkg-buildpackage -us -uc -b"]}]
+      candidate_extract: [{argv: [bash, -lc, "cp ../libaio1t64_*.deb .lda/candidate-debs/ && dpkg-deb -x .lda/candidate-debs/*.deb .lda/candidate-root"]}]
+      package_fence: [{argv: [bash, -lc, "base=$(dpkg-deb -f .lda/baseline-debs/*.deb Version); cand=$(dpkg-deb -f .lda/candidate-debs/*.deb Version); dpkg --compare-versions \"$base\" lt \"$cand\"; test \"$(dpkg-deb -f .lda/candidate-debs/*.deb Package)\" = libaio1t64; test \"$(dpkg-deb -f .lda/candidate-debs/*.deb Architecture)\" = amd64; dpkg-deb -f .lda/baseline-debs/*.deb Package Architecture Multi-Arch Depends Pre-Depends Provides Conflicts Replaces Breaks; dpkg-deb -f .lda/candidate-debs/*.deb Package Architecture Multi-Arch Depends Pre-Depends Provides Conflicts Replaces Breaks"]}]
+      abi_fence: [{argv: [bash, -lc, "readelf -d .lda/baseline-root/usr/lib/x86_64-linux-gnu/libaio.so.1; readelf -d .lda/candidate-root/usr/lib/x86_64-linux-gnu/libaio.so.1; objdump -T .lda/baseline-root/usr/lib/x86_64-linux-gnu/libaio.so.1; objdump -T .lda/candidate-root/usr/lib/x86_64-linux-gnu/libaio.so.1; abidiff .lda/baseline-root/usr/lib/x86_64-linux-gnu/libaio.so.1 .lda/candidate-root/usr/lib/x86_64-linux-gnu/libaio.so.1"]}]
+      header_fence: [{argv: [bash, -lc, "cc -I.lda/candidate-root/usr/include validation/libaio/header_consumer.c -L.lda/candidate-root/usr/lib/x86_64-linux-gnu -laio -o /tmp/aio-header"]}]
+      ffi_fence: [{argv: [bash, -lc, "python3 validation/libaio/ffi_consumer.py .lda/baseline-root .lda/candidate-root"]}]
+      self_test: [{argv: [bash, -lc, "cd libaio-* && make partcheck"]}]
+      dependency_test: [{argv: [bash, -lc, "fio --name=lda-libaio --ioengine=libaio --rw=read --size=64M --filename=/tmp/lda-fio"]}]
+    benchmarks:
+      - {name: aio-context, layer: micro, baseline: {argv: [bash, -lc, "python3 validation/libaio/micro.py .lda/baseline-root"], timeout_seconds: 600}, candidate: {argv: [bash, -lc, "python3 validation/libaio/micro.py .lda/candidate-root"], timeout_seconds: 600}, checksum: aio-micro-v1, min_speedup: 1.001}
+      - {name: fio-libaio, layer: package_e2e, baseline: {argv: [bash, -lc, "/usr/bin/time -f 'RESULT=%e' fio --name=lda-libaio --ioengine=libaio --rw=read --size=64M --filename=/tmp/lda-fio --output-format=json"], timeout_seconds: 1200}, candidate: {argv: [bash, -lc, "/usr/bin/time -f 'RESULT=%e' fio --name=lda-libaio --ioengine=libaio --rw=read --size=64M --filename=/tmp/lda-fio --output-format=json"], timeout_seconds: 1200}, checksum: aio-e2e-v1, min_speedup: 1.0}
