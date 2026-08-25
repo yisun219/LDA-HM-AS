@@ -17,7 +17,41 @@ can specialize for autoresearch:
 - runtime-neutral protocols for plugging in a concrete agent backend later.
 
 No agent loop starts automatically. The package only provides orchestration
-and state primitives.
+and state primitives until `lda run` is invoked with an E2B template and an
+agent harness command. Production execution refuses host-shell fallback.
+
+## Executable LDA run
+
+Build `lda-base` through the E2B gateway:
+
+```bash
+export E2B_API_URL=https://e2b.fact-lab.work
+export E2B_SANDBOX_URL="$E2B_API_URL"
+export E2B_API_KEY="..."
+python sandbox/build_template.py
+```
+
+Install and validate a package card, then run the complete flow. The command
+creates an E2B sandbox, overlays the checked-in harness and skills, prepares a
+Ubuntu 26.04 source workspace, captures a baseline, and then runs the full
+Builder -> Fence -> Fresh Reviewer loop:
+
+```bash
+python -m lda_hm.cli init-card ./work examples/libpng-card.json
+export LDA_AGENT_COMMAND="/opt/lda/harness/lda-agent-harness.sh"
+python -m lda_hm.cli run ./work \
+  --task "Optimize libpng for Ubuntu 26.04" \
+  --idea "$(cat idea.txt)" \
+  --plan ./plan.txt \
+  --goal-tracker ./goal-tracker.txt \
+  --contract ./round-contract.txt
+```
+
+The harness accepts `--prompt-file`, `--role`, and `--session`, and returns one
+response on stdout. Every build, test, benchmark, upload, and agent turn is
+executed in E2B. The flow will not silently run on the host. Set
+`LDA_AGENT_PROVIDER`/`LDA_AGENT_MODEL` and the corresponding provider
+credential in the E2B environment before running.
 
 ## Development
 

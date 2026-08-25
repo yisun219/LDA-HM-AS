@@ -78,9 +78,12 @@ class HumanizeFlow:
             raise ValueError("goal tracker must not be empty")
         self.state.plan_hash = self.store.seal_plan(plan.rstrip() + "\n")
         self.store.write_text("goal-tracker.md", goal_tracker.rstrip() + "\n")
-        self.state.start_branch = start_branch
-        self.state.base_branch = base_branch
-        self.state.base_commit = base_commit
+        if start_branch:
+            self.state.start_branch = start_branch
+        if base_branch:
+            self.state.base_branch = base_branch
+        if base_commit:
+            self.state.base_commit = base_commit
         self._move(Phase.IMPLEMENTATION)
 
     def begin_round(self, contract: str) -> None:

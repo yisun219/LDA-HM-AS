@@ -1,0 +1,15 @@
+{
+  "name": "lda-base",
+  "target_release": "ubuntu-26.04",
+  "target_cpu": "INTEL(R) XEON(R) GOLD 6548Y+",
+  "execution_policy": "e2b-only",
+  "skills": [
+    "lda-abi-ffi-fence",
+    "lda-micro-benchmark",
+    "lda-end-to-end-benchmark",
+    "lda-adversarial-review",
+    "intel-performance-skills"
+  ],
+  "harness": "lda-agent-harness.sh"
+  ,"intel_performance_skills_commit": "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
+}

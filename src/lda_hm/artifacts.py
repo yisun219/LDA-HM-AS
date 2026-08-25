@@ -53,13 +53,14 @@ class ArtifactStore:
         self.write_text("plan.sha256", digest + "\n")
         return digest
 
-    def plan_is_intact(self) -> bool:
+    def plan_is_intact(self, expected_hash: str = "") -> bool:
         plan = self.root / "plan.md"
         digest = self.root / "plan.sha256"
         if not plan.is_file() or not digest.is_file():
             return False
         actual = hashlib.sha256(plan.read_bytes()).hexdigest()
-        return actual == digest.read_text(encoding="utf-8").strip()
+        stored = digest.read_text(encoding="utf-8").strip()
+        return actual == stored and (not expected_hash or actual == expected_hash)
 
     @staticmethod
     def _atomic_write(path: Path, content: bytes) -> None:

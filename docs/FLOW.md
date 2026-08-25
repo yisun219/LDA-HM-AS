@@ -6,8 +6,11 @@ This repository contains a new flow implementation. It borrows architectural
 ideas from Humanize but owns its state format, artifacts, prompts, and future
 autoresearch adaptations.
 
-The initial version deliberately does not run a model or modify a target code
-repository. A backend adapter must be supplied before any agent turn can run.
+The production entry point is `lda run`. It creates or resumes an E2B
+execution, overlays the checked-in harness and skills, prepares a pinned Ubuntu
+26.04 source workspace, captures paired baseline measurements, and then runs
+the persistent Builder / fresh Reviewer loop. A missing E2B sandbox or missing
+Agent provider credential is a hard error; there is no host-shell fallback.
 
 ## Layers
 
@@ -20,6 +23,24 @@ flowchart TD
   G --> V[Fresh semantic reviewer]
   V --> F
   F --> E[External evaluator - future]
+```
+
+For an LDA package card the execution path is:
+
+```mermaid
+sequenceDiagram
+  participant C as Task Card
+  participant S as E2B lda-base
+  participant B as Persistent Builder
+  participant F as ABI/FFI + Test Fence
+  participant R as Fresh Reviewer
+  C->>S: prepare Ubuntu 26.04 source workspace
+  S->>S: capture baseline micro + E2E benchmarks
+  B->>S: change one bounded package objective
+  S->>F: baseline tests, dependency tests, ABI, FFI, behavior, lifecycle, security, equivalence
+  F-->>R: allow review only when all checks pass
+  R-->>B: ADVANCED / STALLED / REGRESSED / COMPLETE
+  R-->>S: independent code review and finalize
 ```
 
 The backend owns model transport and session execution. The flow owns roles,
@@ -105,5 +126,7 @@ deterministic gates pass:
 14. maximum iterations
 15. finalize completion
 
-Future research-specific gates can extend the model without weakening these
-invariants.
+In addition to these control gates, every package card has hard compatibility
+fences and two-layer paired benchmarks. A speedup never compensates for an ABI,
+FFI, behavior, package lifecycle, security, result-equivalence, or trace audit
+failure.

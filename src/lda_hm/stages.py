@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .flow import HumanizeFlow
+from .fence import FenceResult, FenceSuite, parse_p_severity
+from .gates import GateContext, GateRunner
 from .prompts import (
     CODE_REVIEW,
     DRIFT_RECOVERY,
@@ -24,12 +26,33 @@ class PlanAnalysis:
     text: str
 
 
+class FenceBlocked(RuntimeError):
+    """The Reviewer is not allowed to judge a round that failed a fence."""
+
+
+class GateBlocked(RuntimeError):
+    """The Reviewer is not allowed to judge a round that failed a gate."""
+
+
 class HumanizeStages:
     """Agent-facing stage entry points; no concrete backend is assumed."""
 
-    def __init__(self, flow: HumanizeFlow, topology: SessionTopology) -> None:
+    def __init__(
+        self,
+        flow: HumanizeFlow,
+        topology: SessionTopology,
+        *,
+        fence_suite: FenceSuite | None = None,
+        gate_runner: GateRunner | None = None,
+        gate_context_factory=None,
+        pre_review_hook=None,
+    ) -> None:
         self.flow = flow
         self.topology = topology
+        self.fence_suite = fence_suite
+        self.gate_runner = gate_runner
+        self.gate_context_factory = gate_context_factory
+        self.pre_review_hook = pre_review_hook
 
     def gen_idea(self, task: str, *, directions: int = 6) -> str:
         if not 2 <= directions <= 10:
@@ -75,6 +98,52 @@ class HumanizeStages:
         builder_answer = self.topology.builder.ask(builder_prompt)
         builder_text = self._text(builder_answer, "builder returned an empty answer")
         phase = self.flow.finish_builder_round(builder_text)
+        if self.pre_review_hook is not None:
+            self.pre_review_hook()
+        if self.fence_suite is not None:
+            fence_results = self.fence_suite.run()
+            self.flow.store.write_json(
+                self.flow.store.round_dir(self.flow.state.current_round).relative_to(self.flow.store.root)
+                / "fence.json",
+                {
+                    "results": [
+                        {
+                            "name": result.name,
+                            "passed": result.passed,
+                            "reason": result.reason,
+                        }
+                        for result in fence_results
+                    ]
+                },
+            )
+            if not all(result.passed for result in fence_results):
+                raise FenceBlocked(
+                    "; ".join(result.reason for result in fence_results if not result.passed)
+                )
+        if self.gate_runner is not None:
+            if self.gate_context_factory is None:
+                raise ValueError("gate_context_factory is required with gate_runner")
+            context: GateContext = self.gate_context_factory(self.flow)
+            gate_results = self.gate_runner.run(context)
+            self.flow.store.write_json(
+                self.flow.store.round_dir(self.flow.state.current_round).relative_to(self.flow.store.root)
+                / "gates.json",
+                {
+                    "results": [
+                        {
+                            "name": result.name,
+                            "passed": result.passed,
+                            "reason": result.reason,
+                            "terminal_phase": result.terminal_phase.value if result.terminal_phase else None,
+                        }
+                        for result in gate_results
+                    ]
+                },
+            )
+            if not all(result.passed for result in gate_results):
+                raise GateBlocked(
+                    "; ".join(result.reason for result in gate_results if not result.passed)
+                )
         if phase.value == "full_alignment":
             prompt = FULL_ALIGNMENT.format(round=self.flow.state.current_round)
         else:
@@ -87,9 +156,7 @@ class HumanizeStages:
     def code_review(self) -> tuple[str, ...]:
         answer = self.topology.fresh_reviewer().ask(CODE_REVIEW)
         text = self._text(answer, "reviewer returned an empty code review")
-        findings = tuple(
-            line.strip() for line in text.splitlines() if line.lstrip().startswith("[P")
-        )
+        findings = parse_p_severity(text.splitlines())
         self.flow.record_code_review(findings)
         return findings
 

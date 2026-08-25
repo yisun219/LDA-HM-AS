@@ -13,3 +13,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.scripts]
+lda = "lda_hm.cli:main"

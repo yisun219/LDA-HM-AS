@@ -83,7 +83,7 @@ class GateRunner:
     def _plan_integrity(self, context: GateContext) -> GateResult:
         if context.state.phase in {Phase.SETUP, Phase.IDEA, Phase.PLAN}:
             return self._pass("plan_integrity")
-        if not context.store.plan_is_intact():
+        if not context.store.plan_is_intact(context.state.plan_hash):
             return GateResult("plan_integrity", False, "sealed plan changed")
         return self._pass("plan_integrity")
 
