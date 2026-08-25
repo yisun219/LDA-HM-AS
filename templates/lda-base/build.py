@@ -195,7 +195,12 @@ def build() -> None:
         template = template.run_cmd(
             "python3 -m venv /opt/lda-venv && "
             "/opt/lda-venv/bin/pip install --no-cache-dir "
-            "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0'"
+            "'pydantic>=2.9,<3' PyYAML 'e2b==2.15.0' playwright && "
+            "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers "
+            "/opt/lda-venv/bin/python -m playwright install chromium && "
+            "browser=$(find /opt/playwright-browsers -type f -name chrome "
+            "-perm -111 | head -n1) && "
+            "test -n \"$browser\" && ln -sf \"$browser\" /usr/local/bin/chromium"
         )
         template = template.run_cmd("npm install --global @openai/codex")
         hmz_filename = "hmz-0.1.0-py3-none-any.whl"
