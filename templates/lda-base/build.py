@@ -18,7 +18,7 @@ from lda_flow.gateway import concise_e2b_error, configure_shared_gateway
 
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
 INTEL_SKILLS_SHA256 = "9f505d7d708935b9199efbd088c1c2b24df689e25530ba2ab4fe0c2b6f5532aa"
-LDA_COMMIT = "7f12181"
+LDA_COMMIT = "0f61b08"
 DEFAULT_TEMPLATE = "lda-base-lda-hm-as"
 ROOT = Path(__file__).resolve().parents[2]
 
