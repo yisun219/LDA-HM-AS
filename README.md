@@ -1,100 +1,162 @@
-# LDA-HM
+# LDA Pure Humanize
 
-LDA-HM is an independent, Humanize-inspired flow for long-running agent work.
-It is not derived from the repository's `main` branch and does not vendor the
-Humanize or Flowverse source trees.
-
-The initial implementation establishes the control plane that later revisions
-can specialize for autoresearch:
-
-- three explicit stages: idea, plan, and RLCR execution;
-- persistent writer sessions and fresh reader/reviewer sessions;
-- immutable plan and git anchors;
-- resumable JSON state and per-round artifacts;
-- a deterministic 15-gate boundary before semantic review;
-- regular review, full alignment, drift recovery, code review, finalize, and
-  methodology-analysis phases;
-- runtime-neutral protocols for plugging in a concrete agent backend later.
-
-No agent loop starts automatically. The package only provides orchestration
-and state primitives until `lda run` is invoked with an E2B template and an
-agent harness command. Production execution refuses host-shell fallback.
-
-## Executable LDA run
-
-Build `lda-base` through the E2B gateway:
-
-```bash
-export E2B_API_URL=https://e2b.fact-lab.work
-export E2B_SANDBOX_URL="$E2B_API_URL"
-export E2B_API_KEY="..."
-python sandbox/build_template.py
-```
-
-Install and validate a package card, then run the complete flow. The command
-creates an E2B sandbox, overlays the checked-in harness and skills, prepares a
-Ubuntu 26.04 source workspace, captures a baseline, and then runs the full
-Builder -> Fence -> Fresh Reviewer loop:
-
-```bash
-python -m lda_hm.cli init-card ./work examples/libpng-card.json
-export LDA_AGENT_COMMAND="/opt/lda/harness/lda-agent-harness.sh"
-# Source a private Agent gateway environment when the run does not use a
-# credential-file login. Never place this file in the repository or template.
-# set -a; source ~/.config/lda/factlab-claude.env; set +a
-python -m lda_hm.cli run ./work \
-  --run-id libpng-production-001 \
-  --results-root /fact_data/yisun/Linux-Development-Agent-Runs \
-  --task "Optimize libpng for Ubuntu 26.04" \
-  --contract "Advance the highest-priority unmet acceptance criterion"
-```
-
-The harness accepts `--prompt-file`, `--role`, and `--session`, and returns one
-response on stdout. Every build, test, benchmark, upload, and agent turn is
-executed in E2B. The flow will not silently run on the host. The default Agent
-backend selection and model behavior are described below.
-
-Resume an interrupted run by invoking the same command with the same
-`--run-id`. A fresh Sandbox reconstructs the deterministic Snapshot baseline,
-reapplies the durable candidate patch, restores the Builder trace, and resumes
-pending deterministic review without repeating the completed Builder turn.
-Changing the task card or baseline digest requires a new run ID.
-
-Production run state and compact evidence belong in a separate result
-repository. Set `--results-root` (or `LDA_RESULTS_ROOT`) to that repository.
-Large immutable artifacts stay outside Git; their SHA256 and storage location
-are recorded with the run.
-
-The harness selects an environment-backed Claude endpoint first, then Codex,
-then Pi. It can also be pinned with `LDA_AGENT_BACKEND=claude|codex|pi`.
-The validated Claude default is `claude-opus-4-8`; override it with
-`LDA_AGENT_MODEL` when another gateway exposes a different model set. A role
-can be pinned independently with `LDA_AGENT_MODEL_DRAFTER`, `_PLANNER`,
-`_ANALYST`, `_BUILDER`, or `_REVIEWER`.
-Claude, Codex, and Pi sessions all run inside E2B; private credentials are
-injected only when the Sandbox starts.
-
-The libpng card uses the production `iso_snapshot` contract anchored to Ubuntu
-26.04 Desktop build `20260423.1`, Snapshot source version `1.6.57-1`, and an
-immutable E2B template ID; see docs/BASELINE.md.
-
-## Development
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-## Repository layout
+This branch implements the E2B-native production flow used to research Ubuntu
+26.04 package optimizations. It preserves the older `lda_hm` package only for
+artifact compatibility; the production command is `lda`, backed by `src/lda`.
 
 ```text
-src/lda_hm/
-  artifacts.py   durable run artifacts and atomic writes
-  flow.py        state machine and transition rules
-  gates.py       deterministic gate model
-  prompts.py     backend-neutral stage prompt contracts
-  runtime.py     Agent and Session protocols
-  stages.py      Gen-Idea, Gen-Plan, and RLCR stage entry points
-  types.py       configuration, state, and review schemas
-docs/FLOW.md     architecture and invariants
-tests/           state-machine and persistence tests
+Pure Humanize
+= multi-Mission Humanize harness
++ LDA Mission flow
++ frozen Research Snapshot
++ frozen Mission Queue
++ independent deterministic Judge
++ E2B-only execution
 ```
+
+ABI, API, and FFI compatibility are hard fences. A candidate that changes a
+SONAME, exported symbol, symbol version, public type layout, calling convention,
+metadata, install path, precompiled consumer behavior, or Debian relationship is
+rejected before performance is considered.
+
+## Prerequisites
+
+- Python 3.12
+- `uv`
+- E2B SDK `2.45.0`
+- a private Codex login at `~/.codex/auth.json`, mode `0600`
+- E2B credentials in the environment or the private file below
+
+The E2B key may be stored outside Git at `~/.config/lda-hm/e2b.yaml`:
+
+```yaml
+e2b_api_key: "..."
+```
+
+The file must be mode `0600`. The key is injected only into the Controller.
+Agent Runtime receives Codex authentication; Workspace, Judge, and E2E
+Sandboxes receive neither model nor E2B credentials.
+
+Install the locked environment:
+
+```bash
+uv sync --extra test
+source .venv/bin/activate
+```
+
+## Build and verify E2B
+
+```bash
+lda template build --all
+lda e2b preflight
+```
+
+Preflight creates a real Sandbox, runs OS/CPU checks, tests files and foreground
+and background commands, reconnects by Sandbox ID and PID, creates and restores
+a Snapshot, tests fork when supported, validates metadata, and reaps every
+Sandbox carrying its `preflight_id`. It never falls back to Docker or the host.
+
+## Start a Pure Humanize run
+
+Research input can be JSON/YAML with structured hints or plain text. Structured
+hints should name the exact Ubuntu binary package used by the inventory.
+
+```bash
+lda research ingest research/
+lda portfolio plan \
+  --research-snapshot RESEARCH_SNAPSHOT_ID \
+  --inventory configs/package-inventory.yaml \
+  --limit 5
+
+lda run \
+  --flow pure-humanize \
+  --research-snapshot RESEARCH_SNAPSHOT_ID \
+  --inventory configs/package-inventory.yaml \
+  --missions configs/missions \
+  --queue-limit 5
+```
+
+`lda run` verifies/builds missing Templates, creates an E2B Volume, launches
+`lda-controller` inside E2B, injects the E2B key and a generated capability
+signing key only into that Controller, injects Codex authentication only into
+Agent Runtime Sandboxes, returns the Run ID, and starts the frozen Mission Queue.
+
+Run operations:
+
+```bash
+lda status --run-id RUN_ID
+lda logs --run-id RUN_ID
+lda resume --run-id RUN_ID
+lda cancel --run-id RUN_ID
+lda e2b reap --run-id RUN_ID
+lda report --run-id RUN_ID
+```
+
+State is transactionally stored in SQLite, mirrored as readable run JSON, and
+audited in append-only JSONL on the Run's E2B Volume. Candidate source patches,
+Agent output, traces, tests, and benchmark samples are content-addressed.
+
+## Execution model
+
+Each run follows this state sequence:
+
+```text
+RUN_CREATED -> E2B_PREFLIGHT -> RESEARCH_FROZEN -> PORTFOLIO_PLANNED
+-> MISSION_QUEUE_FROZEN -> MISSION_BASELINE -> PROFILE -> HYPOTHESIS
+-> CANDIDATE_FORK -> BUILD -> LOCAL_VERIFY -> ADVERSARIAL_REVIEW
+-> CLEAN_JUDGE -> NEXT_MISSION -> PORTFOLIO_E2E
+-> RELEASE_READY | COMPLETED_WITHOUT_RELEASE
+```
+
+Research Curator, Portfolio Planner, Mission Planner, Profiler, Builder,
+Reviewer, and Trace Auditor are independent AgentFactory products. Builder keeps
+one thread per Candidate. Reviewer and Trace Auditor always receive new threads,
+cannot see Builder conversation, cannot modify source, and cannot accept a
+Candidate. Only the deterministic Judge changes acceptance state.
+
+The scoped Tool Gateway signs short-lived HMAC capabilities bound to run,
+mission, candidate, role, workspace, tools, and expiration. Builder can access
+only its Workspace tools. Reviewer can read only sealed artifacts. No Agent can
+call acceptance, baseline/test mutation, unscoped Sandbox creation, secret read,
+or release publication operations.
+
+Judge order is fixed:
+
+```text
+Level 0 upstream self tests
+Level 1 ABI/API/FFI
+Level 2 original binary with candidate library
+Level 3 reverse dependency build/test
+Level 4 application install/launch/smoke
+Level 5 E2E guardrail
+```
+
+Micro benchmarks use ten warmups, thirty paired randomized samples, fixed seed,
+CPU affinity, raw sample retention, geometric paired ratios, and bootstrap 95%
+confidence intervals. Micro wins are local rewards. Default release requires
+Portfolio E2E and never adds independent micro speedups together.
+
+## Templates
+
+- `lda-controller`: scheduler, state, gateway, artifacts, E2B SDK
+- `lda-agent-runtime`: Python 3.12, Codex CLI `0.149.1`, schemas, prompts, Intel skills
+- `lda-base`: Ubuntu 26.04 compilers, Debian tooling, perf and ABI/FFI tools
+- `lda-judge`: immutable deterministic fences derived from `lda-base`, no Codex
+- `lda-e2e`: clean Ubuntu 26.04, Chromium, Playwright, web and GUI fixtures
+
+Intel Performance Skills are pinned to commit
+`e9d0b6410fb1ad7a50fb81e0868fd23ae886882c`. Public packages may use baseline
+ISA plus runtime dispatch, IFUNC, AVX2, or AVX-512 paths with a compatible
+fallback. Global `-march=native` is rejected by trace audit.
+
+## Tests
+
+```bash
+uv run pytest -q
+```
+
+Tests cover FakeE2B, FakeCodex, shared gateway headers, Sandbox leases and
+reaping, Agent resume and independence, frozen queues, ABI/FFI rejection,
+benchmark statistics, anti-cheat, convergence, crash recovery, secret
+redaction, concurrency limits, and state-machine transition guards. Real E2B
+tests live under `tests/e2b` and are never replaced by mocks.

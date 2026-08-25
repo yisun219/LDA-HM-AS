@@ -1,0 +1,18 @@
+Source: lda-fixture
+Section: libs
+Priority: optional
+Maintainer: LDA Controller <lda@localhost>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+
+Package: liblda-fixture1
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: controlled runtime library for LDA validation
+
+Package: liblda-fixture-dev
+Section: libdevel
+Architecture: any
+Depends: liblda-fixture1 (= ${binary:Version}), ${misc:Depends}
+Description: development files for the LDA controlled validation library

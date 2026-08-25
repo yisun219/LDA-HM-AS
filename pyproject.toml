@@ -1,12 +1,24 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lda-hm"
-version = "0.1.0"
-description = "A runtime-neutral Humanize-inspired agent flow"
-requires-python = ">=3.11"
+name = "lda-pure-humanize"
+version = "0.2.2"
+description = "E2B-native Pure Humanize flow for Ubuntu package optimization"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "e2b==2.45.0",
+  "openai-codex==0.147.0; sys_platform == 'linux'",
+  "pydantic==2.12.5",
+  "PyYAML==6.0.2",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest==8.4.1",
+  "pytest-asyncio==1.1.0",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -15,4 +27,10 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [project.scripts]
-lda = "lda_hm.cli:main"
+lda = "lda.cli.main:main"
+lda-tool-gateway = "lda.gateway.server:main"
+lda-mcp = "lda.gateway.mcp:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

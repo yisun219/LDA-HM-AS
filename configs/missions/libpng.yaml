@@ -1,0 +1,23 @@
+package: libpng16-16t64
+source_package: libpng1.6
+source_version: 1.6.57-1
+binary_packages: [libpng16-16t64, libpng-dev]
+runtime_packages: [libpng16-16t64, libpng-dev]
+public_header: png.h
+probe_body: "sink ^= png_access_version_number();"
+link_libraries: "-lpng16"
+layout_body: "printf(\"%zu %zu\\n\",sizeof(png_color),_Alignof(png_color));"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+target_functions: [png_read_row, png_write_row, png_combine_row]
+target_workloads: [Chromium image decode, GTK image rendering, web image processing]
+allowed_source_paths: [/opt/lda/work/png.c, /opt/lda/work/pngread.c, /opt/lda/work/pngwrite.c, /opt/lda/work/pngrutil.c, /opt/lda/work/pngwutil.c, /opt/lda/work/intel]
+forbidden_paths: [/opt/lda/work/debian/tests, /opt/lda/work/contrib/testpngs]
+abi_manifest: manifests/libpng/abi.json
+api_manifest: manifests/libpng/api.json
+ffi_manifest: manifests/libpng/ffi.json
+microbench_manifest: manifests/libpng/micro.json
+e2e_manifest: manifests/libpng/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [libgdk-pixbuf2.0-bin, chromium-browser]
+candidate_budget: 8
+acceptance_policy: ABI/API/FFI pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

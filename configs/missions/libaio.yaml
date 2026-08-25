@@ -1,0 +1,23 @@
+package: libaio1t64
+source_package: libaio
+source_version: 0.3.113-8build1
+binary_packages: [libaio1t64, libaio-dev]
+runtime_packages: [libaio1t64, libaio-dev]
+public_header: libaio.h
+probe_body: "io_context_t ctx=0; int r=io_setup(1,&ctx); if(r==0) io_destroy(ctx); sink ^= (uintptr_t)r;"
+link_libraries: "-laio"
+layout_body: "printf(\"%zu %zu\\n\",sizeof(struct iocb),_Alignof(struct iocb));"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+target_functions: [io_setup, io_submit, io_getevents]
+target_workloads: [database async IO, web server file IO, storage services]
+allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/harness]
+forbidden_paths: [/opt/lda/work/debian/tests]
+abi_manifest: manifests/libaio/abi.json
+api_manifest: manifests/libaio/api.json
+ffi_manifest: manifests/libaio/ffi.json
+microbench_manifest: manifests/libaio/micro.json
+e2e_manifest: manifests/libaio/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [fio, qemu-system-x86]
+candidate_budget: 8
+acceptance_policy: ABI/API/FFI pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

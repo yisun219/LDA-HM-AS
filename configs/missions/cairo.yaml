@@ -1,0 +1,23 @@
+package: libcairo2
+source_package: cairo
+source_version: 1.18.4-3
+binary_packages: [libcairo2, libcairo2-dev]
+runtime_packages: [libcairo2, libcairo2-dev]
+public_header: cairo/cairo.h
+probe_body: "sink ^= (uintptr_t)cairo_version();"
+link_libraries: "-lcairo"
+layout_body: "printf(\"%zu %zu\\n\",sizeof(cairo_matrix_t),_Alignof(cairo_matrix_t));"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+target_functions: [cairo_fill, cairo_paint, cairo_image_surface_create]
+target_workloads: [GTK rendering, Chromium canvas, desktop compositing]
+allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/perf]
+forbidden_paths: [/opt/lda/work/test]
+abi_manifest: manifests/cairo/abi.json
+api_manifest: manifests/cairo/api.json
+ffi_manifest: manifests/cairo/ffi.json
+microbench_manifest: manifests/cairo/micro.json
+e2e_manifest: manifests/cairo/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [libgtk-3-0t64, libgtk-4-1]
+candidate_budget: 8
+acceptance_policy: ABI/API/FFI pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

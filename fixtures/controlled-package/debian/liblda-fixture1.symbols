@@ -1,0 +1,3 @@
+liblda-fixture.so.1 liblda-fixture1 #MINVER#
+ lda_accumulate@Base 1.0
+ lda_fixture_version@Base 1.0

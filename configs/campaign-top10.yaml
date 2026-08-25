@@ -1,0 +1,17 @@
+campaign: ubuntu-26.04-library-optimization
+ubuntu_version: "26.04"
+snapshot: https://snapshot.ubuntu.com/ubuntu/20260825T000000Z
+source_report: /Users/yisun/Desktop/Ubuntu ISO 解析结果及包优化推荐.md
+canary_order: [libcairo2, libsoup-3.0-0]
+qualification_required: true
+packages:
+  - libgtk-4-1
+  - libgtk-3-0t64
+  - gnome-shell
+  - libreoffice-core
+  - sssd-common
+  - libcairo2
+  - gnome-settings-daemon
+  - gstreamer1.0-plugins-good
+  - ibus
+  - libsoup-3.0-0

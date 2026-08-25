@@ -1,0 +1,9 @@
+{
+  "hints": [
+    {"package": "libpng16-16t64", "target_path": "png_read_row", "hypothesis": "Image decode row filters may benefit from runtime-dispatched SIMD", "approach": "AVX2 or AVX-512 path with scalar fallback", "workloads": ["Chromium image decode", "GTK image rendering"], "cpu_features": ["avx2", "avx512f"], "risks": ["ABI", "bit-exact output"], "confidence": 0.78},
+    {"package": "libaio1t64", "target_path": "io_submit", "hypothesis": "Submission setup and batching overhead may be reducible", "approach": "reduce userspace overhead without changing syscall contract", "workloads": ["database async IO", "web server storage"], "risks": ["calling convention", "kernel behavior"], "confidence": 0.55},
+    {"package": "libcairo2", "target_path": "cairo_fill", "hypothesis": "Common raster operations may expose vectorization opportunities", "approach": "runtime-dispatched pixel paths", "workloads": ["GTK rendering", "Chromium canvas"], "risks": ["pixel equivalence", "type layout"], "confidence": 0.68},
+    {"package": "libtiff6", "target_path": "TIFFReadEncodedStrip", "hypothesis": "Decode and copy loops may benefit from dispatch and bounds-check consolidation", "approach": "compatible optimized inner loops", "workloads": ["thumbnail generation", "document conversion"], "risks": ["malformed input security", "ABI"], "confidence": 0.64},
+    {"package": "libheif1", "target_path": "heif_decode_image", "hypothesis": "Format conversion and copy paths may expose measurable CPU hotspots", "approach": "profile-guided runtime-dispatched conversion", "workloads": ["HEIF thumbnail generation", "desktop image viewers"], "risks": ["color accuracy", "plugin behavior"], "confidence": 0.61}
+  ]
+}

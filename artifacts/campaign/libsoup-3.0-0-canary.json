@@ -1,0 +1,35 @@
+{
+  "package": "libsoup-3.0-0",
+  "source_package": "libsoup3",
+  "ubuntu_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260825T000000Z",
+  "source_version": "3.6.6-1",
+  "hardware": "Intel Xeon Gold 6548Y+ (family 6, model 207)",
+  "candidate_change": "-O3 -fno-semantic-interposition -fno-plt -mtune=skylake-avx512 -falign-functions=32 -falign-loops=32",
+  "isa_policy": "No -march=native; runtime-compatible drop-in build",
+  "abi_fence": {
+    "soname": "PASS",
+    "exported_symbols": "PASS",
+    "symbol_versions": "PASS",
+    "precompiled_binary": "PASS",
+    "api_ffi": "PASS"
+  },
+  "microbenchmark": {
+    "samples": 30,
+    "paired_geomean_ratio": 1.0643804204761411,
+    "ci_lower": 1.0608932087378322,
+    "ci_upper": 1.0675531565772736,
+    "speedup_percent": 6.29275,
+    "decision": "PASS"
+  },
+  "e2e": {
+    "baseline_mean": 0.1359,
+    "candidate_mean": 0.129829,
+    "speedup_percent": 4.67615,
+    "precompiled_binary_reused": true,
+    "decision": "PASS"
+  },
+  "candidate_snapshot": "01a03a3d-4551-7b72-a18b-6a70de607408",
+  "baseline_snapshot": "01a03a1d-9ad3-7bf3-a107-b3a4e57fa598",
+  "status": "SYSTEM_WIN_CANDIDATE",
+  "notes": "Independent E2B qualification artifact; portfolio release still requires the Pure Humanize Run and portfolio E2E gates."
+}

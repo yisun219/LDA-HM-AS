@@ -1,0 +1,23 @@
+package: libheif1
+source_package: libheif
+source_version: 1.21.2-3
+binary_packages: [libheif1, libheif-dev]
+runtime_packages: [libheif1, libheif-dev]
+public_header: libheif/heif.h
+probe_body: "sink ^= (uintptr_t)heif_get_version_number();"
+link_libraries: "-lheif"
+layout_body: "printf(\"%zu %zu\\n\",sizeof(struct heif_error),_Alignof(struct heif_error));"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+target_functions: [heif_decode_image, heif_context_read_from_memory_without_copy]
+target_workloads: [HEIF thumbnail generation, browser image decode, desktop image viewers]
+allowed_source_paths: [/opt/lda/work/libheif, /opt/lda/work/examples]
+forbidden_paths: [/opt/lda/work/tests]
+abi_manifest: manifests/heif/abi.json
+api_manifest: manifests/heif/api.json
+ffi_manifest: manifests/heif/ffi.json
+microbench_manifest: manifests/heif/micro.json
+e2e_manifest: manifests/heif/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [libheif-examples, imagemagick]
+candidate_budget: 8
+acceptance_policy: ABI/API/FFI pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ranked_packages", "risk_notes"],
+  "properties": {
+    "ranked_packages": {"type": "array", "items": {"type": "string"}},
+    "risk_notes": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

@@ -1,0 +1,33 @@
+e2b:
+  sdk_version: "2.45.0"
+  api_url: "https://e2b.fact-lab.work"
+  sandbox_url: "https://e2b.fact-lab.work"
+  access_token: "dummy"
+  api_key_env: "E2B_API_KEY"
+  shared_gateway: true
+  validate_api_key: true
+  controller_template: "lda-controller-lda-hm-0-3-22"
+  agent_template: "lda-agent-runtime-lda-hm-0-3-5"
+  base_template: "lda-base-lda-hm-0-3-0"
+  judge_template: "lda-judge-lda-hm-0-3-3"
+  e2e_template: "lda-e2e-lda-hm-0-3-0"
+ubuntu_snapshot: "https://snapshot.ubuntu.com/ubuntu/20260825T000000Z"
+scheduler:
+  max_active_missions: 2
+  builders_per_mission: 3
+  max_live_codex_sessions: 8
+  max_live_sandboxes: 20
+  max_candidates_per_mission: 3
+  max_attempts_per_candidate: 8
+benchmark:
+  warmups: 10
+  samples: 30
+  min_micro_speedup: 1.03
+  min_micro_ci_lower: 1.01
+  max_e2e_regression: 0.005
+  portfolio_min_geomean_speedup: 1.01
+  min_improved_e2e_workloads: 2
+  max_noise_cv: 0.05
+state_root: ".lda/state"
+artifact_root: ".lda/artifacts"
+capability_signing_key_env: "LDA_CAPABILITY_SIGNING_KEY"

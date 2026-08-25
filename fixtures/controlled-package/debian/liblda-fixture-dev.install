@@ -1,0 +1,4 @@
+usr/include/lda_fixture.h
+usr/lib/liblda-fixture.so
+usr/lib/pkgconfig/lda-fixture.pc
+usr/lib/cmake/LDAFixture/LDAFixtureConfig.cmake

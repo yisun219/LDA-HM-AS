@@ -1,0 +1,18 @@
+diff --git a/src/lda_fixture.c b/src/lda_fixture.c
+index 1ed157a..ea62bfc 100644
+--- a/src/lda_fixture.c
++++ b/src/lda_fixture.c
+@@ -1,11 +1,8 @@
+ #include "lda_fixture.h"
+
+ uint64_t lda_accumulate(uint32_t count) {
+-    uint64_t result = 0;
+-    for (uint32_t value = 0; value <= count; ++value) {
+-        result += value;
+-    }
+-    return result;
++    uint64_t wide = count;
++    return wide * (wide + 1) / 2;
+ }
+
+ const char *lda_fixture_version(void) {

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "compatibility_risks", "functional_risks", "performance_risks", "required_changes"],
+  "properties": {
+    "verdict": {"enum": ["ADVANCED", "STALLED", "REGRESSED"]},
+    "compatibility_risks": {"type": "array", "items": {"type": "string"}},
+    "functional_risks": {"type": "array", "items": {"type": "string"}},
+    "performance_risks": {"type": "array", "items": {"type": "string"}},
+    "required_changes": {"type": "array", "items": {"type": "string"}}
+  }
+}

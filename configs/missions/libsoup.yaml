@@ -1,0 +1,23 @@
+package: libsoup-3.0-0
+source_package: libsoup3
+source_version: 3.6.6-1
+binary_packages: [libsoup-3.0-0, libsoup-3.0-dev]
+runtime_packages: [libsoup-3.0-0, libsoup-3.0-dev]
+public_header: libsoup/soup-headers.h
+probe_body: "SoupMessageHeaders *h=soup_message_headers_new(SOUP_MESSAGE_HEADERS_REQUEST); int r=(int)soup_headers_parse_request(\"GET / HTTP/1.1\\r\\nHost: example\\r\\n\\r\\n\",31,h,0,0,0); soup_message_headers_unref(h); return r;"
+link_libraries: "-lsoup-3.0"
+layout_body: "printf(\"opaque\\n\");"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/libsoup-header-bench 100"
+target_functions: [soup_headers_parse_request, soup_headers_parse, soup_message_headers_append]
+target_workloads: [HTTP request parsing, local web server, GNOME network clients]
+allowed_source_paths: [/opt/lda/work/libsoup, /opt/lda/work/debian/rules, /opt/lda/work/perf]
+forbidden_paths: [/opt/lda/work/tests, /opt/lda/work/fixtures]
+abi_manifest: manifests/libsoup/abi.json
+api_manifest: manifests/libsoup/api.json
+ffi_manifest: manifests/libsoup/ffi.json
+microbench_manifest: manifests/libsoup/micro.json
+e2e_manifest: manifests/libsoup/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [libsoup consumers and GNOME network clients]
+candidate_budget: 8
+acceptance_policy: ABI/API/FFI pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

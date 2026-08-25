@@ -1,0 +1,23 @@
+package: libtiff6
+source_package: tiff
+source_version: 4.7.0-3ubuntu4
+binary_packages: [libtiff6, libtiff-dev]
+runtime_packages: [libtiff6, libtiff-dev]
+public_header: tiffio.h
+probe_body: "sink ^= (uintptr_t)TIFFGetVersion();"
+link_libraries: "-ltiff"
+layout_body: "printf(\"%zu %zu\\n\",sizeof(toff_t),_Alignof(toff_t));"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+target_functions: [TIFFReadEncodedStrip, TIFFWriteEncodedStrip, TIFFRGBAImageGet]
+target_workloads: [desktop image decode, document conversion, thumbnail generation]
+allowed_source_paths: [/opt/lda/work/libtiff, /opt/lda/work/tools]
+forbidden_paths: [/opt/lda/work/test]
+abi_manifest: manifests/tiff/abi.json
+api_manifest: manifests/tiff/api.json
+ffi_manifest: manifests/tiff/ffi.json
+microbench_manifest: manifests/tiff/micro.json
+e2e_manifest: manifests/tiff/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [libgdk-pixbuf-2.0-0, imagemagick]
+candidate_budget: 8
+acceptance_policy: ABI/API/FFI pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["hot_paths", "not_hot_evidence", "measurement_risks"],
+  "properties": {
+    "hot_paths": {"type": "array", "items": {"type": "string"}},
+    "not_hot_evidence": {"type": "array", "items": {"type": "string"}},
+    "measurement_risks": {"type": "array", "items": {"type": "string"}}
+  }
+}

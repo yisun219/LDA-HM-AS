@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["validated_references", "unverified_claims", "package_aliases"],
+  "properties": {
+    "validated_references": {"type": "array", "items": {"type": "string"}},
+    "unverified_claims": {"type": "array", "items": {"type": "string"}},
+    "package_aliases": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}
