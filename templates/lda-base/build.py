@@ -76,7 +76,9 @@ def build() -> None:
     template = template.run_cmd(
         "test -r /etc/os-release && grep -q 'VERSION_ID=\"26.04\"' /etc/os-release"
     )
-    template = template.run_cmd("mkdir -p /opt/lda /workspace/mission /workspace/.lda")
+    template = template.run_cmd(
+        "mkdir -p /opt/lda /workspace/mission /workspace/mission/.lda /workspace/.lda"
+    )
     Template.build(template, name=os.getenv("E2B_TEMPLATE", "lda-base"))
 
 

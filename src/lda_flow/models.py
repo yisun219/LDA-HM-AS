@@ -194,6 +194,23 @@ class E2BSettings(StrictModel):
     access_token_env: Literal["E2B_ACCESS_TOKEN"] = "E2B_ACCESS_TOKEN"  # noqa: S105
 
 
+class BaselineConfig(StrictModel):
+    """Exact Ubuntu ISO baseline inputs; floating apt state is not sufficient."""
+
+    kind: Literal["ubuntu2604_iso"]
+    manifest_path: str
+    lock_path: str
+    require_sha256: Literal[True] = True
+
+    @field_validator("manifest_path", "lock_path")
+    @classmethod
+    def paths_are_relative(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"unsafe baseline path: {value}")
+        return value
+
+
 class Campaign(StrictModel):
     schema_version: Literal[1]
     name: str
@@ -203,6 +220,7 @@ class Campaign(StrictModel):
     weights: PriorityWeights = Field(default_factory=PriorityWeights)
     agents: AgentSettings
     e2b: E2BSettings = Field(default_factory=E2BSettings)
+    baseline: BaselineConfig
     missions: tuple[Mission, ...]
     campaign_benchmarks: tuple[Benchmark, ...]
     portfolio_min_geomean_speedup: float = Field(default=1.01, gt=0)

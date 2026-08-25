@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from lda_flow.baseline import BaselineEntry
 from lda_flow.benchmarks import summarize
 from lda_flow.fence import source_allowlist, tree_digest
 from lda_flow.models import Campaign
@@ -80,3 +81,14 @@ def test_tree_digest_changes_on_file_edit(tmp_path):
     before = tree_digest(tmp_path)
     (tmp_path / "x").write_text("b")
     assert before != tree_digest(tmp_path)
+
+
+def test_baseline_entry_requires_exact_sha256():
+    with pytest.raises(ValidationError):
+        BaselineEntry(
+            package="libpng16-16t64",
+            version="1.0",
+            sha256="not-a-sha",
+            source_package="libpng1.6",
+            source_version="1.0",
+        )

@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .baseline import BaselineLock, load_baseline_lock, lock_json, lock_summary, mission_entry
 from .benchmarks import geomean, summarize
 from .fence import FenceResult, run_command_fence
 from .gateway import GatewayError, SandboxHandle, create_sandbox, require_e2b
@@ -80,16 +81,23 @@ class CampaignController:
 
     def run(self) -> dict:
         require_e2b(self.campaign.e2b)
+        baseline_lock = load_baseline_lock(self.campaign)
         if not any(os.getenv(name) for name in self.campaign.agents.forward_env):
             raise GatewayError("missing model credential for configured agent")
         ranked = self.dry_run()
         selected = [item.mission for item in ranked.ranked[: self.campaign.top_k]]
         self.output.mkdir(parents=True, exist_ok=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.campaign.concurrency) as pool:
-            reports = list(pool.map(self.run_mission, selected))
+            reports = list(
+                pool.map(
+                    lambda mission: self.run_mission(mission, baseline_lock),
+                    selected,
+                )
+            )
         accepted = [report for report in reports if report.accepted]
         summary = {
             "campaign": self.campaign.name,
+            "baseline": lock_summary(baseline_lock),
             "selected": ranked.selected,
             "skipped": ranked.skipped,
             "missions": [report.__dict__ for report in reports],
@@ -198,7 +206,8 @@ class CampaignController:
             values.append(float(matches[-1]))
         return values
 
-    def run_mission(self, mission: Mission) -> MissionReport:
+    def run_mission(self, mission: Mission, baseline_lock: BaselineLock) -> MissionReport:
+        entry = mission_entry(baseline_lock, mission)
         handle = create_sandbox(
             self.campaign.e2b,
             self.campaign.agents.forward_env,
@@ -211,6 +220,15 @@ class CampaignController:
         executor.write_text(
             "/workspace/mission/mission.json", mission.model_dump_json(indent=2) + "\n"
         )
+        executor.write_text("/workspace/mission/.lda/baseline-lock.json", lock_json(entry))
+        if entry.binary_path:
+            binary = Path(entry.binary_path)
+            if not binary.is_file():
+                raise FileNotFoundError(f"locked baseline .deb is missing: {binary}")
+            executor.write_bytes(
+                f"/workspace/mission/.lda/baseline-debs/{binary.name}",
+                binary.read_bytes(),
+            )
         fences = list(prepare(mission, executor))
         fences.append(self._run_humanize(executor))
         if all(item.passed for item in fences):
@@ -225,7 +243,7 @@ class CampaignController:
                 )
             except Exception as exc:
                 trace.write_text(json.dumps({"error": redact(str(exc))}) + "\n", encoding="utf-8")
-            fences.extend(verify(mission, executor, None, trace))
+            fences.extend(verify(mission, executor, None, trace, entry))
         candidate_debs = self._download_candidate_debs(executor, mission_output)
         if not candidate_debs:
             fences.append(

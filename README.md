@@ -17,6 +17,7 @@ export E2B_SANDBOX_URL="$E2B_API_URL"
 export E2B_API_KEY='provided-out-of-band'
 export E2B_ACCESS_TOKEN=dummy
 export ANTHROPIC_API_KEY='provided-out-of-band'
+# Place the exact ISO manifest and generated baseline lock under .lda/ first.
 lda-flow campaign campaigns/ubuntu2604-core-libs.yaml --output artifacts/core-libs
 ```
 
@@ -50,3 +51,7 @@ The controller requires E2B and a forwarded model credential for a real run. It 
 fall back to Docker or the host. Each accepted Mission produces a local report, downloaded
 candidate packages, a trace audit input, and an E2B snapshot ID; the Campaign then uses clean
 official and candidate peer Sandboxes for portfolio benchmarks.
+
+The real Campaign additionally requires an exact Ubuntu 26.04 ISO baseline manifest and lock;
+see [docs/BASELINE.md](docs/BASELINE.md). This prevents a moving apt archive from becoming the
+comparison baseline.

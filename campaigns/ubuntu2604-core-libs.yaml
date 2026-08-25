@@ -17,6 +17,11 @@ agents:
 e2b:
   template: lda-base
   timeout_seconds: 21600
+baseline:
+  kind: ubuntu2604_iso
+  manifest_path: .lda/ubuntu2604-desktop-amd64.manifest
+  lock_path: .lda/ubuntu2604-baseline.lock.yaml
+  require_sha256: true
 portfolio_min_geomean_speedup: 1.01
 portfolio_max_regression: 0.02
 campaign_benchmarks:
@@ -59,8 +64,8 @@ missions:
     allowed_source_paths: [pngrutil.c, pngread.c, pngwrite.c, pngpriv.h, debian]
     allowed_untracked_globs: ["*.o", "*.deb", build/**, .lda/candidate-debs/**, .lda/candidate-root/**]
     commands:
-      source_acquire: [{argv: [bash, -lc, "apt-get update && apt-get source libpng1.6"]}]
-      baseline_download: [{argv: [bash, -lc, "mkdir -p .lda/baseline-debs && apt-get download libpng16-16t64 -o Dir::Cache::archives=.lda/baseline-debs"]}]
+      source_acquire: [{argv: [bash, -lc, "apt-get update && sp=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['source_package'])\") && sv=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['source_version'])\") && apt-get source \"$sp=$sv\""]}]
+      baseline_download: [{argv: [bash, -lc, "mkdir -p .lda/baseline-debs && if compgen -G '.lda/baseline-debs/*.deb' >/dev/null; then exit 0; fi; pkg=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['package'])\") && ver=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['version'])\") && apt-get download \"$pkg=$ver\" -o Dir::Cache::archives=.lda/baseline-debs"]}]
       baseline_extract: [{argv: [bash, -lc, "mkdir -p .lda/baseline-root && dpkg-deb -x .lda/baseline-debs/*.deb .lda/baseline-root"]}]
       clean_candidate: [{argv: [bash, -lc, "rm -f .lda/candidate-debs/*.deb; rm -rf .lda/candidate-root; mkdir -p .lda/candidate-debs .lda/candidate-root"]}]
       build_candidate: [{argv: [bash, -lc, "cd libpng-1.6* && dpkg-buildpackage -us -uc -b"]}]
@@ -97,8 +102,8 @@ missions:
     allowed_source_paths: [src, harness, debian]
     allowed_untracked_globs: ["*.o", "*.deb", build/**, .lda/candidate-debs/**, .lda/candidate-root/**]
     commands:
-      source_acquire: [{argv: [bash, -lc, "apt-get update && apt-get source libaio"]}]
-      baseline_download: [{argv: [bash, -lc, "mkdir -p .lda/baseline-debs && apt-get download libaio1t64 -o Dir::Cache::archives=.lda/baseline-debs"]}]
+      source_acquire: [{argv: [bash, -lc, "apt-get update && sp=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['source_package'])\") && sv=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['source_version'])\") && apt-get source \"$sp=$sv\""]}]
+      baseline_download: [{argv: [bash, -lc, "mkdir -p .lda/baseline-debs && if compgen -G '.lda/baseline-debs/*.deb' >/dev/null; then exit 0; fi; pkg=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['package'])\") && ver=$(python3 -c \"import json; print(json.load(open('.lda/baseline-lock.json'))['version'])\") && apt-get download \"$pkg=$ver\" -o Dir::Cache::archives=.lda/baseline-debs"]}]
       baseline_extract: [{argv: [bash, -lc, "mkdir -p .lda/baseline-root && dpkg-deb -x .lda/baseline-debs/*.deb .lda/baseline-root"]}]
       clean_candidate: [{argv: [bash, -lc, "rm -f .lda/candidate-debs/*.deb; rm -rf .lda/candidate-root; mkdir -p .lda/candidate-debs .lda/candidate-root"]}]
       build_candidate: [{argv: [bash, -lc, "cd libaio-* && dpkg-buildpackage -us -uc -b"]}]

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .baseline import BaselineEntry
 from .benchmarks import summarize
 from .fence import (
     FenceResult,
@@ -105,6 +106,26 @@ def package_fence(mission: Mission, executor: Executor) -> FenceResult:
     )
 
 
+def baseline_lock_fence(entry: BaselineEntry, executor: Executor) -> FenceResult:
+    script = (
+        "set -eu; base=$(printf '%s\\n' .lda/baseline-debs/*.deb | head -n1); "
+        f"test \"$(dpkg-deb -f \"$base\" Package)\" = {entry.package}; "
+        f"test \"$(dpkg-deb -f \"$base\" Version)\" = '{entry.version}'; "
+        f"test \"$(dpkg-deb -f \"$base\" Architecture)\" = {entry.architecture}; "
+        f"echo \"{entry.sha256}  $base\" | sha256sum -c -; "
+        "source_dir=$(find . -maxdepth 3 -path '*/debian/changelog' "
+        "-print -quit | sed 's#/debian/changelog##'); "
+        "test -n \"$source_dir\"; "
+        "source_version=$(dpkg-parsechangelog -l \"$source_dir/debian/changelog\" -S Version); "
+        f"test \"$source_version\" = '{entry.source_version}'"
+    )
+    return run_group(
+        "baseline_lock",
+        (Command(argv=("bash", "-lc", script)),),
+        executor,
+    )
+
+
 def abi_fence(mission: Mission, executor: Executor) -> FenceResult:
     checks = []
     for path in mission.package.shared_objects:
@@ -180,9 +201,16 @@ def build(mission: Mission, executor: Executor) -> tuple[FenceResult, ...]:
 
 
 def verify(
-    mission: Mission, executor: Executor, root: Path | None, trace: Path
+    mission: Mission,
+    executor: Executor,
+    root: Path | None,
+    trace: Path,
+    baseline: BaselineEntry | None = None,
 ) -> tuple[FenceResult, ...]:
     results = [
+        baseline_lock_fence(baseline, executor) if baseline else FenceResult(
+            "baseline_lock", False, "baseline lock was not supplied", 0.0
+        ),
         package_fence(mission, executor),
         run_group("package_declared", mission.commands.package_fence, executor),
         abi_fence(mission, executor),
