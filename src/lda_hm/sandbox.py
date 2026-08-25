@@ -44,7 +44,7 @@ class E2BSandbox:
     credentials. No fallback to the host shell is provided by design.
     """
 
-    def __init__(self, client: Any, *, sandbox_id: str, cwd: str = "/workspace") -> None:
+    def __init__(self, client: Any, *, sandbox_id: str, cwd: str = "/opt/lda/work") -> None:
         self.client = client
         self.sandbox_id = sandbox_id
         self.cwd = cwd
@@ -78,6 +78,7 @@ class E2BSandbox:
         *,
         client_factory: Callable[..., Any] | None = None,
         timeout: int = 3600,
+        cwd: str = "/opt/lda/work",
     ) -> "E2BSandbox":
         cls.configure_shared_gateway()
         forwarded = {
@@ -112,13 +113,13 @@ class E2BSandbox:
                 raise SandboxUnavailable("E2B SDK is not installed; refusing host execution") from error
             client = E2BSdkSandbox.create(template=template, timeout=timeout, envs=forwarded)
             sandbox_id = str(getattr(client, "sandbox_id", getattr(client, "id", "unknown")))
-            return cls(client, sandbox_id=sandbox_id)
+            return cls(client, sandbox_id=sandbox_id, cwd=cwd)
         try:
             client = client_factory(template=template, timeout=timeout, envs=forwarded)
         except TypeError:
             client = client_factory(template)
         sandbox_id = str(getattr(client, "sandbox_id", getattr(client, "id", "unknown")))
-        return cls(client, sandbox_id=sandbox_id)
+        return cls(client, sandbox_id=sandbox_id, cwd=cwd)
 
     def run(self, command: tuple[str, ...], *, timeout_seconds: int = 900) -> SandboxResult:
         if not command:
