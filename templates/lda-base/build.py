@@ -10,7 +10,7 @@ from e2b import Template
 from lda_flow.gateway import configure_shared_gateway
 
 INTEL_SKILLS_COMMIT = "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
-LDA_COMMIT = "cb55e07"
+LDA_COMMIT = "de7575c"
 DEFAULT_TEMPLATE = "lda-base-lda-hm-as"
 
 BASE_PACKAGES = [
