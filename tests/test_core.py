@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from lda_flow.baseline import BaselineEntry
 from lda_flow.benchmarks import summarize
 from lda_flow.fence import source_allowlist, tree_digest
+from lda_flow.gateway import concise_e2b_error
 from lda_flow.models import Campaign
 from lda_flow.priority import rank_missions
 from lda_flow.trace import audit_trace
@@ -92,3 +93,9 @@ def test_baseline_entry_requires_exact_sha256():
             source_package="libpng1.6",
             source_version="1.0",
         )
+
+
+def test_concise_e2b_error_keeps_failure_tail():
+    error = concise_e2b_error(RuntimeError("hint" * 200 + " fatal: missing commit"))
+    assert str(error).endswith("fatal: missing commit")
+    assert len(str(error)) == 500

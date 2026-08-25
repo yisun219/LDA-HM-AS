@@ -70,6 +70,10 @@ def _patch_gateway_step_parser() -> None:
     build_api.get_build_step_index = safe_step_index
 
 
+def _build_log(entry: object) -> None:
+    print(str(entry), flush=True)
+
+
 def build() -> None:
     configure_shared_gateway()
     _patch_gateway_step_parser()
@@ -132,7 +136,7 @@ def build() -> None:
                 )
             )
             return
-        Template.build(template, name=name)
+        Template.build(template, name=name, on_build_logs=_build_log)
     except Exception as exc:
         raise SystemExit(str(concise_e2b_error(exc))) from exc
 

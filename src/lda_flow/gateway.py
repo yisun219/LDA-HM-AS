@@ -50,7 +50,9 @@ def concise_e2b_error(exc: Exception) -> GatewayError:
         )
     if "401" in message or "403" in message:
         return GatewayError("E2B authentication or authorization failed")
-    return GatewayError(message[:500])
+    if len(message) <= 500:
+        return GatewayError(message)
+    return GatewayError("..." + message[-497:])
 
 
 def require_e2b(settings: E2BSettings) -> None:
