@@ -113,13 +113,31 @@ class E2BSandbox:
                 raise SandboxUnavailable("E2B SDK is not installed; refusing host execution") from error
             client = E2BSdkSandbox.create(template=template, timeout=timeout, envs=forwarded)
             sandbox_id = str(getattr(client, "sandbox_id", getattr(client, "id", "unknown")))
-            return cls(client, sandbox_id=sandbox_id, cwd=cwd)
+            instance = cls(client, sandbox_id=sandbox_id, cwd=cwd)
+            instance._ensure_workdir()
+            return instance
         try:
             client = client_factory(template=template, timeout=timeout, envs=forwarded)
         except TypeError:
             client = client_factory(template)
         sandbox_id = str(getattr(client, "sandbox_id", getattr(client, "id", "unknown")))
-        return cls(client, sandbox_id=sandbox_id, cwd=cwd)
+        instance = cls(client, sandbox_id=sandbox_id, cwd=cwd)
+        instance._ensure_workdir()
+        return instance
+
+    def _ensure_workdir(self) -> None:
+        """Create the configured cwd even when connecting to an older template."""
+        if not hasattr(self.client, "commands"):
+            return
+        result = self.client.commands.run(
+            f"mkdir -p {shlex.quote(self.cwd)}",
+            cwd="/",
+            timeout=60,
+        )
+        if int(getattr(result, "exit_code", 1)) != 0:
+            raise SandboxUnavailable(
+                f"could not create E2B workdir {self.cwd}: {getattr(result, 'stderr', '')}"
+            )
 
     def run(self, command: tuple[str, ...], *, timeout_seconds: int = 900) -> SandboxResult:
         if not command:
