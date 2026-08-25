@@ -1,0 +1,109 @@
+# LDA-HM Flow
+
+## Scope
+
+This repository contains a new flow implementation. It borrows architectural
+ideas from Humanize but owns its state format, artifacts, prompts, and future
+autoresearch adaptations.
+
+The initial version deliberately does not run a model or modify a target code
+repository. A backend adapter must be supplied before any agent turn can run.
+
+## Layers
+
+```mermaid
+flowchart TD
+  B[Backend adapter] --> R[Agent and Session protocols]
+  R --> F[LDA-HM flow state machine]
+  F --> A[Artifacts and checkpoints]
+  F --> G[Deterministic gates]
+  G --> V[Fresh semantic reviewer]
+  V --> F
+  F --> E[External evaluator - future]
+```
+
+The backend owns model transport and session execution. The flow owns roles,
+phase transitions, prompts, state, and termination. Deterministic gates reject
+mechanically invalid work before an LLM reviewer is consulted.
+
+## Session topology
+
+- Drafter: one persistent session while producing an idea draft.
+- Planner: one persistent session while revising a candidate plan.
+- Analyst: a fresh session for each independent plan reading.
+- Builder: one persistent session within an execution run.
+- Reviewer: a fresh session for every regular, alignment, or code review.
+- Human: owns decisions that the flow cannot safely infer.
+
+The writer keeps context because it must continue unfinished reasoning. The
+reader starts fresh because independence is part of the review boundary.
+
+## State machine
+
+```mermaid
+stateDiagram-v2
+  [*] --> Setup
+  Setup --> Idea
+  Idea --> Plan
+  Plan --> Implementation
+  Implementation --> RegularReview
+  Implementation --> FullAlignment
+  RegularReview --> Implementation: continue
+  FullAlignment --> Implementation: aligned
+  RegularReview --> DriftRecovery: stalled twice
+  FullAlignment --> DriftRecovery: stalled twice
+  DriftRecovery --> Implementation: re-anchored
+  RegularReview --> Stop: stalled three times
+  FullAlignment --> Stop: stalled three times
+  RegularReview --> CodeReview: COMPLETE
+  FullAlignment --> CodeReview: COMPLETE
+  CodeReview --> Implementation: findings
+  CodeReview --> Finalize: no findings
+  Finalize --> MethodologyAnalysis
+  MethodologyAnalysis --> Complete
+  Implementation --> MaxIter: iteration limit
+  MaxIter --> MethodologyAnalysis
+```
+
+## Durable artifacts
+
+Each run is stored below `.lda-hm/runs/<run-id>/`. The state file is written
+atomically whenever a transition succeeds. The flow never treats a transcript
+as its state; backend logs and flow checkpoints have different responsibilities.
+
+Core artifacts are:
+
+- `idea.md`
+- `plan.md` and `plan.sha256`
+- `goal-tracker.md`
+- `rounds/<n>/contract.md`
+- `rounds/<n>/summary.md`
+- `rounds/<n>/review.json`
+- `rounds/<n>/bitlesson.json`
+- `finalize-summary.md`
+- `methodology-report.md`
+- `state.json`
+
+## Gate boundary
+
+The gate order is fixed. A semantic reviewer runs only after all applicable
+deterministic gates pass:
+
+1. state schema
+2. branch anchor
+3. plan integrity
+4. open blocking tasks
+5. git status availability
+6. large changed files
+7. methodology phase
+8. clean worktree
+9. unpushed commits
+10. round summary
+11. round contract
+12. BitLesson delta
+13. goal tracker
+14. maximum iterations
+15. finalize completion
+
+Future research-specific gates can extend the model without weakening these
+invariants.
