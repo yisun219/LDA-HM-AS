@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import base64
+import time
 from pathlib import Path
 
 from e2b import Sandbox, Template
@@ -12,6 +13,7 @@ from e2b.template_sync import build_api
 
 
 TEMPLATE_NAME = os.getenv("E2B_TEMPLATE", "lda-base")
+BASE_TEMPLATE = os.getenv("E2B_BASE_TEMPLATE", "")
 ROOT = Path(__file__).resolve().parent / "lda-base"
 
 
@@ -51,27 +53,63 @@ def build() -> None:
         print(f"template already exists: {TEMPLATE_NAME}")
         return
 
+    if BASE_TEMPLATE:
+        template = (
+            Template()
+            .from_template(BASE_TEMPLATE)
+            .set_user("root")
+            .run_cmd(
+                "sudo -n mkdir -p /opt/lda/ms-playwright && "
+                "sudo -n cp -a /root/.cache/ms-playwright/. /opt/lda/ms-playwright/ && "
+                "sudo -n npm install -g @openai/codex@0.149.1 && "
+                "sudo -n chown -R user:user /opt/lda /home/user"
+            )
+            .set_workdir("/opt/lda/work")
+            .set_envs({"PLAYWRIGHT_BROWSERS_PATH": "/opt/lda/ms-playwright"})
+            .set_user("user")
+        )
+        build_info = Template.build_in_background(
+            template,
+            TEMPLATE_NAME,
+            skip_cache=os.getenv("E2B_REBUILD", "0") == "1",
+        )
+        _wait_for_build(build_info)
+        print(f"built template: {TEMPLATE_NAME}")
+        return
+
     template = (
         Template()
         .from_ubuntu_image("26.04")
+        .set_user("root")
         .run_cmd(
             "apt-get update && apt-get install -y --no-install-recommends "
             "build-essential clang cmake ninja-build meson pkg-config git git-lfs "
             "python3 python3-pip python3-venv nodejs npm binutils elfutils abigail-tools "
-            "libffi-dev strace linux-tools-generic devscripts debhelper ca-certificates "
-            "jq curl wget procps file time && rm -rf /var/lib/apt/lists/*"
+            "libffi-dev strace linux-tools-generic devscripts debhelper dpkg-dev fakeroot "
+            "ca-certificates jq curl wget procps file time sudo xz-utils squashfs-tools "
+            "libpng-dev libpng-tools python3-pil libgdk-pixbuf2.0-bin "
+            "xvfb xauth dbus-x11 fonts-dejavu-core && rm -rf /var/lib/apt/lists/*"
         )
         .run_cmd(
-            "npm install -g @anthropic-ai/claude-code "
+            "mkdir -p /opt/lda/ms-playwright && "
+            "npm install -g @anthropic-ai/claude-code @openai/codex "
             "@earendil-works/pi-coding-agent playwright && "
+            "PLAYWRIGHT_BROWSERS_PATH=/opt/lda/ms-playwright "
             "npx playwright install --with-deps chromium"
         )
-        .run_cmd("mkdir -p /opt/lda/{bin,skills,harness/checks,work,evidence}")
+        .run_cmd(
+            "id -u user >/dev/null 2>&1 || useradd --create-home --shell /bin/bash user; "
+            "printf '%s\\n' 'user ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/lda-user; "
+            "chmod 0440 /etc/sudoers.d/lda-user; "
+            "mkdir -p /opt/lda/{bin,skills,harness/checks,baseline,work,evidence}; "
+            "chown -R user:user /opt/lda"
+        )
     )
     mappings = (
         (ROOT / "skills", Path("/opt/lda/skills")),
         (ROOT / "harness", Path("/opt/lda/harness")),
         (ROOT / "checks", Path("/opt/lda/harness/checks")),
+        (ROOT / "baseline", Path("/opt/lda/baseline")),
     )
     for source, destination in mappings:
         for local in sorted(source.rglob("*")):
@@ -85,21 +123,40 @@ def build() -> None:
     template = (
         template
         .run_cmd("chmod +x /opt/lda/harness/*.sh /opt/lda/harness/checks/*.sh")
-        .run_cmd(
-            "git clone https://github.com/intel/intel-performance-skills.git "
-            "/opt/lda/skills/intel-performance-skills && "
-            "git -C /opt/lda/skills/intel-performance-skills checkout "
-            "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c && "
-            "rm -rf /opt/lda/skills/intel-performance-skills/.git"
-        )
+        .run_cmd("chown -R user:user /opt/lda /home/user")
         .set_workdir("/opt/lda/work")
+        .set_envs({"PLAYWRIGHT_BROWSERS_PATH": "/opt/lda/ms-playwright"})
+        .set_user("user")
     )
-    Template.build(
+    build_info = Template.build_in_background(
         template,
         TEMPLATE_NAME,
         skip_cache=os.getenv("E2B_REBUILD", "0") == "1",
     )
+    _wait_for_build(build_info)
     print(f"built template: {TEMPLATE_NAME}")
+
+
+def _wait_for_build(build_info) -> None:
+    print(
+        f"build requested: template={build_info.template_id} "
+        f"build={build_info.build_id}",
+        flush=True,
+    )
+    logs_offset = 0
+    while True:
+        current = Template.get_build_status(build_info, logs_offset=logs_offset)
+        entries = tuple(getattr(current, "log_entries", ()))
+        logs_offset += len(entries)
+        for entry in entries:
+            print(getattr(entry, "message", str(entry)), flush=True)
+        status = getattr(getattr(current, "status", ""), "value", current.status)
+        if status == "ready":
+            break
+        if status == "error":
+            reason = getattr(current, "reason", "unknown template build failure")
+            raise RuntimeError(f"template build failed: {reason}")
+        time.sleep(2)
 
 
 def smoke() -> None:
@@ -109,6 +166,7 @@ def smoke() -> None:
             (ROOT / "harness", "/opt/lda/harness"),
             (ROOT / "checks", "/opt/lda/harness/checks"),
             (ROOT / "skills", "/opt/lda/skills"),
+            (ROOT / "baseline", "/opt/lda/baseline"),
         )
         for source, destination in mappings:
             for local in sorted(source.rglob("*")):

@@ -82,6 +82,7 @@ class BenchmarkSpec:
     timeout_seconds: int = 900
     inputs: tuple[str, ...] = ()
     max_regression_percent: float = 0.0
+    min_speedup_percent: float | None = None
 
     def __post_init__(self) -> None:
         if self.layer not in {"micro", "end_to_end"}:
@@ -94,6 +95,8 @@ class BenchmarkSpec:
             raise ValueError("benchmark repetitions and timeout must be positive")
         if self.max_regression_percent < 0:
             raise ValueError("max_regression_percent must not be negative")
+        if self.min_speedup_percent is not None and self.min_speedup_percent < 0:
+            raise ValueError("min_speedup_percent must not be negative")
 
 
 @dataclass

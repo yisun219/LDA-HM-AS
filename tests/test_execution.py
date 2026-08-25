@@ -114,9 +114,13 @@ class ExecutionContractTest(unittest.TestCase):
             topology,
             fence_suite=FenceSuite(sandbox, self.card, trace_file=self.trace),
         )
-        with self.assertRaises(FenceBlocked):
-            stages.review_round(contract="one bounded task")
+        result = stages.review_round(contract="one bounded task")
         self.assertEqual(reviewer.opened, 0)
+        self.assertEqual(result.verdict.value, "REGRESSED")
+        self.assertEqual(flow.state.phase.value, "implementation")
+        self.assertTrue(
+            (flow.store.round_dir(0) / "blocked.json").is_file()
+        )
 
 
 if __name__ == "__main__":

@@ -7,11 +7,14 @@ LDA-HM has two baseline modes:
 * iso_snapshot: production distribution mode. The E2B template must be an
   immutable snapshot derived from the exact Ubuntu 26.04 Desktop amd64 ISO.
 
-The ISO is the authoritative input artifact. The E2B snapshot is the execution
-form. A production card must record the ISO SHA256, build ID, manifest SHA256,
-APT snapshot, rootfs digest, and installed package inventory digest. The
-verification script rejects a sandbox before source setup or benchmarking when
-those identities do not match.
+The ISO is the authoritative distribution artifact. The E2B snapshot is the
+standardized execution form. These identities are related but not conflated:
+the ISO Debian and Snap manifests describe the shipped Desktop distribution,
+while the live E2B package and Snap inventory digests describe the exact tools
+available to a development run. A production card records both sides plus the
+ISO SHA256, build ID, APT snapshot, rootfs digest, and immutable E2B template
+ID. The verification script rejects a sandbox before source setup or
+benchmarking when any recorded identity does not match.
 
 The package-level run still follows the A/B/A' model:
 
@@ -21,10 +24,13 @@ B  = A with exactly the candidate package installed
 A' = fresh restored copy of A
 ~~~
 
-Micro benchmarks may use a package-focused workspace, but end-to-end tests
-must run against the complete Desktop snapshot. Runtime apt-get update or
-unversioned package fetching must not be used in iso_snapshot mode.
+Micro benchmarks may use a package-focused workspace. End-to-end tests must
+exercise a real consumer path in the standardized GUI/browser-capable E2B
+snapshot and remain anchored to the Desktop ISO manifests. Runtime unversioned
+package fetching is forbidden. Exact source retrieval from the recorded Ubuntu
+Snapshot is permitted and must include the Debian source version.
 
-The checked-in examples/libpng-card.json remains in source_package mode until
-the real ISO, manifest, APT snapshot, and E2B stock template are available. It
-must not be presented as a complete Desktop baseline.
+The checked-in libpng card is pinned to Ubuntu 26.04 Desktop build
+`20260423.1`, source `libpng1.6=1.6.57-1`, and the immutable production E2B
+template ID. The E2B template is not claimed to have booted the ISO; it proves
+the execution inventory separately while carrying the verified ISO identity.

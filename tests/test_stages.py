@@ -50,7 +50,7 @@ class StageTopologyTest(unittest.TestCase):
             planner = FakeAgent([[PLAN]])
             analyst = FakeAgent([["analysis"], ["AGREE\nCONVERGED"]])
             builder = FakeAgent([["builder summary"]])
-            reviewer = FakeAgent([["Mainline Progress Verdict: ADVANCED"]])
+            reviewer = FakeAgent([["VERDICT: ADVANCED\nBLOCKING: NONE\nSTATUS: INCOMPLETE"]])
             topology = SessionTopology(
                 drafter=drafter,
                 planner=planner,
@@ -74,6 +74,60 @@ class StageTopologyTest(unittest.TestCase):
             self.assertEqual(len(builder.opened), 1)
             self.assertEqual(len(analyst.opened), 2)
             self.assertEqual(len(reviewer.opened), 1)
+
+    def test_plan_must_converge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            topology = SessionTopology(
+                drafter=FakeAgent([["idea draft"]]),
+                planner=FakeAgent([[PLAN, PLAN]]),
+                analyst=FakeAgent([["analysis"], ["DISAGREE"]]),
+                builder=FakeAgent([["builder summary"]]),
+                reviewer=FakeAgent([["VERDICT: ADVANCED\nBLOCKING: NONE\nSTATUS: INCOMPLETE"]]),
+                cwd=workspace,
+            )
+            flow = HumanizeFlow(workspace)
+            flow.begin("new flow")
+            stages = HumanizeStages(flow, topology)
+            idea = stages.gen_idea("new flow")
+            with self.assertRaises(RuntimeError):
+                stages.gen_plan(idea, max_convergence_rounds=1)
+            self.assertEqual(flow.state.phase, Phase.PLAN)
+
+    def test_complete_review_requires_explicit_unblocked_protocol(self) -> None:
+        parsed = HumanizeStages._review_result(
+            "VERDICT: ADVANCED\nBLOCKING: NONE\nSTATUS: COMPLETE"
+        )
+        self.assertTrue(parsed.complete)
+        with self.assertRaises(ValueError):
+            HumanizeStages._review_result(
+                "VERDICT: STALLED\nBLOCKING: NONE\nSTATUS: COMPLETE"
+            )
+
+    def test_pending_review_can_resume_without_repeating_builder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            builder = FakeAgent([["builder summary"]])
+            reviewer = FakeAgent([["VERDICT: ADVANCED\nBLOCKING: NONE\nSTATUS: INCOMPLETE"]])
+            topology = SessionTopology(
+                drafter=FakeAgent([["idea"]]),
+                planner=FakeAgent([[PLAN]]),
+                analyst=FakeAgent([["analysis"]]),
+                builder=builder,
+                reviewer=reviewer,
+                cwd=workspace,
+            )
+            flow = HumanizeFlow(workspace)
+            flow.begin("new flow")
+            flow.record_idea("idea")
+            flow.record_plan(PLAN, goal_tracker="goal tracker")
+            flow.begin_round("bounded objective")
+            flow.finish_builder_round("builder summary")
+            stages = HumanizeStages(flow, topology)
+            result = stages.resume_review()
+            self.assertEqual(result.verdict.value, "ADVANCED")
+            self.assertEqual(flow.state.phase, Phase.IMPLEMENTATION)
+            self.assertEqual(len(builder.opened[0].prompts), 0)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ For an LDA package card the execution path is:
 ```mermaid
 sequenceDiagram
   participant C as Task Card
-  participant S as E2B lda-base
+  participant S as Immutable Ubuntu 26.04 E2B template
   participant B as Persistent Builder
   participant F as ABI/FFI + Test Fence
   participant R as Fresh Reviewer
@@ -139,4 +139,13 @@ deterministic gates pass:
 In addition to these control gates, every package card has hard compatibility
 fences and two-layer paired benchmarks. A speedup never compensates for an ABI,
 FFI, behavior, package lifecycle, security, result-equivalence, or trace audit
-failure.
+failure. Benchmark regression limits are explicit per workload and account for
+measurement noise; they are guardrails, not proof that an optimization achieved
+its acceptance target. Production cards may also set a minimum speedup; the
+libpng micro workload requires 2% before semantic review is allowed.
+
+Run recovery is artifact-based. A new E2B Sandbox reconstructs the pinned
+baseline commit, reapplies `candidate.patch`, restores the untracked raw Builder
+trace used by the trace fence, and resumes a pending regular or full-alignment
+review. The run identity rejects task-card or baseline changes under an existing
+run ID.

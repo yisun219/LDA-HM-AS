@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from .benchmark import BenchmarkReport, BenchmarkRunner
-from .fence import FenceResult, FenceSuite
+from .fence import FenceResult, FenceSuite, sha256_file
 from .flow import HumanizeFlow
 from .gates import GateContext, GateRunner
 from .runtime import SessionTopology
@@ -30,7 +30,10 @@ class LDAExecution:
             # Fake sandboxes are valid only for tests; a production execution
             # must carry an E2B identity.
             raise SandboxUnavailable("production LDA execution requires an E2B sandbox")
-        self.flow.state.metadata["sandbox"] = sandbox_manifest()
+        self.flow.state.metadata["sandbox"] = sandbox_manifest(
+            self.card.baseline.template,
+            self.sandbox.sandbox_id,
+        )
         self.flow.state.metadata["task_card_digest"] = self.card.digest()
         self.flow.store.write_json("task-card.json", self.card.canonical())
         self.flow.store.save_state(self.flow.state)
@@ -94,6 +97,45 @@ class LDAExecution:
         self.flow.state.metadata["source_reference"] = self.card.source_reference
         self.flow.store.save_state(self.flow.state)
 
+    def restore_candidate(self, *, target_workspace: str = "/opt/lda/work") -> None:
+        """Rehydrate the latest durable candidate into a newly created Sandbox."""
+        patch = self.flow.store.root / "candidate.patch"
+        if patch.is_file() and patch.stat().st_size:
+            remote_patch = "/tmp/lda-resume-candidate.patch"
+            self.sandbox.put(patch, remote_patch)
+            check = self.sandbox.run(
+                ("git", "-C", target_workspace, "apply", "--check", remote_patch)
+            )
+            if not check.ok:
+                raise RuntimeError("saved candidate patch no longer applies to the pinned baseline")
+            applied = self.sandbox.run(
+                ("git", "-C", target_workspace, "apply", "--index", remote_patch)
+            )
+            if not applied.ok:
+                raise RuntimeError("could not restore saved candidate patch")
+            committed = self.sandbox.run(
+                (
+                    "git",
+                    "-C",
+                    target_workspace,
+                    "commit",
+                    "-m",
+                    f"Restore LDA candidate for {self.flow.run_id}",
+                )
+            )
+            if not committed.ok:
+                raise RuntimeError("could not commit restored candidate patch")
+        raw_trace = self.flow.store.root / "raw-traces" / "builder-1.jsonl"
+        if raw_trace.is_file() and raw_trace.stat().st_size:
+            remote_trace = "/opt/lda/agent-state/traces/builder-1.jsonl"
+            prepared = self.sandbox.run(("mkdir", "-p", str(Path(remote_trace).parent)))
+            if not prepared.ok:
+                raise RuntimeError("could not prepare restored trace directory")
+            self.sandbox.put(raw_trace, remote_trace)
+        status = self.sandbox.run(("git", "-C", target_workspace, "status", "--porcelain"))
+        if not status.ok or status.stdout.strip():
+            raise RuntimeError("restored candidate worktree is not clean")
+
     def _baseline_env(self) -> tuple[str, ...]:
         baseline = self.card.baseline
         return tuple(
@@ -123,6 +165,19 @@ class LDAExecution:
             result = self.sandbox.run(("chmod", "0444", remote))
             if not result.ok:
                 raise RuntimeError(f"could not protect control artifact {name}")
+        sealed = self.sandbox.run(
+            (
+                "sudo",
+                "-n",
+                "sh",
+                "-c",
+                "chown -R root:root /opt/lda/control && "
+                "find /opt/lda/control -type f -exec chmod 0444 {} + && "
+                "find /opt/lda/control -type d -exec chmod 0555 {} +",
+            )
+        )
+        if not sealed.ok:
+            raise RuntimeError("could not seal immutable control artifacts")
 
     def capture_baseline(self) -> tuple[BenchmarkReport, ...]:
         if not self.flow.state.metadata.get("baseline_verified"):
@@ -139,6 +194,16 @@ class LDAExecution:
         return tuple(reports)
 
     def run_candidate_benchmarks(self) -> tuple[BenchmarkReport, ...]:
+        self._checkpoint_candidate()
+        prepared = self.sandbox.run(
+            ("/opt/lda/harness/checks/ensure-libpng-candidate.sh",),
+            timeout_seconds=3600,
+        )
+        if not prepared.ok:
+            raise RuntimeError(
+                "candidate package build failed before benchmarking: "
+                + prepared.stderr[-1200:]
+            )
         runner = BenchmarkRunner(self.sandbox)
         reports: list[BenchmarkReport] = []
         specs = (*self.card.micro_benchmarks, *self.card.end_to_end_benchmarks)
@@ -153,6 +218,12 @@ class LDAExecution:
                     f"benchmark regression: {spec.layer}/{spec.name}: "
                     f"candidate={candidate.median_seconds:.6f}s baseline={baseline.median_seconds:.6f}s"
                 )
+            speedup = (baseline.median_seconds / candidate.median_seconds - 1.0) * 100.0
+            if spec.min_speedup_percent is not None and speedup < spec.min_speedup_percent:
+                raise RuntimeError(
+                    f"benchmark speedup target not met: {spec.layer}/{spec.name}: "
+                    f"speedup={speedup:.3f}% required={spec.min_speedup_percent:.3f}%"
+                )
             baseline.write(self.flow.store.root / "benchmarks" / "paired" / f"{spec.layer}-{spec.name}-baseline.json")
             candidate.write(self.flow.store.root / "benchmarks" / "paired" / f"{spec.layer}-{spec.name}-candidate.json")
             comparisons.append(
@@ -161,8 +232,9 @@ class LDAExecution:
                     "name": spec.name,
                     "baseline_median_seconds": baseline.median_seconds,
                     "candidate_median_seconds": candidate.median_seconds,
-                    "speedup_percent": (baseline.median_seconds / candidate.median_seconds - 1.0) * 100.0,
+                    "speedup_percent": speedup,
                     "max_regression_percent": spec.max_regression_percent,
+                    "min_speedup_percent": spec.min_speedup_percent,
                 }
             )
             reports.extend((baseline, candidate))
@@ -172,7 +244,82 @@ class LDAExecution:
                 "comparisons": comparisons
             },
         )
+        self._publish_review_bundle()
         return tuple(reports)
+
+    def _checkpoint_candidate(self) -> None:
+        diff = self.sandbox.run(
+            (
+                "git",
+                "-C",
+                "/opt/lda/work",
+                "diff",
+                "--binary",
+                f"{self.flow.state.base_commit}..HEAD",
+            )
+        )
+        log = self.sandbox.run(
+            (
+                "git",
+                "-C",
+                "/opt/lda/work",
+                "log",
+                "--oneline",
+                "--decorate",
+                f"{self.flow.state.base_commit}..HEAD",
+            )
+        )
+        if not diff.ok or not log.ok:
+            raise RuntimeError("could not checkpoint candidate source")
+        self.flow.store.write_text("candidate.patch", diff.stdout)
+        self.flow.store.write_text("candidate-log.txt", log.stdout)
+        raw_trace = self.flow.store.root / "raw-traces" / "builder-1.jsonl"
+        self.sandbox.get(
+            "/opt/lda/agent-state/traces/builder-1.jsonl",
+            raw_trace,
+        )
+        self.flow.store.write_json(
+            "builder-trace.json",
+            {
+                "path": "raw-traces/builder-1.jsonl",
+                "sha256": sha256_file(raw_trace),
+                "size": raw_trace.stat().st_size,
+            },
+        )
+
+    def _publish_review_bundle(self) -> None:
+        diff_file = self.flow.store.root / "candidate.patch"
+        log_file = self.flow.store.root / "candidate-log.txt"
+        summary = self.flow.store.root / "benchmark-summary.json"
+        if not all(path.is_file() for path in (diff_file, log_file, summary)):
+            raise RuntimeError("candidate checkpoint is incomplete")
+        reset = self.sandbox.run(
+            (
+                "sudo",
+                "-n",
+                "sh",
+                "-c",
+                "rm -rf /opt/lda/review && "
+                "install -d -o user -g user -m 0755 /opt/lda/review",
+            )
+        )
+        if not reset.ok:
+            raise RuntimeError("could not prepare review bundle directory")
+        for local in (diff_file, log_file, summary):
+            self.sandbox.put(local, f"/opt/lda/review/{local.name}")
+        sealed = self.sandbox.run(
+            (
+                "sudo",
+                "-n",
+                "sh",
+                "-c",
+                "chown -R root:root /opt/lda/review && "
+                "find /opt/lda/review -type f -exec chmod 0444 {} + && "
+                "chmod 0555 /opt/lda/review",
+            )
+        )
+        if not sealed.ok:
+            raise RuntimeError("could not seal review bundle")
 
     @staticmethod
     def default_gate_context(flow: HumanizeFlow) -> GateContext:
@@ -195,7 +342,16 @@ class LDAExecution:
         """Derive Git facts inside E2B instead of trusting the host process."""
         branch = sandbox.run(("git", "-C", target_workspace, "branch", "--show-current"))
         status = sandbox.run(("git", "-C", target_workspace, "status", "--porcelain"))
-        diff = sandbox.run(("git", "-C", target_workspace, "diff", "--numstat"))
+        diff = sandbox.run(
+            (
+                "git",
+                "-C",
+                target_workspace,
+                "diff",
+                "--numstat",
+                f"{flow.state.base_commit}..HEAD",
+            )
+        )
         ahead = sandbox.run(("git", "-C", target_workspace, "rev-list", "--count", "@{u}..HEAD"))
         changed: list[str] = []
         if diff.ok:

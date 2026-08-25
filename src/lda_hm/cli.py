@@ -86,16 +86,20 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             results_root=args.results_root,
         )
-        flow.store.write_json(
-            "run.json",
-            {
-                "schema_version": 1,
-                "run_id": flow.run_id,
-                "package": card.package.package,
-                "task_card_digest": card.digest(),
-                "baseline_digest": card.baseline.digest(),
-            },
-        )
+        run_identity = {
+            "schema_version": 1,
+            "run_id": flow.run_id,
+            "package": card.package.package,
+            "task_card_digest": card.digest(),
+            "baseline_digest": card.baseline.digest(),
+        }
+        run_file = flow.store.root / "run.json"
+        if run_file.is_file():
+            existing_identity = json.loads(run_file.read_text(encoding="utf-8"))
+            if existing_identity != run_identity:
+                raise RuntimeError("run identity changed; start a new run ID")
+        else:
+            flow.store.write_json("run.json", run_identity)
         agents = {
             role: CommandAgent.from_env(sandbox, role=role)
             for role in ("drafter", "planner", "analyst", "builder", "reviewer")
@@ -114,16 +118,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         execution.bootstrap_template_assets(Path(__file__).resolve().parents[2] / "sandbox" / "lda-base")
         sandbox.bootstrap_credentials()
-        if not flow.state.metadata.get("workspace_prepared"):
-            execution.prepare_workspace()
-            flow.state.metadata["workspace_prepared"] = True
-            flow.store.save_state(flow.state)
+        previous_base_commit = flow.state.base_commit
+        execution.prepare_workspace()
+        if previous_base_commit and flow.state.base_commit != previous_base_commit:
+            raise RuntimeError("pinned baseline commit changed; old run cannot be resumed")
+        execution.restore_candidate()
+        flow.state.metadata["workspace_prepared"] = True
+        flow.store.save_state(flow.state)
         if not flow.state.metadata.get("baseline_captured"):
             execution.capture_baseline()
         if flow.state.phase.value == "setup":
             flow.begin(args.task)
         stages = execution.stages(
-            trace_remote="/opt/lda/work/.lda-hm/traces/builder-1.jsonl"
+            trace_remote="/opt/lda/agent-state/traces/builder-1.jsonl"
         )
         if flow.state.phase.value == "idea":
             idea = stages.gen_idea(args.task)
@@ -132,15 +139,17 @@ def main(argv: list[str] | None = None) -> int:
         if flow.state.phase.value == "plan":
             stages.gen_plan(idea, max_convergence_rounds=args.max_convergence_rounds)
         execution.sync_control_artifacts()
-        while flow.state.phase.value not in {"complete", "stop", "max_iter", "unexpected"}:
+        while flow.state.phase.value not in {"complete", "stop", "unexpected"}:
             if flow.state.phase.value in {"implementation", "drift_recovery"}:
                 stages.review_round(contract=args.contract)
+            elif flow.state.phase.value in {"regular_review", "full_alignment"}:
+                stages.resume_review()
             elif flow.state.phase.value == "code_review":
                 stages.code_review()
             elif flow.state.phase.value == "finalize":
-                flow.record_finalize("Finalize after clean code review")
-            elif flow.state.phase.value == "methodology_analysis":
-                flow.record_methodology("LDA flow completed with deterministic fences and independent review")
+                stages.finalize()
+            elif flow.state.phase.value in {"methodology_analysis", "max_iter"}:
+                stages.methodology_analysis()
             else:
                 raise RuntimeError(f"unhandled flow phase: {flow.state.phase.value}")
         print(json.dumps(flow.state.to_dict(), indent=2, sort_keys=True))

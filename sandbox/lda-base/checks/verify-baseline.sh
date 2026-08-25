@@ -31,22 +31,30 @@ jq -e --arg release "$expected_release" \
       --arg iso "${LDA_BASELINE_ISO_SHA256:?ISO SHA256 required}" \
       --arg build "${LDA_BASELINE_ISO_BUILD_ID:?ISO build ID required}" \
       --arg rootfs "${LDA_BASELINE_ROOTFS_DIGEST:?rootfs digest required}" \
+      --arg snapshot "${LDA_BASELINE_APT_SNAPSHOT:?APT snapshot required}" \
+      --arg packages "${LDA_BASELINE_PACKAGE_INVENTORY_DIGEST:?package inventory digest required}" \
+      --arg snaps "${LDA_BASELINE_SNAP_INVENTORY_DIGEST:?Snap inventory digest required}" \
       '.release == $release and .codename == $codename and .architecture == $arch and
        .edition == $edition and .iso_sha256 == $iso and
-       .iso_build_id == $build and .rootfs_digest == $rootfs' \
+       .iso_build_id == $build and .rootfs_digest == $rootfs and
+       .apt_snapshot == $snapshot and .package_inventory_digest == $packages and
+       .snap_inventory_digest == $snaps' \
       "$metadata" >/dev/null
 
 actual_manifest_sha="$(sha256sum "$manifest" | awk '{print $1}')"
 test "$actual_manifest_sha" = "${LDA_BASELINE_MANIFEST_SHA256:?manifest SHA256 required}"
 
-inventory_sha="$(dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort | sha256sum | awk '{print $1}')"
+inventory_sha="$(LC_ALL=C dpkg-query -W | sort | sha256sum | awk '{print $1}')"
 test "$inventory_sha" = "${LDA_BASELINE_PACKAGE_INVENTORY_DIGEST:?package inventory digest required}"
 
 test -r "$snap_manifest"
 actual_snap_sha="$(sha256sum "$snap_manifest" | awk '{print $1}')"
 test "$actual_snap_sha" = "${LDA_BASELINE_SNAP_MANIFEST_SHA256:?Snap manifest SHA256 required}"
-command -v snap >/dev/null
-snap_inventory_sha="$(snap list --unicode=never | awk 'NR > 1 {print $1 \"\\t\" $3 \"\\t\" $4}' | LC_ALL=C sort | sha256sum | awk '{print $1}')"
+if command -v snap >/dev/null; then
+  snap_inventory_sha="$(snap list --unicode=never | awk 'NR > 1 {print $1 \"\\t\" $3 \"\\t\" $4}' | LC_ALL=C sort | sha256sum | awk '{print $1}')"
+else
+  snap_inventory_sha="$(printf %s '' | sha256sum | awk '{print $1}')"
+fi
 test "$snap_inventory_sha" = "${LDA_BASELINE_SNAP_INVENTORY_DIGEST:?Snap inventory digest required}"
 
 printf '%s\n' "iso_snapshot baseline verified: $metadata"

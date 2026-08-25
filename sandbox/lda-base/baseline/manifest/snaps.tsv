@@ -1,0 +1,14 @@
+bare	stable	5
+core24	stable	1587
+desktop-security-center	1/stable/ubuntu-26.04	150
+firefox	stable/ubuntu-26.04	8107
+firmware-updater	1/stable/ubuntu-26.04	226
+gnome-46-2404	stable/ubuntu-26.04	153
+gtk-common-themes	stable/ubuntu-26.04	1535
+mesa-2404	stable/ubuntu-26.04	1165
+prompting-client	1/stable/ubuntu-26.04	204
+snap-store	2/stable/ubuntu-26.04	1367
+snapd	stable	26865
+snapd-desktop-integration	stable/ubuntu-26.04	361
+thunderbird	stable/ubuntu-26.04	1057
+ubuntu-desktop-bootstrap	26.04/stable	589

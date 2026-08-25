@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from .flow import HumanizeFlow
 from .fence import FenceResult, FenceSuite, parse_p_severity
 from .gates import GateContext, GateRunner
 from .prompts import (
+    BUILDER_ROUND,
     CODE_REVIEW,
     DRIFT_RECOVERY,
     FULL_ALIGNMENT,
@@ -14,10 +16,11 @@ from .prompts import (
     GEN_PLAN_ANALYSIS,
     GEN_PLAN_REVIEW,
     GEN_PLAN_REVISE,
+    METHODOLOGY_ANALYSIS,
     REGULAR_REVIEW,
 )
 from .runtime import SessionTopology
-from .types import MainlineVerdict, ReviewResult
+from .types import MainlineVerdict, Phase, ReviewResult
 
 
 @dataclass(frozen=True)
@@ -75,31 +78,52 @@ class HumanizeStages:
             GEN_PLAN.format(idea=idea, analysis=analysis)
         )
         plan = self._text(candidate, "planner returned an empty plan")
+        converged = False
         for _ in range(max_convergence_rounds):
             review_answer = self.topology.fresh_analyst().ask(
                 GEN_PLAN_REVIEW.format(idea=idea, plan=plan)
             )
             review = self._text(review_answer, "analyst returned an empty plan review")
             if review.splitlines()[-1].strip() == "CONVERGED":
+                converged = True
                 break
             revised = self.topology.planner.ask(GEN_PLAN_REVISE.format(review=review))
             plan = self._text(revised, "planner returned an empty revision")
+        if not converged:
+            raise RuntimeError(
+                f"plan did not converge within {max_convergence_rounds} rounds"
+            )
         self.flow.record_plan(plan, goal_tracker=self._goal_tracker(plan))
         return plan
 
     def review_round(self, *, contract: str) -> ReviewResult:
         recovering = self.flow.state.drift_recovery_required
         self.flow.begin_round(contract)
+        prior_feedback = self._prior_feedback()
+        effective_contract = contract
+        if prior_feedback:
+            effective_contract += "\n\nPrior blocking feedback:\n" + prior_feedback
         builder_prompt = (
-            f"{DRIFT_RECOVERY}\n\nRound contract:\n{contract}"
+            f"{DRIFT_RECOVERY}\n\n{BUILDER_ROUND.format(contract=effective_contract)}"
             if recovering
-            else contract
+            else BUILDER_ROUND.format(contract=effective_contract)
         )
         builder_answer = self.topology.builder.ask(builder_prompt)
         builder_text = self._text(builder_answer, "builder returned an empty answer")
         phase = self.flow.finish_builder_round(builder_text)
+        return self._evaluate_review(phase)
+
+    def resume_review(self) -> ReviewResult:
+        if self.flow.state.phase not in {Phase.REGULAR_REVIEW, Phase.FULL_ALIGNMENT}:
+            raise ValueError("no pending review is available to resume")
+        return self._evaluate_review(self.flow.state.phase)
+
+    def _evaluate_review(self, phase: Phase) -> ReviewResult:
         if self.pre_review_hook is not None:
-            self.pre_review_hook()
+            try:
+                self.pre_review_hook()
+            except Exception as error:
+                return self._blocked("benchmark", str(error))
         if self.fence_suite is not None:
             fence_results = self.fence_suite.run()
             self.flow.store.write_json(
@@ -117,8 +141,11 @@ class HumanizeStages:
                 },
             )
             if not all(result.passed for result in fence_results):
-                raise FenceBlocked(
-                    "; ".join(result.reason for result in fence_results if not result.passed)
+                return self._blocked(
+                    "fence",
+                    "; ".join(
+                        result.reason for result in fence_results if not result.passed
+                    ),
                 )
         if self.gate_runner is not None:
             if self.gate_context_factory is None:
@@ -141,10 +168,13 @@ class HumanizeStages:
                 },
             )
             if not all(result.passed for result in gate_results):
-                raise GateBlocked(
-                    "; ".join(result.reason for result in gate_results if not result.passed)
+                return self._blocked(
+                    "gate",
+                    "; ".join(
+                        result.reason for result in gate_results if not result.passed
+                    ),
                 )
-        if phase.value == "full_alignment":
+        if phase is Phase.FULL_ALIGNMENT:
             prompt = FULL_ALIGNMENT.format(round=self.flow.state.current_round)
         else:
             prompt = REGULAR_REVIEW.format(round=self.flow.state.current_round)
@@ -153,12 +183,66 @@ class HumanizeStages:
         self.flow.record_review(result)
         return result
 
+    def _blocked(self, source: str, reason: str) -> ReviewResult:
+        feedback = f"DETERMINISTIC_{source.upper()}_BLOCK: {reason}"
+        self.flow.record_blocked_round(source, reason)
+        return ReviewResult(
+            verdict=MainlineVerdict.REGRESSED,
+            complete=False,
+            feedback=feedback,
+            blocking_findings=(feedback,),
+        )
+
+    def _prior_feedback(self) -> str:
+        if self.flow.state.current_round == 0:
+            return ""
+        prior = self.flow.store.round_dir(self.flow.state.current_round - 1)
+        for name in ("blocked.json", "review.json"):
+            path = prior / name
+            if not path.is_file():
+                continue
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if name == "blocked.json":
+                return f"{value.get('source', 'unknown')}: {value.get('reason', '')}"
+            return str(value.get("feedback", ""))
+        return ""
+
     def code_review(self) -> tuple[str, ...]:
         answer = self.topology.fresh_reviewer().ask(CODE_REVIEW)
         text = self._text(answer, "reviewer returned an empty code review")
         findings = parse_p_severity(text.splitlines())
         self.flow.record_code_review(findings)
         return findings
+
+    def finalize(self) -> str:
+        if self.fence_suite is None:
+            raise ValueError("finalize requires deterministic fences")
+        results = self.fence_suite.run()
+        failures = [result.reason for result in results if not result.passed]
+        if failures:
+            reason = "; ".join(failures)
+            self.flow.reopen_from_finalize(reason)
+            return reason
+        sandbox = self.fence_suite.sandbox
+        commit = sandbox.run(("git", "-C", "/opt/lda/work", "rev-parse", "HEAD"))
+        package = sandbox.run(("cat", "/opt/lda/candidate/runtime-deb.sha256"))
+        if not commit.ok or not package.ok:
+            reason = "final candidate identity is unavailable"
+            self.flow.reopen_from_finalize(reason)
+            return reason
+        summary = (
+            "Final deterministic fences passed.\n\n"
+            f"Git commit: {commit.stdout.strip()}\n\n"
+            f"Candidate package: {package.stdout.strip()}"
+        )
+        self.flow.record_finalize(summary)
+        return summary
+
+    def methodology_analysis(self) -> str:
+        answer = self.topology.fresh_analyst().ask(METHODOLOGY_ANALYSIS)
+        report = self._text(answer, "analyst returned an empty methodology report")
+        self.flow.record_methodology(report)
+        return report
 
     @staticmethod
     def _text(answer: object, error: str) -> str:
@@ -175,12 +259,32 @@ class HumanizeStages:
     def _review_result(answer: object) -> ReviewResult:
         text = answer if isinstance(answer, str) else str(answer)
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        verdict = next(
-            (MainlineVerdict(value) for value in ("ADVANCED", "STALLED", "REGRESSED")
-             if any(line == value or line.endswith(f": {value}") for line in lines)),
-            None,
+        verdict_lines = [line for line in lines if line.startswith("VERDICT:")]
+        status_lines = [line for line in lines if line.startswith("STATUS:")]
+        blocking_lines = [line for line in lines if line.startswith("BLOCKING:")]
+        if len(verdict_lines) != 1:
+            raise ValueError("reviewer must return exactly one VERDICT line")
+        if len(status_lines) != 1:
+            raise ValueError("reviewer must return exactly one STATUS line")
+        if not blocking_lines:
+            raise ValueError("reviewer must return at least one BLOCKING line")
+        try:
+            verdict = MainlineVerdict(verdict_lines[0].partition(":")[2].strip())
+        except ValueError as error:
+            raise ValueError("reviewer verdict must be ADVANCED, STALLED, or REGRESSED") from error
+        status = status_lines[0].partition(":")[2].strip()
+        if status not in {"COMPLETE", "INCOMPLETE"}:
+            raise ValueError("reviewer status must be COMPLETE or INCOMPLETE")
+        blocking_values = [line.partition(":")[2].strip() for line in blocking_lines]
+        if "NONE" in blocking_values and len(blocking_values) != 1:
+            raise ValueError("BLOCKING: NONE cannot be combined with findings")
+        findings = () if blocking_values == ["NONE"] else tuple(blocking_values)
+        complete = status == "COMPLETE"
+        if complete and (verdict is not MainlineVerdict.ADVANCED or findings):
+            raise ValueError("COMPLETE requires ADVANCED and BLOCKING: NONE")
+        return ReviewResult(
+            verdict=verdict,
+            complete=complete,
+            feedback=text,
+            blocking_findings=findings,
         )
-        if verdict is None:
-            raise ValueError("reviewer must return ADVANCED, STALLED, or REGRESSED")
-        complete = lines[-1] == "COMPLETE" if lines else False
-        return ReviewResult(verdict=verdict, complete=complete, feedback=text)

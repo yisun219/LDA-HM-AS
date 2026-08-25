@@ -103,9 +103,15 @@ class E2BSandbox:
             name: value
             for name in (
                 "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "ANTHROPIC_BASE_URL",
                 "OPENAI_API_KEY",
+                "OPENAI_BASE_URL",
                 "GOOGLE_API_KEY",
                 "GEMINI_API_KEY",
+                "NO_PROXY",
+                "no_proxy",
+                "LDA_AGENT_BACKEND",
                 "LDA_AGENT_PROVIDER",
                 "LDA_AGENT_MODEL",
                 "LDA_AGENT_THINKING",
@@ -173,7 +179,12 @@ class E2BSandbox:
             stdout = str(getattr(result, "stdout", ""))
             stderr = str(getattr(result, "stderr", ""))
         except Exception as error:  # transport errors are surfaced as failed results
-            exit_code, stdout, stderr = 125, "", repr(error)
+            if hasattr(error, "exit_code"):
+                exit_code = int(getattr(error, "exit_code"))
+                stdout = str(getattr(error, "stdout", ""))
+                stderr = str(getattr(error, "stderr", ""))
+            else:
+                exit_code, stdout, stderr = 125, "", repr(error)
         return SandboxResult(tuple(command), exit_code, stdout, stderr, time.monotonic() - started, self.sandbox_id)
 
     def put(self, local: Path, remote: str) -> None:
@@ -202,7 +213,12 @@ class E2BSandbox:
             (root / "harness", "/opt/lda/harness"),
             (root / "checks", "/opt/lda/harness/checks"),
             (root / "skills", "/opt/lda/skills"),
+            (root / "baseline", "/opt/lda/baseline"),
         )
+        for directory in ("/opt/lda/control", "/opt/lda/review"):
+            result = self.run(("mkdir", "-p", directory))
+            if not result.ok:
+                raise SandboxUnavailable(f"could not prepare E2B asset directory {directory}")
         for source, destination in mappings:
             for local in sorted(source.rglob("*")):
                 if not local.is_file():
@@ -216,22 +232,43 @@ class E2BSandbox:
 
     def bootstrap_credentials(self) -> None:
         """Inject existing user-scoped Agent logins without copying them to Git."""
-        mappings = (
-            (Path.home() / ".pi" / "agent" / "auth.json", "/home/user/.pi/agent/auth.json"),
-            (Path.home() / ".claude" / ".credentials.json", "/home/user/.claude/.credentials.json"),
-        )
+        backend = os.getenv("LDA_AGENT_BACKEND", "").strip()
+        codex_login = Path.home() / ".codex" / "auth.json"
+        if not backend:
+            if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
+                backend = "claude"
+            elif codex_login.is_file() and codex_login.stat().st_size > 2:
+                backend = "codex"
+            else:
+                backend = "pi"
+        mappings_by_backend = {
+            "pi": ((Path.home() / ".pi" / "agent" / "auth.json", "/home/user/.pi/agent/auth.json"),),
+            "claude": ((Path.home() / ".claude" / ".credentials.json", "/home/user/.claude/.credentials.json"),),
+            "codex": ((codex_login, "/home/user/.codex/auth.json"),),
+        }
+        if backend not in mappings_by_backend:
+            raise SandboxUnavailable(f"unsupported Agent backend: {backend}")
+        environment_login = (
+            backend == "claude"
+            and bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
+        ) or (backend == "codex" and bool(os.getenv("OPENAI_API_KEY")))
+        mappings = () if environment_login else mappings_by_backend[backend]
         installed = 0
         for local, remote in mappings:
-            if not local.is_file():
+            if not local.is_file() or local.stat().st_size <= 2:
                 continue
+            if local.stat().st_mode & 0o077:
+                raise SandboxUnavailable(f"Agent credential must be private (0600): {local}")
             self.run(("mkdir", "-p", str(Path(remote).parent)))
             self.put(local, remote)
             result = self.run(("chmod", "0600", remote))
             if not result.ok:
                 raise SandboxUnavailable(f"could not protect Agent credential {remote}")
             installed += 1
-        if installed == 0:
-            raise SandboxUnavailable("no Pi or Claude login is available for E2B Agent execution")
+        if installed == 0 and not environment_login:
+            raise SandboxUnavailable(
+                "no Claude, Codex, or Pi login is available for E2B Agent execution"
+            )
 
 
 class FakeSandbox:
@@ -258,5 +295,13 @@ class FakeSandbox:
         local.write_text("", encoding="utf-8")
 
 
-def sandbox_manifest(template: str = "lda-base") -> str:
-    return json.dumps({"execution": "e2b", "template": template, "host_fallback": False}, sort_keys=True)
+def sandbox_manifest(template: str = "lda-base", sandbox_id: str = "") -> str:
+    return json.dumps(
+        {
+            "execution": "e2b",
+            "template": template,
+            "sandbox_id": sandbox_id,
+            "host_fallback": False,
+        },
+        sort_keys=True,
+    )

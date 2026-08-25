@@ -8,8 +8,12 @@
     "rationale": "Common image path used by browsers, GUI stacks, and tooling"
   },
   "goal": "Optimize Ubuntu 26.04 libpng for the target CPU while preserving surgical replacement compatibility",
-  "source_reference": "ubuntu-26.04:libpng:baseline-commit-or-package-version",
-  "setup_commands": [["/opt/lda/harness/checks/prepare-ubuntu-source.sh", "libpng1.6"]],
+  "source_reference": "ubuntu:resolute/libpng1.6=1.6.57-1@20260423T120000Z",
+  "setup_commands": [
+    ["/opt/lda/harness/checks/prepare-ubuntu-source.sh", "libpng1.6", "1.6.57-1"],
+    ["/opt/lda/harness/checks/build-libpng-package.sh", "baseline"],
+    ["/opt/lda/harness/checks/prepare-libpng-fixtures.sh"]
+  ],
   "baseline_tests": [["/opt/lda/harness/checks/run-baseline-tests.sh"]],
   "dependency_tests": [["/opt/lda/harness/checks/run-dependency-tests.sh"]],
   "abi_checks": [["/opt/lda/harness/checks/run-abi-fence.sh"]],
@@ -27,7 +31,8 @@
       "repetitions": 5,
       "timeout_seconds": 900,
       "inputs": ["small", "large", "boundary", "incompressible"]
-      ,"max_regression_percent": 0.0
+      ,"max_regression_percent": 2.0
+      ,"min_speedup_percent": 2.0
     }
   ],
   "end_to_end_benchmarks": [
@@ -40,15 +45,25 @@
       "timeout_seconds": 1800,
       "inputs": ["browser-render", "gui", "web-server"]
       ,"max_regression_percent": 5.0
+      ,"min_speedup_percent": null
     }
   ],
   "baseline": {
-    "mode": "source_package",
-    "template": "lda-base",
+    "mode": "iso_snapshot",
+    "template": "01a03892-ee93-7952-9da0-bbc04fb1fdec",
     "release": "26.04",
     "codename": "resolute",
-    "edition": "generic",
-    "architecture": "amd64"
+    "edition": "desktop",
+    "architecture": "amd64",
+    "iso_artifact": "https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso",
+    "iso_sha256": "487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2",
+    "iso_build_id": "20260423.1",
+    "manifest_sha256": "2e5f3af7017042ceb8f815f1a11524795881e2959c1c17a6b950e52eead6df80",
+    "snap_manifest_sha256": "09fcf64fa9471d6dd42b294c059dbf7b0bfa6c5808a78c5fb28a0ffc49e9d454",
+    "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260423T120000Z",
+    "rootfs_digest": "74e340a35a5306017d742150fd7e778e99e0b58023caeaa4b55721f165997690",
+    "package_inventory_digest": "a20a71a0735eec63991b4195eefc048ae83327265194f9ebd4c8fad210e13a87",
+    "snap_inventory_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "compatibility": {
     "soname_unchanged": true,
@@ -64,6 +79,10 @@
   "metadata": {
     "target_cpu": "INTEL(R) XEON(R) GOLD 6548Y+",
     "target_release": "ubuntu-26.04",
+    "iso_package_count": 1814,
+    "iso_snap_count": 14,
+    "execution_template_alias": "lda-production-2604-v10",
+    "execution_template_id": "01a03892-ee93-7952-9da0-bbc04fb1fdec",
     "optimization_policy": "compatibility-first"
   }
 }

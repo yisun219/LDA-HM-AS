@@ -39,7 +39,11 @@ Builder -> Fence -> Fresh Reviewer loop:
 ```bash
 python -m lda_hm.cli init-card ./work examples/libpng-card.json
 export LDA_AGENT_COMMAND="/opt/lda/harness/lda-agent-harness.sh"
+# Source a private Agent gateway environment when the run does not use a
+# credential-file login. Never place this file in the repository or template.
+# set -a; source ~/.config/lda/factlab-claude.env; set +a
 python -m lda_hm.cli run ./work \
+  --run-id libpng-production-001 \
   --results-root /fact_data/yisun/Linux-Development-Agent-Runs \
   --task "Optimize libpng for Ubuntu 26.04" \
   --contract "Advance the highest-priority unmet acceptance criterion"
@@ -47,18 +51,30 @@ python -m lda_hm.cli run ./work \
 
 The harness accepts `--prompt-file`, `--role`, and `--session`, and returns one
 response on stdout. Every build, test, benchmark, upload, and agent turn is
-executed in E2B. The flow will not silently run on the host. Set
-`LDA_AGENT_PROVIDER`/`LDA_AGENT_MODEL` and the corresponding provider
-credential in the E2B environment before running.
+executed in E2B. The flow will not silently run on the host. The default Agent
+backend selection and model behavior are described below.
+
+Resume an interrupted run by invoking the same command with the same
+`--run-id`. A fresh Sandbox reconstructs the deterministic Snapshot baseline,
+reapplies the durable candidate patch, restores the Builder trace, and resumes
+pending deterministic review without repeating the completed Builder turn.
+Changing the task card or baseline digest requires a new run ID.
 
 Production run state and compact evidence belong in a separate result
 repository. Set `--results-root` (or `LDA_RESULTS_ROOT`) to that repository.
 Large immutable artifacts stay outside Git; their SHA256 and storage location
 are recorded with the run.
 
-The example card currently uses the explicit transitional source_package
-baseline. Production Ubuntu Desktop work must use iso_snapshot with an
-ISO-derived E2B template and complete identity metadata; see docs/BASELINE.md.
+The harness selects an environment-backed Claude endpoint first, then Codex,
+then Pi. It can also be pinned with `LDA_AGENT_BACKEND=claude|codex|pi`.
+The validated Claude default is `claude-opus-4-8`; override it with
+`LDA_AGENT_MODEL` when another gateway exposes a different model set.
+Claude, Codex, and Pi sessions all run inside E2B; private credentials are
+injected only when the Sandbox starts.
+
+The libpng card uses the production `iso_snapshot` contract anchored to Ubuntu
+26.04 Desktop build `20260423.1`, Snapshot source version `1.6.57-1`, and an
+immutable E2B template ID; see docs/BASELINE.md.
 
 ## Development
 

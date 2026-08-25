@@ -156,7 +156,11 @@ class HumanizeFlow:
             self._move(Phase.STOP)
             return self.state.phase
 
-        if result.complete and not result.blocking_findings:
+        if (
+            result.verdict is MainlineVerdict.ADVANCED
+            and result.complete
+            and not result.blocking_findings
+        ):
             self.state.review_started = True
             self._move(Phase.CODE_REVIEW)
             return self.state.phase
@@ -167,6 +171,34 @@ class HumanizeFlow:
             self._move(Phase.MAX_ITER)
             return self.state.phase
 
+        if self.state.stall_count >= self.config.drift_recovery_threshold:
+            self.state.drift_recovery_required = True
+            self._move(Phase.DRIFT_RECOVERY)
+        else:
+            self._move(Phase.IMPLEMENTATION)
+        return self.state.phase
+
+    def record_blocked_round(self, source: str, reason: str) -> Phase:
+        """Advance after a deterministic block without granting Reviewer access."""
+        self._require(Phase.REGULAR_REVIEW, Phase.FULL_ALIGNMENT)
+        if not source.strip() or not reason.strip():
+            raise ValueError("blocked round source and reason are required")
+        round_dir = self.store.round_dir(self.state.current_round)
+        self.store.write_json(
+            round_dir.relative_to(self.store.root) / "blocked.json",
+            {"source": source, "reason": reason},
+        )
+        self.state.last_verdict = MainlineVerdict.REGRESSED
+        self.state.stall_count += 1
+        if self.state.stall_count >= self.config.circuit_breaker_threshold:
+            self.state.terminal_reason = TerminalReason.STOP
+            self._move(Phase.STOP)
+            return self.state.phase
+        self.state.current_round += 1
+        if self.state.current_round >= self.config.max_iterations:
+            self.state.terminal_reason = TerminalReason.MAX_ITER
+            self._move(Phase.MAX_ITER)
+            return self.state.phase
         if self.state.stall_count >= self.config.drift_recovery_threshold:
             self.state.drift_recovery_required = True
             self._move(Phase.DRIFT_RECOVERY)
@@ -190,6 +222,19 @@ class HumanizeFlow:
             raise ValueError("finalize summary must not be empty")
         self.store.write_text("finalize-summary.md", summary.rstrip() + "\n")
         self._move(Phase.METHODOLOGY_ANALYSIS)
+
+    def reopen_from_finalize(self, reason: str) -> Phase:
+        self._require(Phase.FINALIZE)
+        if not reason.strip():
+            raise ValueError("finalize block reason is required")
+        self.store.write_json("finalize-blocked.json", {"reason": reason})
+        self.state.current_round += 1
+        if self.state.current_round >= self.config.max_iterations:
+            self.state.terminal_reason = TerminalReason.MAX_ITER
+            self._move(Phase.MAX_ITER)
+        else:
+            self._move(Phase.IMPLEMENTATION)
+        return self.state.phase
 
     def record_methodology(self, report: str) -> None:
         self._require(Phase.METHODOLOGY_ANALYSIS, Phase.MAX_ITER)
