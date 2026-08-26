@@ -39,7 +39,12 @@ def _template_exists_with_retry(name: str, *, attempts: int = 8) -> bool:
             message = str(error).lower()
             transient = any(marker in message for marker in ("530", "502", "503", "timeout", "connection"))
             if not transient or attempt == attempts - 1:
-                raise
+                if "530" in message or "1033" in message:
+                    raise RuntimeError(
+                        "E2B shared gateway is unavailable (HTTP 530/Cloudflare 1033); "
+                        "restore the Fact-Lab tunnel before starting a Run"
+                    ) from error
+                raise RuntimeError(f"E2B template lookup failed for {name}: {error}") from error
             time.sleep(min(2 ** attempt, 10))
     return False
 
