@@ -39,6 +39,54 @@ class CanaryHarnessTest(unittest.TestCase):
             validate_optimization_flags(["-Ofast"])
         self.assertEqual(validate_optimization_flags(["-O3", "-fno-plt"]), ("-O3", "-fno-plt"))
 
+    def test_benchmark_requires_exact_candidate_runtime(self):
+        client = E2BClient(fake=True)
+        sandbox = client.create({"run_id": "r"})
+        result = CanaryBenchmarkRunner(client).run(
+            sandbox, "libcairo2", candidate_root="/workspace/candidate-root")
+        self.assertTrue(result["invalid"])
+        self.assertEqual(result["reason"], "exact_candidate_runtime_required_for_benchmark")
+
+    def test_exact_baseline_command_pins_candidate_version(self):
+        class RecordingClient(E2BClient):
+            def __init__(self):
+                super().__init__(fake=True)
+                self.commands = []
+
+            def command(self, sandbox, command, **kwargs):
+                self.commands.append(command)
+                if command.startswith("dpkg-deb -f /tmp/candidate.deb "):
+                    return {"exit_code": 0, "stdout": {
+                        "Package": "libcairo2\n", "Version": "1.18.4-3\n",
+                        "Architecture": "amd64\n",
+                    }[command.rsplit(" ", 1)[1]], "stderr": ""}
+                if command.startswith("find /workspace/benchmarks/official-baseline"):
+                    return {"exit_code": 0,
+                            "stdout": "/workspace/benchmarks/official-baseline/libcairo2.deb\n",
+                            "stderr": ""}
+                if command.startswith("dpkg-deb -f /workspace/benchmarks/official-baseline/libcairo2.deb "):
+                    return {"exit_code": 0, "stdout": {
+                        "Package": "libcairo2\n", "Version": "1.18.4-3\n",
+                        "Architecture": "amd64\n",
+                    }[command.rsplit(" ", 1)[1]], "stderr": ""}
+                if command.startswith("dpkg-query -W"):
+                    return {"exit_code": 0, "stdout": "libcairo2\n1.18.4-3\namd64\n", "stderr": ""}
+                if command.startswith("sha256sum "):
+                    return {"exit_code": 0, "stdout": "a" * 64 + "  official.deb\n", "stderr": ""}
+                return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+            def command_checkpointed(self, sandbox, command, **kwargs):
+                self.commands.append(command)
+                return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+        client = RecordingClient()
+        sandbox = client.create({"run_id": "r"})
+        result = CanaryBenchmarkRunner(client).install_exact_official_baseline(
+            sandbox, "libcairo2", "/tmp/candidate.deb")
+        self.assertTrue(result["passed"])
+        self.assertTrue(any("libcairo2=1.18.4-3" in command for command in client.commands))
+        self.assertEqual(result["official_sha256"], "a" * 64)
+
     def test_virtual_cpuid_is_compatible_but_not_attested(self):
         result = architecture_compatibility({
             "vendor_id": "GenuineIntel", "family": 6, "model": 207, "stepping": 2,

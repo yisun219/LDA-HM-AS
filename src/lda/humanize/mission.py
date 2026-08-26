@@ -251,7 +251,10 @@ class HumanizeMission:
                                     "e2e_speedup": 0.0, "improved_workloads": 0,
                                     "evidence_refs": []}
             else:
-                benchmark_result = canary_runner.run(work, self.mission.package, candidate_root=candidate_root)
+                benchmark_result = canary_runner.run(
+                    work, self.mission.package, candidate_root=candidate_root,
+                    candidate_debs=candidate_debs,
+                )
         else:
             benchmark_result = self._read_benchmarks(work)
         benchmark_result.update({

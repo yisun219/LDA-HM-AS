@@ -367,24 +367,128 @@ class CanaryBenchmarkRunner:
                 "artifacts": artifacts, "target_artifact": target, "target_sha256": artifact_hash,
                 "reason": None if target else "target_binary_deb_missing"}
 
-    def run(self, sandbox: Sandbox, package: str, *, candidate_root: str = "") -> dict[str, Any]:
-        harness = self.install(sandbox)
+    @staticmethod
+    def _invalid(reason: str, **evidence: Any) -> dict[str, Any]:
+        return {"invalid": True, "accepted": False, "reason": reason,
+                "micro_speedup": 0.0, "micro_ci_lower": 0.0,
+                "e2e_speedup": 0.0, "improved_workloads": 0,
+                "evidence_refs": [], **evidence}
+
+    def install_exact_official_baseline(self, sandbox: Sandbox, package: str,
+                                        candidate_deb: str) -> dict[str, Any]:
+        """Install and attest the official package matching the candidate.
+
+        The candidate is built from a fixed Ubuntu snapshot. Comparing it with
+        an arbitrary package already present in the template would confound the
+        benchmark with an upstream version change, so version and architecture
+        equality are hard evidence gates.
+        """
         self.validate_package(package)
+        fields: dict[str, str] = {}
+        for field in ("Package", "Version", "Architecture"):
+            result = self.client.command(
+                sandbox, f"dpkg-deb -f {shlex.quote(candidate_deb)} {field}", timeout=120)
+            value = (result.get("stdout") or "").strip()
+            if result.get("exit_code") != 0 or not value:
+                return {"passed": False, "reason": f"candidate_{field.lower()}_unavailable",
+                        "candidate_deb": candidate_deb}
+            fields[field.lower()] = value
+        if fields["package"] != package:
+            return {"passed": False, "reason": "candidate_package_mismatch",
+                    "candidate": fields, "candidate_deb": candidate_deb}
+
+        official_root = "/workspace/benchmarks/official-baseline"
+        requested = f"{package}={fields['version']}"
+        download = self.client.command_checkpointed(
+            sandbox,
+            f"rm -rf {shlex.quote(official_root)} && mkdir -p {shlex.quote(official_root)} && "
+            f"cd {shlex.quote(official_root)} && apt-get download {shlex.quote(requested)}",
+            timeout=600,
+        )
+        if download.get("exit_code") != 0:
+            return {"passed": False, "reason": "official_baseline_download_failed",
+                    "candidate": fields, "exit_code": download.get("exit_code"),
+                    "stderr_sha256": hashlib.sha256((download.get("stderr") or "").encode()).hexdigest()}
+        listing = self.client.command(
+            sandbox, f"find {shlex.quote(official_root)} -maxdepth 1 -type f -name '*.deb' -print",
+            timeout=120)
+        paths = [line.strip() for line in (listing.get("stdout") or "").splitlines()
+                 if line.strip().endswith(".deb")]
+        if listing.get("exit_code") != 0 or len(paths) != 1:
+            return {"passed": False, "reason": "official_baseline_artifact_ambiguous",
+                    "candidate": fields, "paths": paths}
+        official_deb = paths[0]
+
+        official: dict[str, str] = {}
+        for field in ("Package", "Version", "Architecture"):
+            result = self.client.command(
+                sandbox, f"dpkg-deb -f {shlex.quote(official_deb)} {field}", timeout=120)
+            value = (result.get("stdout") or "").strip()
+            if result.get("exit_code") != 0 or not value:
+                return {"passed": False, "reason": f"official_{field.lower()}_unavailable",
+                        "candidate": fields, "official_deb": official_deb}
+            official[field.lower()] = value
+        if official != fields:
+            return {"passed": False, "reason": "official_candidate_metadata_mismatch",
+                    "candidate": fields, "official": official, "official_deb": official_deb}
+
+        install = self.client.command_checkpointed(
+            sandbox,
+            f"DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "
+            f"--no-install-recommends {shlex.quote(requested)}",
+            timeout=600,
+        )
+        if install.get("exit_code") != 0:
+            return {"passed": False, "reason": "official_baseline_install_failed",
+                    "candidate": fields, "official": official,
+                    "exit_code": install.get("exit_code"),
+                    "stderr_sha256": hashlib.sha256((install.get("stderr") or "").encode()).hexdigest()}
+        installed = self.client.command(
+            sandbox,
+            f"dpkg-query -W -f='${{Package}}\n${{Version}}\n${{Architecture}}\n' {shlex.quote(package)}",
+            timeout=120,
+        )
+        installed_fields = (installed.get("stdout") or "").splitlines()
+        if installed.get("exit_code") != 0 or installed_fields != [
+                fields["package"], fields["version"], fields["architecture"]]:
+            return {"passed": False, "reason": "installed_baseline_metadata_mismatch",
+                    "candidate": fields, "official": official,
+                    "installed": installed_fields}
+        hashed = self.client.command(sandbox, f"sha256sum {shlex.quote(official_deb)}", timeout=120)
+        digest = (hashed.get("stdout") or "").split()[0] if hashed.get("exit_code") == 0 else ""
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest.lower()):
+            return {"passed": False, "reason": "official_baseline_hash_unavailable",
+                    "candidate": fields, "official": official, "official_deb": official_deb}
+        return {"passed": True, "candidate": fields, "official": official,
+                "installed": dict(zip(("package", "version", "architecture"), installed_fields)),
+                "official_deb": official_deb, "official_sha256": digest}
+
+    def run(self, sandbox: Sandbox, package: str, *, candidate_root: str = "",
+            candidate_debs: dict[str, str] | None = None) -> dict[str, Any]:
+        self.validate_package(package)
+        runtime_deb = (candidate_debs or {}).get("runtime")
+        if not candidate_root or not runtime_deb:
+            return self._invalid("exact_candidate_runtime_required_for_benchmark")
         # The base template intentionally contains toolchains, not target
-        # packages. Install the pinned runtime from the sandbox apt snapshot
-        # before measuring; failure is reported as invalid evidence.
-        benchmark_packages = ([package, "librsvg2-bin"] if package == "libcairo2"
-                              else [package, "libsoup-3.0-dev", "gcc", "pkg-config"])
+        # packages. Install unchanged harness dependencies first because APT
+        # could otherwise upgrade the target package after it was pinned.
+        benchmark_packages = (["librsvg2-bin"] if package == "libcairo2"
+                              else ["libsoup-3.0-dev", "gcc", "pkg-config"])
         query = " ".join(shlex.quote(item) for item in benchmark_packages)
         available = self.client.command(sandbox, f"dpkg-query -W -f='${{Status}}\\n' {query}")
         if available.get("exit_code") != 0 or (available.get("stdout") or "").count("install ok installed") != len(benchmark_packages):
             installed = self.client.command_checkpointed(
                 sandbox, f"apt-get install -y --no-install-recommends {query}", timeout=600)
             if installed.get("exit_code") != 0:
-                return {"invalid": True, "reason": "canary_runtime_install_failed",
-                        "stderr": installed.get("stderr", ""), "micro_speedup": 0.0,
-                        "micro_ci_lower": 0.0, "e2e_speedup": 0.0, "improved_workloads": 0,
-                        "evidence_refs": []}
+                return self._invalid("canary_runtime_install_failed",
+                                     stderr=installed.get("stderr", ""))
+        # Install and re-read the exact official runtime last. This also
+        # permits a controlled downgrade if the template repositories contain
+        # a newer package than the fixed source snapshot.
+        baseline = self.install_exact_official_baseline(sandbox, package, runtime_deb)
+        if baseline.get("passed") is not True:
+            return self._invalid("official_baseline_not_exact", baseline_evidence=baseline)
+        harness = self.install(sandbox)
         package_metadata = self.client.command(
             sandbox, f"dpkg-query -W -f='${{Package}} ${{Version}} ${{Architecture}}\\n' {shlex.quote(package)}"
         )
@@ -423,6 +527,7 @@ class CanaryBenchmarkRunner:
                 warnings.append("hardware_identity_unattested")
             return {"invalid": False, "accepted": bool(measured.get("accepted") and not portfolio["invalid"] and hardware_valid),
                     "package_metadata": (package_metadata.get("stdout") or "").strip(),
+                    "baseline_evidence": baseline,
                     "micro_speedup": measured["speedup"], "micro_ci_lower": measured["ci_lower"],
                     "e2e_speedup": portfolio["geomean_speedup"], "improved_workloads": portfolio["improved_workloads"],
                     "micro": measured, "portfolio": portfolio,
@@ -433,9 +538,7 @@ class CanaryBenchmarkRunner:
                     "acceptance_warnings": warnings,
                     "evidence_refs": ["/workspace/benchmarks/micro.json", "/workspace/benchmarks/e2e.json"]}
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            return {"invalid": True, "accepted": False, "reason": f"invalid_canary_evidence: {exc}",
-                    "micro_speedup": 0.0, "micro_ci_lower": 0.0, "e2e_speedup": 0.0,
-                    "improved_workloads": 0, "evidence_refs": []}
+            return self._invalid(f"invalid_canary_evidence: {exc}", baseline_evidence=baseline)
 
 
 def upload_source_snapshot(client: E2BClient, sandbox: Sandbox, source_root: str | Path,
