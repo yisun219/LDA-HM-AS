@@ -200,6 +200,6 @@ class E2BClient:
         count = 0
         for sandbox in self.sandboxes.values():
             if sandbox.metadata.get("run_id") == run_id and sandbox.alive:
-                sandbox.alive = False
+                self.kill(sandbox)
                 count += 1
         return count

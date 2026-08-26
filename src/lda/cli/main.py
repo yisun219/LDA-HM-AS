@@ -41,34 +41,35 @@ def _run(args: argparse.Namespace) -> dict:
     controller = client.create({"project": "lda", "run_id": args.run_id, "life_cycle": "bootstrap",
         "mission_id": "campaign-input", "candidate_id": "none", "role": "controller",
         "template": "lda-controller", "lease_id": "controller-" + args.run_id})
-    raw = Path(args.campaign_input).read_text(encoding="utf-8")
-    client.filesystem_write(controller, campaign.e2b_path, raw)
-    if __import__("hashlib").sha256(client.filesystem_read(controller, campaign.e2b_path).encode()).hexdigest() != campaign.sha256:
-        client.kill(controller)
-        raise RuntimeError("controller E2B campaign input hash mismatch after upload")
-    client.filesystem_write(controller, "/workspace/campaign-input/manifest.json", json.dumps(campaign.dump(), sort_keys=True))
-    qualification_artifact = root / ".lda" / "artifacts" / "qualification.json"
-    qualification_artifact.parent.mkdir(parents=True, exist_ok=True)
-    qualification = QualificationRunner(client).run(campaign, args.run_id,
-                                                      checkpoint_path=qualification_artifact)
-    # Qualification may contain incomplete rows for the whole Top 10.  Only
-    # the canary rows authorize execution, and every hard gate must carry an
-    # explicit evidence reference.
-    qualification["qualification_blockers"] = list(qualification.get("release_blockers", []))
-    release = evaluate_canary_release(qualification, campaign.canary)
-    qualification.update(release)
-    qualification_artifact.write_text(json.dumps(qualification, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if not release["canary_release_ready"]:
-        client.kill(controller)
-        raise RuntimeError("Campaign stopped before canary missions; release blockers recorded at " + str(qualification_artifact))
-    qualified = release["eligible_packages"]
-    campaign_dict = campaign.dump()
-    supervisor = ArgusSupervisor.bootstrap(root, args.run_id, client=client,
-        packages=qualified, campaign=campaign_dict, qualification=qualification)
-    results = supervisor.run()
-    client.kill(controller)
-    return {"run_id": args.run_id, "cycles": len(results), "converged": not supervisor.world.active,
-            "reason": supervisor.world.convergence_signals.get("reason"), "preflight": preflight}
+    try:
+        raw = Path(args.campaign_input).read_text(encoding="utf-8")
+        client.filesystem_write(controller, campaign.e2b_path, raw)
+        if __import__("hashlib").sha256(client.filesystem_read(controller, campaign.e2b_path).encode()).hexdigest() != campaign.sha256:
+            raise RuntimeError("controller E2B campaign input hash mismatch after upload")
+        client.filesystem_write(controller, "/workspace/campaign-input/manifest.json", json.dumps(campaign.dump(), sort_keys=True))
+        qualification_artifact = root / ".lda" / "artifacts" / "qualification.json"
+        qualification_artifact.parent.mkdir(parents=True, exist_ok=True)
+        qualification = QualificationRunner(client).run(campaign, args.run_id,
+                                                          checkpoint_path=qualification_artifact)
+        # Qualification may contain incomplete rows for the whole Top 10.  Only
+        # the canary rows authorize execution, and every hard gate must carry an
+        # explicit evidence reference.
+        qualification["qualification_blockers"] = list(qualification.get("release_blockers", []))
+        release = evaluate_canary_release(qualification, campaign.canary)
+        qualification.update(release)
+        qualification_artifact.write_text(json.dumps(qualification, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if not release["canary_release_ready"]:
+            raise RuntimeError("Campaign stopped before canary missions; release blockers recorded at " + str(qualification_artifact))
+        qualified = release["eligible_packages"]
+        campaign_dict = campaign.dump()
+        supervisor = ArgusSupervisor.bootstrap(root, args.run_id, client=client,
+            packages=qualified, campaign=campaign_dict, qualification=qualification)
+        results = supervisor.run()
+        return {"run_id": args.run_id, "cycles": len(results), "converged": not supervisor.world.active,
+                "reason": supervisor.world.convergence_signals.get("reason"), "preflight": preflight}
+    finally:
+        if controller.alive:
+            client.kill(controller)
 
 
 def build_parser() -> argparse.ArgumentParser:
