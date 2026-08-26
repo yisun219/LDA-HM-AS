@@ -138,6 +138,9 @@ class Capability:
     status: str = "PROPOSED"
     tests_passed: bool = False
     judge_passed: bool = False
+    artifact_refs: dict[str, str] = field(default_factory=dict)
+    evidence_refs: list[str] = field(default_factory=list)
+    failure_reason: str | None = None
 
 
 @dataclass

@@ -94,6 +94,18 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         },
     },
+    "capability_build": {
+        **BASE_OBJECT,
+        "required": ["files", "test_command", "entrypoint", "failure_mode", "applicable_scope"],
+        "properties": {
+            "files": {"type": "object", "minProperties": 1, "maxProperties": 20,
+                      "additionalProperties": {"type": "string", "maxLength": 200000}},
+            "test_command": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "entrypoint": {"type": "string", "minLength": 1, "maxLength": 500},
+            "failure_mode": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "applicable_scope": {"type": "array", "items": {"type": "string"}},
+        },
+    },
 }
 
 
@@ -104,6 +116,7 @@ ROLE_SCHEMAS = {
     "Builder": "builder_candidate",
     "Reviewer": "review",
     "Outcome Classifier": "outcome",
+    "Capability Builder": "capability_build",
 }
 
 

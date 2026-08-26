@@ -32,6 +32,11 @@ class AgentFactory:
         }
         self.sandboxes: dict[str, Sandbox] = {}
 
+    @staticmethod
+    def _session_key(spec: AgentSpec) -> str:
+        scope = spec.candidate_id or spec.capability_id or spec.life_cycle_id or spec.run_id
+        return f"{spec.role}:{spec.independence_group}:{scope}"
+
     def spec(self, **kwargs) -> AgentSpec:
         role = kwargs["role"]
         return AgentSpec(runtime_template=RUNTIME_TEMPLATE,
@@ -48,7 +53,7 @@ class AgentFactory:
                           candidate_id=kwargs.get("candidate_id"), capability_id=kwargs.get("capability_id"), role=role)
 
     def create(self, spec: AgentSpec) -> tuple[AgentSpec, Sandbox]:
-        session_key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
+        session_key = self._session_key(spec)
         persistent = spec.session_policy in {"candidate_persistent", "capability_persistent"}
         existing = self.sandboxes.get(session_key)
         if persistent and existing is not None and existing.alive:
@@ -119,7 +124,7 @@ class AgentFactory:
 
     def run(self, spec: AgentSpec, prompt: str) -> dict:
         """Run Codex inside the scoped runtime sandbox, never on the controller host."""
-        key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
+        key = self._session_key(spec)
         sandbox = self.sandboxes.get(key)
         if sandbox is None:
             _, sandbox = self.create(spec)
@@ -153,7 +158,7 @@ class AgentFactory:
                 "result": result}
 
     def release(self, spec: AgentSpec) -> None:
-        key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
+        key = self._session_key(spec)
         sandbox = self.sandboxes.get(key)
         if sandbox is not None and sandbox.alive:
             self.client.kill(sandbox)

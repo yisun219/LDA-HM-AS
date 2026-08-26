@@ -169,6 +169,8 @@ class E2BClient:
         stdout = ""
         if command == "printf lda-preflight":
             stdout = "lda-preflight"
+        elif command.startswith("env | grep -E "):
+            return {"status": "completed", "exit_code": 1, "stdout": "", "stderr": "", "command": command}
         elif "json.dumps({'cpu_model'" in command:
             stdout = json.dumps({
                 "cpu_model": "Intel(R) Xeon(R) Processor",

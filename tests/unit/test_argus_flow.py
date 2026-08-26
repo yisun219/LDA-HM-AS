@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from lda.agents.factory import AgentFactory
@@ -93,6 +94,51 @@ class ArgusFlowTest(unittest.TestCase):
         registry.transition(cap, "REJECTED")
         with self.assertRaisesRegex(ValueError, "terminal"):
             registry.transition(cap, "ACTIVE", judge_passed=True)
+
+    def test_capability_mission_runs_isolated_builder_review_and_judge(self):
+        class CapabilityClient(E2BClient):
+            def command(self, sandbox, command, **kwargs):
+                if command.startswith("env | grep -E "):
+                    return {"exit_code": 1, "stdout": "", "stderr": ""}
+                if sandbox.metadata.get("role") == "Capability Builder" and "codex exec" in command:
+                    payload = {"files": {"adapter.py": "print('ok')\n"},
+                               "test_command": "python3 adapter.py",
+                               "entrypoint": "adapter.py", "failure_mode": "nonzero exit",
+                               "applicable_scope": ["libcairo2"]}
+                    return {"exit_code": 0, "stdout":
+                            '{"type":"thread.started","thread_id":"cap-thread"}\n' +
+                            json.dumps({"type": "item.completed", "item": {
+                                "type": "agent_message", "text": json.dumps(payload)}}) + "\n",
+                            "stderr": ""}
+                if sandbox.metadata.get("role") == "Reviewer" and "codex exec" in command:
+                    payload = {"verdict": "APPROVE", "findings": [], "required_actions": [],
+                               "evidence_refs": ["isolated-test"]}
+                    return {"exit_code": 0, "stdout":
+                            '{"type":"thread.started","thread_id":"review-thread"}\n' +
+                            json.dumps({"type": "item.completed", "item": {
+                                "type": "agent_message", "text": json.dumps(payload)}}) + "\n",
+                            "stderr": ""}
+                return super().command(sandbox, command, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            world = WorldState("r")
+            supervisor = ArgusSupervisor(tmp, client=CapabilityClient(fake=True), world=world)
+            capability = supervisor.propose_capability("profiler-adapter", ["libcairo2"], "proposal")
+            result = supervisor.execute_action(ManagerAction(
+                "START_CAPABILITY_MISSION", target_id=capability.capability_id,
+                evidence_refs=["gap"], estimated_cost=1))
+            self.assertTrue(result["passed"], result)
+            self.assertEqual(capability.status, "ACTIVE")
+            self.assertTrue(capability.tests_passed)
+            self.assertTrue(capability.judge_passed)
+            self.assertIn("adapter.py", capability.artifact_refs)
+            self.assertNotEqual(
+                supervisor.agents._session_key(supervisor.agents.spec(
+                    run_id="r", life_cycle_id="1", capability_id=capability.capability_id,
+                    role="Capability Builder", independence_group="capability-builder")),
+                supervisor.agents._session_key(supervisor.agents.spec(
+                    run_id="r", life_cycle_id="1", capability_id=capability.capability_id,
+                    role="Reviewer", independence_group="capability-reviewer")))
 
     def test_event_store_recovers_after_controller_restart(self):
         with tempfile.TemporaryDirectory() as tmp:

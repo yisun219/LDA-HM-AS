@@ -5,11 +5,13 @@ from pathlib import Path
 from typing import Any
 
 from lda.agents.factory import AgentFactory
+from lda.argus.capabilities.executor import CapabilityExecutor
 from lda.argus.capabilities.registry import CapabilityRegistry
 from lda.argus.convergence.evaluator import ConvergenceEvaluator
 from lda.argus.outcome.classifier import OutcomeClassifier
 from lda.argus.policy.engine import PolicyEngine, PolicyViolation
 from lda.benchmarks.runner import BenchmarkRunner
+from lda.artifacts.store import ArtifactStore
 from lda.e2b.client import E2BClient
 from lda.humanize.mission import HumanizeMission
 from lda.models import ManagerAction, Mission, WorldState, new_id
@@ -26,6 +28,7 @@ class ArgusSupervisor:
         self.policy = PolicyEngine()
         self.outcomes = OutcomeClassifier()
         self.capabilities = CapabilityRegistry()
+        self.artifacts = ArtifactStore(root)
         self.convergence = ConvergenceEvaluator()
         self.scheduler = MissionScheduler()
         # Recovery requeues a canary whose previous attempt produced invalid
@@ -164,10 +167,12 @@ class ArgusSupervisor:
                                if item.capability_id == action.target_id), None)
             if capability is None:
                 raise PolicyViolation("capability target does not exist")
-            self.capabilities.transition(capability, "POLICY_APPROVED")
-            self.capabilities.transition(capability, "BUILDING")
-            return {"action": action.__dict__, "capability_id": capability.capability_id,
-                    "status": capability.status}
+            execution = CapabilityExecutor(
+                self.world, self.agents, self.capabilities, self.artifacts).run(capability)
+            self.store.append(self.world.run_id, str(self.world.life_cycle), "capability-judge",
+                              "CAPABILITY_RESULT", payload=execution,
+                              output_refs=list(capability.artifact_refs.values()))
+            return {"action": action.__dict__, **execution}
         if action.action == "PROPOSE_STOP":
             self.world.convergence_signals["manager_stop_proposed"] = True
             return {"action": action.__dict__, "status": "stop_proposal_recorded"}
