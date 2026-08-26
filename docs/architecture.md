@@ -1,18 +1,18 @@
-# Linux Development Agent Architecture
+# Linux Development Agent 架构
 
-This document describes the implemented LDA control model, execution boundaries, persisted state, and the gap between the target deployment and the current repository state.
+本文说明 LDA 已实现的控制模型、执行边界、持久化状态，以及目标架构与当前仓库之间仍需补齐的部署缺口。
 
-## Design Invariants
+## 不可变设计原则
 
-1. ABI, API, FFI, package identity, and installation compatibility are immutable Fences.
-2. Agents are advisory and generative. Deterministic code owns authorization, Judge decisions, benchmark interpretation, release, and convergence.
-3. Package build, test, profiling, and Judge commands run in E2B sandboxes. Production fails closed if E2B is unavailable.
-4. A model cannot accept its own output. Reviewer histories are independent from Builder histories, and Judge uses no model.
-5. Research input is evidence, not truth. Package facts must be revalidated against the fixed Ubuntu snapshot.
-6. World State contains structured facts and artifact references, never hidden model reasoning.
-7. Microbenchmark speedups are local evidence. Only measured end-to-end portfolio results represent system reward.
+1. ABI、API、FFI、package identity 和安装兼容性是不可变硬 Fence。
+2. Agent 负责建议、研究和生成 Candidate；Policy、Judge、Benchmark 解释、Release 和 Convergence 由确定性代码负责。
+3. 生产 package build、test、profile 和 Judge 只能在 E2B Sandbox 中执行；E2B 不可用时 fail closed。
+4. Agent 不能验收自己的输出。Reviewer 与 Builder history 独立，Judge 不使用模型。
+5. Research input 是证据，不是事实数据库；package 信息必须在固定 Ubuntu Snapshot 中重新验证。
+6. World State 只保存结构化事实和 Artifact 引用，不保存模型隐藏思维过程。
+7. Micro speedup 是局部证据；系统 Reward 必须来自真实 End-to-End Portfolio。
 
-## Two-level Control Flow
+## 两层控制 Flow
 
 ```text
 BOOTSTRAP
@@ -25,39 +25,29 @@ OBSERVE -> SUMMARIZE -> MANAGER_DECISION -> POLICY_VALIDATE
                                                          v
                                                   EXECUTE_ACTION
                                                          |
-                               +-------------------------+------------------+
-                               |                                            |
-                               v                                            v
-                     fixed package Mission                         non-package action
-                               |                                  (research, mission,
-                               v                                   capability, E2E)
-                         deterministic Judge
-                               |
-                               v
-                     CLASSIFY_OUTCOME -> UPDATE_MEMORY
-                               |
-                               v
-                    CAPABILITY / PORTFOLIO CHECK
-                               |
-                               v
-                    deterministic convergence
+                          +------------------------------+----------------+
+                          |                                               |
+                          v                                               v
+                    固定 package Mission                         非 package Action
+                          |                              Research / Mission / Capability / E2E
+                          v
+                  独立确定性 Clean Judge
+                          |
+                          v
+             CLASSIFY_OUTCOME -> UPDATE_MEMORY
+                          |
+                          v
+             CAPABILITY / PORTFOLIO CHECK
+                          |
+                          v
+              确定性 ConvergenceEvaluator
 ```
 
-The Argus outer loop observes the complete persisted state every life cycle and selects one allowed action. `PolicyEngine` validates the action against shape, target, evidence, concurrency, and budget constraints before any side effect occurs.
+外层 Argus 每个 Life Cycle 都读取完整持久化 World State，并只能选择 Schema 允许的一项 Action。`PolicyEngine` 在任何副作用发生前验证 Action shape、target、evidence、concurrency 和 budget。
 
-The Manager may request:
+Manager 可以创建、重排、暂停、恢复或终止 Mission，创建 Research Snapshot，提议或启动 Capability Mission，执行 Portfolio E2E，以及提出停止建议。它不能修改 Fence、接受 Candidate、改变官方 Baseline、修改测量证据、发布 package 或直接停止 Run。
 
-- mission creation, reprioritization, pause, resume, stop, or candidate continuation;
-- a new versioned research snapshot;
-- capability proposal or capability mission start;
-- portfolio E2E execution;
-- a stop proposal.
-
-It cannot modify a Fence, accept a candidate, change the official baseline, alter measured evidence, publish a package, or stop the run directly.
-
-## Fixed LDA Mission
-
-Every package candidate follows the same ordered mission contract:
+## 固定 LDA Mission
 
 ```text
 OFFICIAL_BASELINE
@@ -76,197 +66,114 @@ OFFICIAL_BASELINE
 -> OUTCOME
 ```
 
-The current implementation creates an immutable mission contract hash, a candidate record, a disposable work sandbox, advisory planning/build/review sessions, deterministic build evidence, benchmark artifacts, and an independent Judge sandbox.
+当前实现会创建不可变 contract hash、Candidate record、disposable Work Sandbox、独立 Planner/Builder/Reviewer session、确定性 build evidence、Benchmark Artifact 和独立 Judge Sandbox。
 
-For the two canaries, builds use the pinned source bundle and must emit both the runtime and development `.deb`. A missing target package, development package, extraction, benchmark, or Judge artifact is a failed attempt. Generic packages use the Debian source builder but remain fail closed at acceptance until a package-specific immutable Judge adapter exists.
+两个 Canary 从固定 source bundle 构建，必须同时生成 runtime 与 development `.deb`。其余八个 package 使用真实 Debian Source Builder：固定 Snapshot、精确 source/version、唯一 `.dsc`、`dpkg-source -x`、source version 复核、build-dep、`dpkg-checkbuilddeps`、`dpkg-buildpackage` 和 `.deb` metadata/hash。package-specific Judge 未完成前仍然 fail closed。
 
-## World State
-
-`WorldState` is the recovery boundary for a run:
+## World State 与 Event Store
 
 ```text
 WorldState
 |- run_id / life_cycle / active
-|- RunBudget
-|- HardwareProfile
-|- research_snapshots
-|- package_inventory
+|- RunBudget / HardwareProfile
+|- research_snapshots / package_inventory
 |- missions / candidates
 |- benchmark_ledger / outcome_ledger
-|- capabilities
-|- fence_versions
-|- portfolio_e2e
-|- convergence_signals
+|- capabilities / fence_versions
+|- portfolio_e2e / convergence_signals
 |- campaign_input / qualification
 `- agent_sessions
 ```
 
-The controller writes `.lda/world.json` through an atomic temporary-file replacement. `.lda/events.jsonl` is append-only. Each event contains identity, run/cycle, actor, type, input/output references, timestamp, previous hash, redacted payload, and its own stable hash.
+Controller 通过临时文件原子替换写入 `.lda/world.json`。`.lda/events.jsonl` 只追加；每条 Event 包含 run/cycle、actor、event type、input/output refs、timestamp、previous hash、redacted payload 和自身 hash。
 
-Recovery loads `world.json`, restores persistent agent session references, and requeues retryable invalid-evidence missions. It does not depend on an agent remembering earlier turns.
+恢复流程加载 World State、恢复持久 Agent session 引用，并重新排队仍可重试的 invalid-evidence Mission，不依赖任何 Agent 记住历史。
 
-## AgentFactory
+## AgentFactory 与 Thread 独立性
 
-`AgentFactory` converts immutable `AgentSpec` values into scoped E2B runtime sandboxes and structured Codex CLI calls. Every sandbox carries project, run, cycle, mission, candidate, capability, role, template, timeout, and unique lease metadata.
-
-| Role | Thread policy | Independence boundary |
+| Role | Thread Policy | Independence Boundary |
 | --- | --- | --- |
-| Argus Manager | new each life cycle | manager cycle |
-| World State Summarizer | new each cycle | summary cycle |
-| Mission Planner | new each mission | mission |
-| Builder | persistent | candidate |
-| Reviewer | fresh each round | reviewer round |
-| Outcome Classifier | new each result | mission outcome |
-| Capability Builder | persistent | capability |
+| Argus Manager | 每个 Life Cycle 新建 | Manager Cycle |
+| World State Summarizer | 每个 Cycle 新建 | Summary Cycle |
+| Mission Planner | 每个 Mission 新建 | Mission |
+| Builder | 持久 | Candidate |
+| Reviewer | 每轮全新 | Review Round |
+| Outcome Classifier | 每次结果新建 | Mission Outcome |
+| Capability Builder | 持久 | Capability |
 
-Persistent Builder sessions store both E2B sandbox and observed Codex thread identifiers in World State. Reviewers use a different session key and cannot inherit Builder history. Agent outputs are parsed against role-specific JSON schemas; malformed output does not become a policy decision.
+Builder 持久 session 会把 E2B Sandbox ID 和真实 Codex thread ID 写入 World State。Reviewer 使用不同 session key，不能继承 Builder history。Agent 输出必须通过 role-specific JSON Schema；格式错误的输出不能成为 Policy Action 或 Judge Evidence。
 
-## E2B Trust Boundaries
-
-The target production topology is:
+## E2B 信任边界
 
 ```text
 Controller Sandbox
-|- Manager and Summarizer Agent Runtime Sandboxes
-|- Planner / Builder / Reviewer Agent Runtime Sandboxes
-|- Candidate Work Sandboxes
-|- Capability Work Sandboxes
-|- Judge Sandboxes
-`- Portfolio E2E Sandboxes
+|- Manager / Summarizer Agent Runtime
+|- Planner / Builder / Reviewer Agent Runtime
+|- Candidate Work Sandbox
+|- Capability Work Sandbox
+|- Judge Sandbox
+`- Portfolio E2E Sandbox
 ```
 
-| Boundary | Network | Secrets | Model | Responsibilities |
+| Boundary | Network | Secret | Model | 职责 |
 | --- | --- | --- | --- | --- |
-| Bootstrap/controller process | gateway access | E2B controller credential | no acceptance authority | create/reconnect/reap sandboxes, persist state |
-| Agent runtime | enabled for configured provider | model credential only | Codex CLI | structured planning, building, reviewing, classification |
-| Candidate work | enabled for pinned package mirror | none | none | source, build, local verify, profiling, benchmark |
-| Judge | disabled | none | none | deterministic compatibility, FFI, install and rollback checks |
-| E2E | workload-dependent | none | none | system workload measurement |
+| Bootstrap/Controller | E2B gateway | E2B 控制凭据 | 无验收权 | create/connect/reap、持久化、调度 |
+| Agent Runtime | 模型 Provider | 仅模型凭据 | Codex CLI | 结构化研究、规划、构建建议、Review |
+| Candidate Work | 固定 package mirror | 无 | 无 | source、build、profile、local verify、Benchmark |
+| Judge | 禁止 | 无 | 无 | compatibility、FFI、install、rollback、anti-cheat |
+| E2E | workload 所需 | 无 | 无 | system workload measurement |
 
-`E2BClient` injects model credentials only for recognized agent roles. Candidate, Qualification, E2E, and Judge sandboxes receive no model credential. Judge is excluded from internet-enabled roles. Event payloads pass through the secret redactor.
-
-The shared gateway adapter preserves SDK sandbox and access headers and adds the shared-gateway API header idempotently when the control and sandbox URLs are the same.
+Candidate、Qualification、E2E 和 Judge 不获得模型 Secret；Judge 不属于允许联网的 role。Shared Gateway Adapter 保留 SDK Header，并仅在 Control URL 与 Sandbox URL 相同时幂等增加认证 Header。
 
 ## Preflight
 
-Production `lda run` invokes preflight first. The implemented checks cover:
+生产 `lda run` 必须通过已测试 SDK、control create、data command、filesystem、background PID、reconnect、snapshot/fork fallback、metadata、network restriction、hardware fingerprint、orphan reap、template manifest 和 kill。任一检查失败都会阻止 Run。
 
-- tested SDK version and gateway connection;
-- control-plane create and data-plane command execution;
-- filesystem read/write;
-- background PID and reconnect;
-- artifact snapshot and fork fallback;
-- metadata propagation;
-- network restriction probe;
-- hardware feature fingerprint;
-- orphan reaping;
-- template manifest and kill.
+## Campaign 与 Qualification
 
-Any failed check blocks the run. The artifact snapshot fallback currently captures an explicit file set and is not equivalent to a native full-filesystem snapshot.
+Campaign preparation 复制原始调研输入、记录 bytes/lines/SHA-256、生成 Manifest，并把同一内容上传到 Controller 与 Qualification Sandbox 后重新计算 hash。
 
-## Campaign And Qualification
+Qualification 在固定 Ubuntu 26.04 Snapshot 中验证 binary metadata、source mapping、dependency metadata、source index、source hash、unpack、clean rebuild 和 blocker。Checkpoint 允许 Controller 重启后保留已完成 row。
 
-Campaign preparation copies the research input into `.lda/artifacts/campaign-input/`, records byte count, line count and SHA-256, parses candidate records, and writes a manifest. The same bytes and manifest are uploaded into the Controller and Qualification sandboxes and rehashed after upload.
-
-The initial package set is:
-
-```text
-libgtk-4-1
-libgtk-3-0t64
-gnome-shell
-libreoffice-core
-sssd-common
-libcairo2
-gnome-settings-daemon
-gstreamer1.0-plugins-good
-ibus
-libsoup-3.0-0
-```
-
-Qualification validates report claims against the fixed Ubuntu 26.04 snapshot. It records binary metadata, source mapping, dependency metadata, build tools, source index evidence, uploaded source hashes, source unpack evidence, clean rebuild output, and blockers. Checkpoints allow completed package rows to survive a controller restart.
-
-Only `libcairo2` and `libsoup-3.0-0` are initially eligible. Canary mission authorization requires referenced evidence for package/source metadata, the fixed snapshot, source unpack, and clean source rebuild. Performance and replacement evidence are produced later by the mission and Judge.
-
-The remaining packages enter the Mission Graph only after both canaries have `SUCCESS_SYSTEM`, valid accepted benchmark evidence, the configured portfolio geomean threshold, and enough improved workloads.
+初始只授权 `libcairo2` 与 `libsoup-3.0-0`。其余八个 package 只有在两个 Canary 都获得 `SUCCESS_SYSTEM`、valid accepted Benchmark、达到 Portfolio geomean 和 improved workload 数量要求后才进入 Mission Graph。
 
 ## Deterministic Judge
 
-The canary Judge transfers four opaque package files into a fresh offline Judge sandbox:
+Canary Judge 向全新离线 Sandbox 传输 official/candidate 的 runtime/development 四个 `.deb`。Judge 比较 package/version/architecture、payload path、control declaration、SONAME、dynamic symbol、symbol version、`NEEDED`、header 和 pkg-config；执行安装、预编译 C FFI probe、Python `ctypes` 和官方 rollback。
+
+Evidence 包含 package、Judge script、预编译 probe 的 hash，以及 command output hash、环境事实和 anti-cheat finding。Controller 会独立核对 transfer bytes 与 Judge 报告 hash。任何必需字段缺失或 false 都会 Reject。
+
+## Benchmark、Hardware 与 Outcome
+
+默认 Micro Benchmark 使用 10 次 warmup 和 30 个原始样本，计算 speedup 与 CI lower bound。Portfolio 由 workload 到 measured speedup ratio 的映射组成，LDA 只计算 geomean 与 improved-workload count，不累加 Micro gain。
+
+Canary harness 记录 CPU model、vendor、family/model/stepping、microcode、ISA flags、kernel、governor、turbo 和 NUMA。虚拟 CPUID 只能建立 ISA/架构兼容性，不能证明物理 Host 身份。
+
+Outcome 分类包含 compatibility failure、invalid benchmark、regression、local success、system success、capability gap 和 no optimization space。数值 speedup 不能单独产生 `SUCCESS_SYSTEM`。
+
+## Capability 生命周期
 
 ```text
-official runtime .deb
-official development .deb
-candidate runtime .deb
-candidate development .deb
+PROPOSED -> POLICY_APPROVED -> BUILDING -> ISOLATED_TEST
+-> ADVERSARIAL_REVIEW -> CAPABILITY_JUDGE -> ACTIVE
 ```
 
-The Judge compares package/version/architecture, payload paths, control declarations, SONAME, exported dynamic symbols, symbol versions, `NEEDED`, headers, and pkg-config metadata. It installs official then candidate packages, runs a template-built C `dlopen`/`dlsym` probe and Python `ctypes`, reinstalls the official packages, and confirms rollback.
+状态不能跳过或重复。`ISOLATED_TEST` 必须记录 passing evidence，`ACTIVE` 必须由 passing Capability Judge 决定。`ACTIVE` 与 `REJECTED` 是终态。完整 Capability Work/Test/Review/Judge executor 尚未接入外层循环。
 
-The evidence includes hashes for all package files, Judge script and precompiled probe, command output hashes, environment facts, and anti-cheat findings. The controller independently compares reported package and script hashes with the bytes it transferred. Any absent or false required check rejects the candidate.
+## 长命令恢复
 
-## Benchmark And Outcome
-
-Microbenchmark configuration defaults to ten warmups and thirty samples. Evidence retains raw official/candidate samples and computes speedup plus a lower confidence bound. Invalid, insufficient, or nonpositive samples are rejected.
-
-The canary harness records hardware metadata and checks exposed CPUID capabilities. Virtualized matching features establish architectural compatibility, not physical hardware identity. A hardware identity blocker prevents benchmark acceptance.
-
-Portfolio results are a mapping of workload names to measured speedup ratios. LDA computes their geometric mean and improved-workload count. It does not add microbenchmark improvements.
-
-Outcome classification distinguishes compatibility failure, invalid benchmark, regression, local success, system success, capability gap, and no optimization space. Numeric speedup alone cannot produce `SUCCESS_SYSTEM`; benchmark `accepted` must be explicitly true and Judge must be valid.
-
-## Capability Lifecycle
-
-Capabilities are versioned and content hashed. Their deterministic lifecycle is:
-
-```text
-PROPOSED
--> POLICY_APPROVED
--> BUILDING
--> ISOLATED_TEST
--> ADVERSARIAL_REVIEW
--> CAPABILITY_JUDGE
--> ACTIVE
-```
-
-The registry forbids skipped and repeated transitions. Passing isolated tests must be recorded at `ISOLATED_TEST`. Later stages require that evidence, and activation requires a passing Capability Judge decision. `ACTIVE` and `REJECTED` cannot transition further.
-
-The state machine and policy hooks are implemented. A complete E2B Capability Builder/Test/Review/Judge executor is not yet wired through the full outer loop.
+长时间 `apt-get build-dep` 和 `dpkg-buildpackage` 使用 sandbox-side checkpoint：Sandbox 后台执行，stdout/stderr/exit code 写入 job 目录，Controller 只执行短轮询 RPC；完成后读取完整证据，超时返回确定性 exit code 124。这样单次 streaming RPC deadline 不会直接杀死仍在 E2B 中运行的 build。
 
 ## Convergence
 
-Only `ConvergenceEvaluator` ends a run. Current deterministic stop conditions include:
+只有 `ConvergenceEvaluator` 可以结束 Run。条件包括 max life cycles、预算耗尽、连续三个 quiet cycle、所有高优先级 Mission 终止，以及 Portfolio target 达标。Manager stop proposal 只作为 signal。
 
-- maximum life cycles;
-- exhausted run budget;
-- three quiet cycles;
-- all high-priority missions terminated;
-- portfolio geomean and improved-workload target reached.
+## 当前部署缺口
 
-A Manager stop proposal is recorded as a signal and has no direct stop authority.
-
-## Artifacts
-
-```text
-RUN_ROOT/.lda/
-|- world.json                  atomic recovery snapshot
-|- events.jsonl               append-only hash-chained events
-`- artifacts/
-   |- campaign-input/
-   |  |- manifest.json
-   |  `- original research input
-   |- qualification.json      checkpoint and release blockers
-   `- <sha256>-<name>         content-addressed artifacts
-```
-
-Sandbox evidence paths are stored as references in Judge, benchmark, outcome, and event records. Secret values must never be artifact content or event input/output references.
-
-## Current Deployment Gaps
-
-The repository implements the control and evidence boundaries above, but the full target deployment is not complete:
-
-- The launching process still executes the Python supervisor after creating the E2B Controller sandbox. Moving the supervisor process and persistent stores wholly into the Controller sandbox remains required.
-- The checked-in E2E template has no executable portfolio harness at `run-portfolio-e2e`; current production Portfolio E2E therefore fails closed.
-- The checked-in agent-runtime image is not the registered runtime used by the successful real Codex CLI smoke.
-- A formal canary Qualification attempt reached an E2B streaming deadline during build-dependency installation before any package mission began. Long operations now use sandbox-side checkpoint files and short polling RPCs, pending real validation after gateway recovery.
-- No Top-10 run, accepted canary speedup, or releasable optimized Ubuntu package is currently claimed.
-- Generic package Judge adapters, reverse-dependency suites, and application-level workloads remain package-specific work.
+- Supervisor 尚未完全迁入 Controller Sandbox。
+- `lda-e2e` 尚未提供真实 `run-portfolio-e2e`。
+- checked-in agent-runtime image 仍比真实 Codex smoke 使用的注册 Template 简化。
+- Capability 的真实 Work/Test/Review/Judge executor 尚未端到端接入。
+- 通用 package 仍需要 package-specific Judge、reverse dependency 和 application E2E adapter。
+- E2B gateway 当前返回 Cloudflare `530/1033`，新的 checkpoint 机制尚待恢复后实测。
+- 尚未完成正式 Top 10 Run，当前没有新的可发布 Ubuntu 26.04 加速结论。
