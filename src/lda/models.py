@@ -158,6 +158,7 @@ class WorldState:
     convergence_signals: dict[str, Any] = field(default_factory=dict)
     campaign_input: dict[str, Any] = field(default_factory=dict)
     qualification: dict[str, Any] = field(default_factory=dict)
+    agent_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
     active: bool = True
 
     def dump(self) -> dict[str, Any]:

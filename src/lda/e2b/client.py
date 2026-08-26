@@ -58,15 +58,23 @@ class E2BClient:
             values["OPENAI_API_KEY"] = values["CODEX_API_KEY"]
         return {key: value for key, value in values.items() if key in {"OPENAI_API_KEY", "OPENAI_BASE_URL"}}
 
-    def codex_command(self, prompt: str) -> str:
+    def codex_command(self, prompt: str, *, session_id: str | None = None,
+                      model: str = "gpt-5", reasoning_effort: str = "high") -> str:
         """Build a Codex CLI invocation using an explicit custom model provider."""
         env = self._agent_env()
-        args = ["codex", "exec", "--skip-git-repo-check", "--json",
+        args = ["codex", "exec"]
+        if session_id:
+            args.append("resume")
+        args.extend(["--skip-git-repo-check", "--json", "-m", model,
                 "-c", "model_provider=\"fact\"",
                 "-c", "model_providers.fact.name=\"Fact Gateway\"",
-                "-c", f"model_providers.fact.base_url={shlex.quote(env.get('OPENAI_BASE_URL', 'https://api.openai.com/v1'))}",
+                "-c", "model_providers.fact.base_url=" + json.dumps(env.get("OPENAI_BASE_URL", "https://api.openai.com/v1")),
                 "-c", "model_providers.fact.env_key=\"OPENAI_API_KEY\"",
-                "-c", "model_providers.fact.wire_api=\"responses\"", prompt]
+                "-c", "model_providers.fact.wire_api=\"responses\"",
+                "-c", "model_reasoning_effort=" + json.dumps(reasoning_effort)])
+        if session_id:
+            args.append(session_id)
+        args.append(prompt)
         return " ".join(shlex.quote(arg) for arg in args)
 
     def create(self, metadata: dict[str, str]) -> Sandbox:
@@ -86,8 +94,10 @@ class E2BClient:
                 # for dependency resolution, but receive no credentials. Judges do
                 # not receive network access.
                 network_role = agent_role or role in {"qualification", "candidate-work", "e2e"}
+                server_metadata = {str(key): str(value) for key, value in metadata.items()
+                                   if key not in {"timeout"}}
                 native = NativeSandbox.create(template=template,
-                    timeout=metadata.get("timeout", 3600), metadata=dict(metadata), envs=agent_env,
+                    timeout=int(metadata.get("timeout", 3600)), metadata=server_metadata, envs=agent_env,
                     secure=True, allow_internet_access=network_role,
                     api_key=self.gateway.api_key, access_token=self.gateway.config.access_token,
                     api_url=self.gateway.config.api_url, sandbox_url=self.gateway.config.sandbox_url,

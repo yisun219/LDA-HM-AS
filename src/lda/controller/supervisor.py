@@ -21,13 +21,13 @@ class ArgusSupervisor:
     def __init__(self, root: str | Path, *, client: E2BClient, world: WorldState | None = None):
         self.store = EventStore(root)
         self.client = client
-        self.agents = AgentFactory(client)
+        self.world = world or self.store.recover()
+        self.agents = AgentFactory(client, self.world.agent_sessions)
         self.policy = PolicyEngine()
         self.outcomes = OutcomeClassifier()
         self.capabilities = CapabilityRegistry()
         self.convergence = ConvergenceEvaluator()
         self.scheduler = MissionScheduler()
-        self.world = world or self.store.recover()
         # Recovery requeues a canary whose previous attempt produced invalid
         # evidence, rather than treating a transport/build failure as a
         # terminal success.  The attempt counter and event chain remain intact.

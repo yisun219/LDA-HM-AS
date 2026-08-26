@@ -40,8 +40,13 @@ class HumanizeMission:
         self.mission.status = "ACTIVE"
         contract = MissionContract.create(self.mission.package, fence_version=self.world.fence_versions["abi"])
         self.mission.mission_contract_ref = contract.contract_hash
-        candidate = Candidate(new_id("candidate"), self.mission.mission_id)
-        self.world.candidates.append(candidate)
+        candidate = next((item for item in reversed(self.world.candidates)
+                          if item.mission_id == self.mission.mission_id
+                          and item.status not in {"ACCEPTED", "REJECTED"}), None)
+        if candidate is None:
+            candidate = Candidate(new_id("candidate"), self.mission.mission_id)
+            self.world.candidates.append(candidate)
+        candidate.status = "ACTIVE"
         work = self.agents.client.create({"project": "lda", "run_id": self.world.run_id,
             "life_cycle": str(self.world.life_cycle), "mission_id": self.mission.mission_id,
             "candidate_id": candidate.candidate_id, "role": "candidate-work", "template": "lda-base-lda-hm-as-prod-20260825-v12", "lease_id": new_id("lease")})
@@ -183,16 +188,20 @@ class HumanizeMission:
         if accepted:
             self.mission.last_outcome = "SUCCESS_SYSTEM"
             self.mission.status = "SUCCEEDED"
+            candidate.status = "ACCEPTED"
         elif not judge_result["valid"]:
             self.mission.last_outcome = judge_result.get("failure_category", "ABI_FAILURE")
             self.mission.status = "REJECTED"
+            candidate.status = "REJECTED"
         else:
             self.mission.last_outcome = "BENCHMARK_INVALID" if benchmark_result.get("invalid") else "NO_OPTIMIZATION_SPACE"
             self.mission.status = "QUEUED" if self.mission.attempts < self.mission.max_attempts else "REJECTED"
+            candidate.status = "ACTIVE" if self.mission.status == "QUEUED" else "REJECTED"
         self.agents.client.kill(work)
         self.agents.client.kill(judge_box)
         self.agents.release(manager)
-        self.agents.release(builder)
+        if self.mission.status in {"SUCCEEDED", "REJECTED", "STOPPED"}:
+            self.agents.release(builder)
         self.agents.release(reviewer)
         return {"contract": contract.dump(), "candidate": candidate, "judge": judge_result, "benchmark": benchmark_result,
                 "sandboxes": {"work": work.sandbox_id, "judge": judge_box.sandbox_id}}

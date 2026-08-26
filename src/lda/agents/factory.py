@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+import json
 import os
-import shlex
-from dataclasses import dataclass
 
 from lda.e2b.client import E2BClient, Sandbox
 from lda.models import AgentSpec, new_id
@@ -23,9 +22,13 @@ THREAD_POLICIES = {"Argus Manager": "new_life_cycle", "World State Summarizer": 
 
 
 class AgentFactory:
-    def __init__(self, client: E2BClient):
+    def __init__(self, client: E2BClient, session_state: dict[str, dict] | None = None):
         self.client = client
-        self.sessions: dict[str, str] = {}
+        self.session_state = session_state if session_state is not None else {}
+        self.sessions: dict[str, str] = {
+            key: value["session_id"] for key, value in self.session_state.items()
+            if isinstance(value, dict) and isinstance(value.get("session_id"), str)
+        }
         self.sandboxes: dict[str, Sandbox] = {}
 
     def spec(self, **kwargs) -> AgentSpec:
@@ -43,18 +46,55 @@ class AgentFactory:
                           candidate_id=kwargs.get("candidate_id"), capability_id=kwargs.get("capability_id"), role=role)
 
     def create(self, spec: AgentSpec) -> tuple[AgentSpec, Sandbox]:
+        session_key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
+        persistent = spec.session_policy in {"candidate_persistent", "capability_persistent"}
+        existing = self.sandboxes.get(session_key)
+        if persistent and existing is not None and existing.alive:
+            return spec, existing
+        recovered = self.session_state.get(session_key, {}) if persistent else {}
+        recovered_id = recovered.get("sandbox_id") if isinstance(recovered, dict) else None
+        if recovered_id and recovered.get("active") is True:
+            try:
+                sandbox = self.client.connect(recovered_id)
+                sandbox.metadata.update(recovered.get("metadata", {}))
+                self.sandboxes[session_key] = sandbox
+                return spec, sandbox
+            except RuntimeError:
+                recovered["active"] = False
         lease = new_id("lease")
-        sandbox = self.client.create({"project": "lda", "run_id": spec.run_id,
+        metadata = {"project": "lda", "run_id": spec.run_id,
             "life_cycle": spec.life_cycle_id or "none", "mission_id": spec.mission_id or "none",
             "candidate_id": spec.candidate_id or "none", "capability_id": spec.capability_id or "none",
-            "role": spec.role, "template": spec.runtime_template, "lease_id": lease})
-        session_key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
-        if spec.session_policy in {"candidate_persistent", "capability_persistent"}:
-            self.sessions.setdefault(session_key, "thread_" + new_id("session"))
+            "role": spec.role, "template": spec.runtime_template, "lease_id": lease,
+            "timeout": 86400 if persistent else max(3600, spec.timeout_seconds + 300)}
+        sandbox = self.client.create(metadata)
+        if not persistent:
+            self.sessions.pop(session_key, None)
         else:
-            self.sessions[session_key] = "thread_" + new_id("session")
+            self.session_state[session_key] = {
+                "sandbox_id": sandbox.sandbox_id, "session_id": self.sessions.get(session_key),
+                "active": True, "session_policy": spec.session_policy, "metadata": metadata,
+            }
         self.sandboxes[session_key] = sandbox
         return spec, sandbox
+
+    @staticmethod
+    def _thread_id(stdout: str) -> str | None:
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if not isinstance(event, dict):
+                continue
+            for key in ("thread_id", "session_id", "conversation_id"):
+                value = event.get(key)
+                if isinstance(value, str) and value:
+                    return value
+            nested = event.get("thread")
+            if isinstance(nested, dict) and isinstance(nested.get("id"), str):
+                return nested["id"]
+        return None
 
     def run(self, spec: AgentSpec, prompt: str) -> dict:
         """Run Codex inside the scoped runtime sandbox, never on the controller host."""
@@ -62,7 +102,10 @@ class AgentFactory:
         sandbox = self.sandboxes.get(key)
         if sandbox is None:
             _, sandbox = self.create(spec)
-        command = self.client.codex_command(prompt)
+        persistent = spec.session_policy in {"candidate_persistent", "capability_persistent"}
+        prior_session = self.sessions.get(key) if persistent else None
+        command = self.client.codex_command(prompt, session_id=prior_session,
+                                            model=spec.model, reasoning_effort=spec.reasoning_effort)
         try:
             # The gateway's default command deadline is short.  AgentSpec is
             # the authoritative bounded lifetime for a Codex session; without
@@ -75,10 +118,19 @@ class AgentFactory:
                 result = {"status": "agent_stub", "exit_code": 0, "stdout": "{}", "stderr": str(exc)}
             else:
                 raise
-        return {"session_id": self.sessions[key], "role": spec.role, "result": result}
+        observed_session = self._thread_id(result.get("stdout", ""))
+        if observed_session:
+            self.sessions[key] = observed_session
+            if persistent:
+                self.session_state.setdefault(key, {})["session_id"] = observed_session
+        return {"session_id": self.sessions.get(key), "resumed": bool(prior_session),
+                "role": spec.role, "result": result}
 
     def release(self, spec: AgentSpec) -> None:
         key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
         sandbox = self.sandboxes.get(key)
         if sandbox is not None and sandbox.alive:
             self.client.kill(sandbox)
+        self.sandboxes.pop(key, None)
+        if key in self.session_state:
+            self.session_state[key]["active"] = False

@@ -48,14 +48,51 @@ class ArgusFlowTest(unittest.TestCase):
             self.assertEqual(len(store.events()), 1)
 
     def test_agent_sessions_follow_independence_policy(self):
-        factory = AgentFactory(E2BClient(fake=True))
+        class CodexClient(E2BClient):
+            def command(self, sandbox, command, **kwargs):
+                thread = "builder-real-thread" if sandbox.metadata.get("role") == "Builder" else "reviewer-real-thread"
+                return {"exit_code": 0, "stdout": '{"type":"thread.started","thread_id":"' + thread + '"}\n', "stderr": ""}
+
+        factory = AgentFactory(CodexClient(fake=True))
         builder = factory.spec(run_id="r", life_cycle_id="1", mission_id="m", candidate_id="c", role="Builder", independence_group="builder")
-        first = factory.create(builder)
-        second = factory.create(builder)
-        self.assertEqual(factory.sessions["Builder:builder:c"], factory.sessions["Builder:builder:c"])
+        factory.create(builder)
+        first = factory.run(builder, "first")
+        second = factory.run(builder, "second")
+        self.assertEqual(first["session_id"], "builder-real-thread")
+        self.assertTrue(second["resumed"])
         reviewer = factory.spec(run_id="r", life_cycle_id="1", mission_id="m", candidate_id="c", role="Reviewer", independence_group="reviewer")
         factory.create(reviewer)
+        review = factory.run(reviewer, "review")
+        self.assertFalse(review["resumed"])
         self.assertNotEqual(factory.sessions["Builder:builder:c"], factory.sessions["Reviewer:reviewer:c"])
+
+    def test_codex_resume_command_never_uses_yolo(self):
+        command = E2BClient(fake=True).codex_command("continue", session_id="session-123")
+        self.assertIn("exec resume", command)
+        self.assertIn("session-123", command)
+        self.assertNotIn("yolo", command)
+        self.assertNotIn("dangerously-bypass", command)
+
+    def test_persistent_agent_runtime_recovers_from_world_state(self):
+        class CodexClient(E2BClient):
+            def command(self, sandbox, command, **kwargs):
+                return {"exit_code": 0,
+                        "stdout": '{"type":"thread.started","thread_id":"real-session"}\n',
+                        "stderr": ""}
+
+        client = CodexClient(fake=True)
+        state = {}
+        first = AgentFactory(client, state)
+        builder = first.spec(run_id="r", life_cycle_id="1", mission_id="m", candidate_id="c",
+                             role="Builder", independence_group="builder")
+        _, original_box = first.create(builder)
+        first.run(builder, "first")
+        self.assertEqual(state["Builder:builder:c"]["session_id"], "real-session")
+
+        recovered = AgentFactory(client, state)
+        _, recovered_box = recovered.create(builder)
+        self.assertEqual(recovered_box.sandbox_id, original_box.sandbox_id)
+        self.assertTrue(recovered.run(builder, "continue")["resumed"])
 
     def test_convergence_is_deterministic(self):
         world = WorldState("r", life_cycle=20)
