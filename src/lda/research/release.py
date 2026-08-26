@@ -17,8 +17,8 @@ REQUIRED_QUALIFICATION_GATES: tuple[tuple[str, str], ...] = (
     ("clean_source_rebuild_verified", "clean source rebuild"),
 )
 
-# These gates are intentionally not needed to *start* Humanize. They are
-# produced by the inner mission and deterministic Judge and are required for
+# These gates are intentionally not needed to start the fixed LDA Mission.
+# They are produced by the inner mission and deterministic Judge and required for
 # final canary release / Top-10 expansion.
 REQUIRED_FINAL_GATES: tuple[tuple[str, str], ...] = (
     ("source_snapshot_verified", "fixed Sources Snapshot verification"),
@@ -76,7 +76,7 @@ def evaluate_canary_release(qualification: dict[str, Any], canary: Iterable[str]
 
     The returned ``eligible_packages`` is exactly the canary set when all gates
     pass and empty otherwise.  Top-10 expansion is intentionally handled only
-    after successful Humanize/Judge outcomes by :class:`ArgusSupervisor`.
+    after successful LDA Mission/Judge outcomes by :class:`ArgusSupervisor`.
     """
 
     canary_packages = list(dict.fromkeys(canary))
@@ -113,7 +113,7 @@ def evaluate_final_canary_release(qualification: dict[str, Any], canary: Iterabl
 
     This is separate from :func:`evaluate_canary_release` because measured
     performance and replacement/rollback evidence do not exist until the
-    Humanize mission and clean Judge have run.
+    fixed LDA Mission and clean Judge have run.
     """
 
     packages = list(dict.fromkeys(canary))

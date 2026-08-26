@@ -7,6 +7,7 @@ from lda.agents.factory import AgentFactory
 from lda.argus.capabilities.registry import CapabilityRegistry
 from lda.argus.convergence.evaluator import ConvergenceEvaluator
 from lda.controller.supervisor import ArgusSupervisor
+from lda.cli.main import build_parser
 from lda.argus.policy.engine import PolicyEngine, PolicyViolation
 from lda.e2b.client import E2BClient
 from lda.e2b.gateway import GatewayConfig, SharedGateway
@@ -17,6 +18,12 @@ from lda.state.store import EventStore
 
 
 class ArgusFlowTest(unittest.TestCase):
+    def test_cli_uses_lda_flow_name_and_keeps_legacy_alias(self):
+        parser = build_parser()
+        for flow in ("argus-lda", "argus-humanize"):
+            args = parser.parse_args(["run", "--flow", flow])
+            self.assertEqual(args.flow, flow)
+
     def test_gateway_preserves_sdk_headers_and_adds_key(self):
         gateway = SharedGateway(GatewayConfig(api_url="x", sandbox_url="x", validate_api_key=False))
         headers = gateway.headers({"E2b-Sandbox-Id": "s", "E2b-Sandbox-Port": "80", "User-Agent": "sdk"})

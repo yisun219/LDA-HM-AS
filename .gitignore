@@ -3,6 +3,10 @@ __pycache__/
 .lda/
 .humanize/
 .pytest_cache/
+.env
+.env.*
+*.pem
+*.key
 configs/lda.yaml
 .campaign-input/
 runs/

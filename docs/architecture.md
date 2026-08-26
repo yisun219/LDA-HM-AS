@@ -1,6 +1,6 @@
 # Linux Development Agent 架构
 
-本文说明 LDA 已实现的控制模型、执行边界、持久化状态，以及目标架构与当前仓库之间仍需补齐的部署缺口。
+本文定义 LDA 的控制模型、执行边界、持久化状态、信任边界和确定性验收规则。
 
 ## 不可变设计原则
 
@@ -66,9 +66,9 @@ OFFICIAL_BASELINE
 -> OUTCOME
 ```
 
-当前实现会创建不可变 contract hash、Candidate record、disposable Work Sandbox、独立 Planner/Builder/Reviewer session、确定性 build evidence、Benchmark Artifact 和独立 Judge Sandbox。
+Mission Executor 必须创建不可变 contract hash、Candidate record、disposable Work Sandbox、独立 Planner/Builder/Reviewer session、确定性 build evidence、Benchmark Artifact 和独立 Judge Sandbox。
 
-两个 Canary 从固定 source bundle 构建，必须同时生成 runtime 与 development `.deb`。其余八个 package 使用真实 Debian Source Builder：固定 Snapshot、精确 source/version、唯一 `.dsc`、`dpkg-source -x`、source version 复核、build-dep、`dpkg-checkbuilddeps`、`dpkg-buildpackage` 和 `.deb` metadata/hash。package-specific Judge 未完成前仍然 fail closed。
+两个 Canary 从固定 source bundle 构建，必须同时生成 runtime 与 development `.deb`。其余八个 package 也必须使用真实 Debian Source Builder：固定 Snapshot、精确 source/version、唯一 `.dsc`、`dpkg-source -x`、source version 复核、build-dep、`dpkg-checkbuilddeps`、`dpkg-buildpackage` 和 `.deb` metadata/hash。package-specific Judge 证据缺失时必须 fail closed。
 
 ## World State 与 Event Store
 
@@ -158,7 +158,9 @@ PROPOSED -> POLICY_APPROVED -> BUILDING -> ISOLATED_TEST
 -> ADVERSARIAL_REVIEW -> CAPABILITY_JUDGE -> ACTIVE
 ```
 
-状态不能跳过或重复。`ISOLATED_TEST` 必须记录 passing evidence，`ACTIVE` 必须由 passing Capability Judge 决定。`ACTIVE` 与 `REJECTED` 是终态。完整 Capability Work/Test/Review/Judge executor 尚未接入外层循环。
+状态不能跳过或重复。`ISOLATED_TEST` 必须记录 passing evidence，`ACTIVE` 必须由 passing Capability Judge 决定。`ACTIVE` 与 `REJECTED` 是终态。
+
+Capability Executor 由 Capability Builder、独立 Work Sandbox、隔离测试、全新 Reviewer 和无 Secret/无网络 Capability Judge 组成。Builder 输出文件被限制在 Capability Workspace，测试命令禁止下载、系统调优和 Fence/Judge 修改，Artifact 在二次 Judge 前后按 SHA-256 核对。
 
 ## 长命令恢复
 
@@ -167,13 +169,3 @@ PROPOSED -> POLICY_APPROVED -> BUILDING -> ISOLATED_TEST
 ## Convergence
 
 只有 `ConvergenceEvaluator` 可以结束 Run。条件包括 max life cycles、预算耗尽、连续三个 quiet cycle、所有高优先级 Mission 终止，以及 Portfolio target 达标。Manager stop proposal 只作为 signal。
-
-## 当前部署缺口
-
-- Supervisor 尚未完全迁入 Controller Sandbox。
-- `lda-e2e` 尚未提供真实 `run-portfolio-e2e`。
-- checked-in agent-runtime image 仍比真实 Codex smoke 使用的注册 Template 简化。
-- Capability 的真实 Work/Test/Review/Judge executor 尚未端到端接入。
-- 通用 package 仍需要 package-specific Judge、reverse dependency 和 application E2E adapter。
-- E2B gateway 当前返回 Cloudflare `530/1033`，新的 checkpoint 机制尚待恢复后实测。
-- 尚未完成正式 Top 10 Run，当前没有新的可发布 Ubuntu 26.04 加速结论。

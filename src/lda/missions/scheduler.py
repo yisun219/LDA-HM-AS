@@ -4,7 +4,7 @@ from lda.models import Mission, WorldState, new_id
 
 
 class MissionScheduler:
-    """Separates Pure Humanize's fixed queue from Argus's policy-controlled graph."""
+    """Separates a fixed mission queue from Argus's policy-controlled graph."""
 
     def fixed_queue(self, packages: list[str]) -> list[Mission]:
         return [Mission(new_id("mission"), package, priority=0.5) for package in packages]
@@ -36,4 +36,3 @@ class MissionScheduler:
             raise ValueError("unknown mission")
         if mission.status == "PAUSED":
             mission.status = "QUEUED"
-

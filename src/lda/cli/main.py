@@ -83,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     q = ts.add_parser("build"); q.add_argument("--all", action="store_true")
     research = sub.add_parser("research"); rs = research.add_subparsers(dest="research_command", required=True)
     q = rs.add_parser("ingest"); q.add_argument("paths", nargs="+")
-    run = sub.add_parser("run"); run.add_argument("--flow", required=True, choices=["argus-humanize"]); run.add_argument("--research-snapshot", default=None); run.add_argument("--run-id", default=None); run.add_argument("--package", action="append", default=[]); run.add_argument("--campaign-input", default=None); run.add_argument("--fake-e2b", action="store_true"); run.add_argument("--e2b-template", default=None); run.add_argument("--allow-agent-stub", action="store_true")
+    run = sub.add_parser("run"); run.add_argument("--flow", required=True, choices=["argus-lda", "argus-humanize"]); run.add_argument("--research-snapshot", default=None); run.add_argument("--run-id", default=None); run.add_argument("--package", action="append", default=[]); run.add_argument("--campaign-input", default=None); run.add_argument("--fake-e2b", action="store_true"); run.add_argument("--e2b-template", default=None); run.add_argument("--allow-agent-stub", action="store_true")
     argus = sub.add_parser("argus")
     argus_sub = argus.add_subparsers(dest="argus_command", required=True)
     for name in ("world", "missions", "capabilities"):

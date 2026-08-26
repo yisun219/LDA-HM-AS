@@ -3,7 +3,7 @@
   "version": "1",
   "roles": [
     "Argus Supervisor",
-    "Humanize Runtime",
+    "LDA Mission Runtime",
     "Mission Scheduler",
     "Policy Engine",
     "AgentFactory",

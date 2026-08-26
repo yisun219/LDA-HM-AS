@@ -53,7 +53,7 @@ class SharedGateway:
         headers.setdefault("E2b-Sandbox-Id", headers.get("e2b-sandbox-id", ""))
         headers.setdefault("E2b-Sandbox-Port", headers.get("e2b-sandbox-port", ""))
         headers.setdefault("X-Access-Token", self.config.access_token)
-        headers.setdefault("User-Agent", "lda-autoresearch/0.1")
+        headers.setdefault("User-Agent", "linux-development-agent/0.1")
         if self.config.shared_gateway and self.config.api_url == self.config.sandbox_url:
             if self.config.validate_api_key and not self.api_key:
                 raise RuntimeError(f"{self.config.api_key_env} is required for the shared E2B gateway")

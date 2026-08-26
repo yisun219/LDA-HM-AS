@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 TEMPLATES = {
-    "lda-controller": {"roles": ["Argus Supervisor", "Humanize Runtime", "Mission Scheduler", "Policy Engine", "AgentFactory", "E2B Client", "Tool Gateway", "World State", "Outcome Ledger", "Capability Registry", "State Store", "Artifact Store", "Secret Redactor"]},
+    "lda-controller": {"roles": ["Argus Supervisor", "LDA Mission Runtime", "Mission Scheduler", "Policy Engine", "AgentFactory", "E2B Client", "Tool Gateway", "World State", "Outcome Ledger", "Capability Registry", "State Store", "Artifact Store", "Secret Redactor"]},
     "lda-agent-runtime": {"roles": ["Codex SDK/CLI", "Agent Runner", "JSON Schema", "MCP Client", "Role Prompt", "Intel Performance Skills"]},
     "lda-base": {"tools": ["Ubuntu 26.04", "GCC", "Clang", "LLD", "CMake", "Ninja", "Meson", "autotools", "debhelper", "perf", "strace", "valgrind", "bpftrace", "numactl", "abi-compliance-checker", "Benchmark Harness"]},
     "lda-judge": {"checks": ["ABI/API/FFI Fence", "self test", "reverse dependency", "benchmark", "anti-cheat", "package install/rollback", "runtime and development package parity", "SONAME/exported symbols/symbol versions/NEEDED", "headers/pkg-config", "precompiled dlopen/dlsym and ctypes"], "llm": False},

@@ -21,11 +21,10 @@ class CodexRuntime:
 
     def start(self, spec: AgentSpec) -> CodexSession:
         self.factory.create(spec)
-        key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
+        key = self.factory._session_key(spec)
         return CodexSession(self.factory.sessions[key], spec.independence_group)
 
     def resume_builder(self, spec: AgentSpec) -> CodexSession:
         session = self.start(spec)
         session.resumed = True
         return session
-
