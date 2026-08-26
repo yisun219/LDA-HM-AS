@@ -348,7 +348,7 @@ class CanaryBenchmarkRunner:
                         cxxflags: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
         """Build a canary candidate and return only observed artifact evidence."""
         command = self.build_command(package, source_root, build_root, cflags=cflags, cxxflags=cxxflags)
-        result = self.client.command(sandbox, command, timeout=1800)
+        result = self.client.command_checkpointed(sandbox, command, timeout=1800)
         if result.get("exit_code") != 0:
             return {"passed": False, "command": command, "exit_code": result.get("exit_code"),
                     "stderr": result.get("stderr", ""), "artifacts": []}
@@ -378,7 +378,8 @@ class CanaryBenchmarkRunner:
         query = " ".join(shlex.quote(item) for item in benchmark_packages)
         available = self.client.command(sandbox, f"dpkg-query -W -f='${{Status}}\\n' {query}")
         if available.get("exit_code") != 0 or (available.get("stdout") or "").count("install ok installed") != len(benchmark_packages):
-            installed = self.client.command(sandbox, f"apt-get install -y --no-install-recommends {query}", timeout=600)
+            installed = self.client.command_checkpointed(
+                sandbox, f"apt-get install -y --no-install-recommends {query}", timeout=600)
             if installed.get("exit_code") != 0:
                 return {"invalid": True, "reason": "canary_runtime_install_failed",
                         "stderr": installed.get("stderr", ""), "micro_speedup": 0.0,

@@ -223,7 +223,7 @@ class CleanCanaryJudge:
             f"cd /workspace/judge-official && apt-get download {shlex.quote(package)}=\"$runtime_version\" {shlex.quote(spec.dev_package)}=\"$dev_version\"",
             "find /workspace/judge-official -maxdepth 1 -type f -name '*.deb' -print",
         ))
-        result = self.client.command(work, command, timeout=600)
+        result = self.client.command_checkpointed(work, command, timeout=600)
         paths = [line.strip() for line in (result.get("stdout") or "").splitlines() if line.strip().endswith(".deb")]
         runtime_path = next((path for path in paths if Path(path).name.startswith(package + "_")), "")
         dev_path = next((path for path in paths if Path(path).name.startswith(spec.dev_package + "_")), "")

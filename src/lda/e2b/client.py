@@ -4,6 +4,7 @@ import json
 import hashlib
 import os
 import shlex
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -181,6 +182,62 @@ class E2BClient:
                 "hypervisor": "kvm",
             }) + "\n"
         return {"status": "completed", "exit_code": 0, "stdout": stdout, "stderr": "", "command": command}
+
+    def command_checkpointed(self, sandbox: Sandbox, command: str, *, timeout: float,
+                             poll_seconds: float = 5.0) -> dict[str, Any]:
+        """Run a long command without holding one streaming RPC open.
+
+        The process and its result files live in the sandbox. Controller polls
+        use short foreground RPCs, so a gateway request deadline cannot abort a
+        package build that is still making progress in E2B.
+        """
+        if self.fake:
+            return self.command(sandbox, command, timeout=timeout)
+        job_id = uuid.uuid4().hex
+        job_dir = f"/tmp/lda-jobs/{job_id}"
+        stdout_path = f"{job_dir}/stdout"
+        stderr_path = f"{job_dir}/stderr"
+        exit_path = f"{job_dir}/exit_code"
+        wrapped = (
+            f"mkdir -p {shlex.quote(job_dir)} && rm -f {shlex.quote(exit_path)} && "
+            f"sh -lc {shlex.quote(command)} >{shlex.quote(stdout_path)} "
+            f"2>{shlex.quote(stderr_path)}; rc=$?; printf '%s\\n' \"$rc\" >{shlex.quote(exit_path)}"
+        )
+        started = self.command(sandbox, wrapped, background=True, timeout=60)
+        pid = started.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return {"status": "failed_to_start", "exit_code": 125, "stdout": "",
+                    "stderr": "checkpointed command did not return a PID", "command": command}
+        deadline = time.monotonic() + timeout
+        last_transport_error = ""
+        while time.monotonic() < deadline:
+            try:
+                state = self.command(
+                    sandbox,
+                    f"if test -f {shlex.quote(exit_path)}; then printf 'DONE '; "
+                    f"cat {shlex.quote(exit_path)}; else printf RUNNING; fi",
+                    timeout=30,
+                )
+                marker = (state.get("stdout") or "").strip()
+                if state.get("exit_code") == 0 and marker.startswith("DONE "):
+                    exit_code = int(marker.split(None, 1)[1])
+                    stdout = self.filesystem_read(sandbox, stdout_path)
+                    stderr = self.filesystem_read(sandbox, stderr_path)
+                    return {"status": "completed", "exit_code": exit_code,
+                            "stdout": stdout, "stderr": stderr, "command": command,
+                            "pid": pid, "job_id": job_id}
+            except (OSError, RuntimeError, ValueError) as exc:
+                last_transport_error = str(exc)
+            time.sleep(max(0.0, poll_seconds))
+        try:
+            self.command(sandbox, f"pkill -TERM -P {pid} 2>/dev/null || true; kill -TERM {pid} 2>/dev/null || true",
+                         timeout=30)
+        except Exception:
+            pass
+        return {"status": "timeout", "exit_code": 124, "stdout": "",
+                "stderr": "checkpointed command exceeded timeout"
+                          + (f"; last transport error: {last_transport_error}" if last_transport_error else ""),
+                "command": command, "pid": pid, "job_id": job_id}
 
     def filesystem_write(self, sandbox: Sandbox, path: str, content: str | bytes) -> None:
         self._require_runtime()

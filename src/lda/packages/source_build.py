@@ -85,7 +85,8 @@ class DebianSourceBuilder:
         return spec, version
 
     def _run(self, sandbox: Sandbox, command: str, *, timeout: int) -> dict[str, Any]:
-        result = self.client.command(sandbox, command, timeout=timeout)
+        result = (self.client.command_checkpointed(sandbox, command, timeout=timeout)
+                  if timeout >= 600 else self.client.command(sandbox, command, timeout=timeout))
         return result
 
     def build(self, sandbox: Sandbox, package: str,

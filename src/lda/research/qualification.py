@@ -44,8 +44,9 @@ class QualificationRunner:
             for suite in ("resolute", "resolute-updates", "resolute-security")
         ) + "\n"
         encoded = __import__("base64").b64encode(content.encode()).decode()
-        result = self.client.command(sandbox, f"printf %s {encoded} | base64 -d > {source_file} && apt-get update",
-                                     timeout=600)
+        result = self.client.command_checkpointed(
+            sandbox, f"printf %s {encoded} | base64 -d > {source_file} && apt-get update",
+            timeout=600)
         release = self.client.command(sandbox, "apt-cache policy libcairo2 libsoup-3.0-0", timeout=120)
         indexes = self.client.command(sandbox, "apt-get indextargets", timeout=120)
         index_output = indexes.get("stdout") or ""
@@ -119,7 +120,7 @@ class QualificationRunner:
         check = self.client.command(sandbox, f"cd {root}/source && dpkg-checkbuilddeps", timeout=300)
         evidence["build_deps"] = self._command_evidence(check)
         if check.get("exit_code") != 0:
-            install = self.client.command(sandbox,
+            install = self.client.command_checkpointed(sandbox,
                 "apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/lda-snapshot.list "
                 "-o Dir::Etc::sourceparts=- -o APT::Get::Assume-Yes=true "
                 f"build-dep {source_name}", timeout=1800)
@@ -129,7 +130,9 @@ class QualificationRunner:
             if check.get("exit_code") != 0:
                 evidence["status"] = "BUILD_DEPS_UNAVAILABLE" if install.get("exit_code") == 0 else "BUILD_DEPS_INSTALL_FAILED"
                 return evidence
-        build = self.client.command(sandbox, f"cd {root}/source && DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b", timeout=1800)
+        build = self.client.command_checkpointed(
+            sandbox, f"cd {root}/source && DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b",
+            timeout=1800)
         evidence["build"] = self._command_evidence(build)
         artifacts = self.client.command(sandbox, f"find {root} -maxdepth 2 -type f -name '*.deb' -printf '%f %s\\n' | sort",
                                         timeout=120)
