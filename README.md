@@ -165,19 +165,49 @@ LDA 会根据使用频率、实测 CPU 占比、依赖图中心性、workload �
 ## 系统架构
 
 ```mermaid
-flowchart LR
-  CLI[Bootstrap CLI] --> CTRL[Controller E2B]
-  CTRL --> VOL[(Run Volume)]
-  CTRL --> AF[AgentFactory]
-  AF --> AR[Codex Agent Runtime E2B]
-  AR -->|短期 Capability Token| GW[Scoped Tool Gateway]
-  GW --> WS[Candidate Workspace E2B]
-  CTRL --> J[Deterministic Judge E2B]
-  CTRL --> E2E[Portfolio E2E Sandbox]
-  WS -->|Patch + Trace| J
-  J -->|通过验收的 deb| E2E
-  J --> ART[(Content-addressed Artifacts)]
-  E2E --> ART
+flowchart TB
+  USER[用户与 Bootstrap CLI]
+
+  subgraph CONTROL[控制平面 - lda-controller Sandbox]
+    ORCH[Campaign Orchestrator]
+    SCHED[有界 Mission Scheduler]
+    FACTORY[AgentFactory]
+    GATEWAY[Scoped Tool Gateway]
+    STATE[(SQLite + JSONL Event Log)]
+    ARTIFACTS[(Content-addressed Artifacts)]
+    ORCH --> SCHED
+    ORCH --> FACTORY
+    ORCH <--> STATE
+    ORCH <--> ARTIFACTS
+  end
+
+  subgraph AGENTS[Agent 平面 - 独立 lda-agent-runtime Sandbox]
+    PLANNER[Planner / Profiler]
+    BUILDER[Builder<br/>Persistent Session]
+    REVIEWER[Reviewer<br/>Fresh Session per Round]
+    AUDITOR[Trace Auditor<br/>Fresh Session]
+  end
+
+  subgraph EXECUTION[执行平面 - 无模型和 E2B 凭据]
+    WORKSPACE[Candidate Workspace<br/>lda-base]
+    JUDGE[Deterministic Judge<br/>lda-judge]
+    E2E[Portfolio Workloads<br/>lda-e2e]
+  end
+
+  USER --> ORCH
+  FACTORY --> PLANNER
+  FACTORY --> BUILDER
+  FACTORY --> REVIEWER
+  FACTORY --> AUDITOR
+  BUILDER -->|短期 Capability Token| GATEWAY
+  REVIEWER -->|只读 Capability Token| GATEWAY
+  AUDITOR -->|只读 Capability Token| GATEWAY
+  GATEWAY --> WORKSPACE
+  WORKSPACE -->|Patch + build trace| ARTIFACTS
+  ARTIFACTS -->|冻结输入| JUDGE
+  JUDGE -->|Fence + benchmark 结果| ORCH
+  JUDGE -->|通过的 deb| E2E
+  E2E -->|Portfolio 证据| ORCH
 ```
 
 本地 CLI 只负责创建和操作 Run。Controller、源码准备、构建、测试、Profile、
@@ -201,38 +231,77 @@ project 和 owner metadata。创建请求发生网络不确定错误时，Contro
 ## 完整 Flow
 
 ```mermaid
-stateDiagram-v2
-  [*] --> RUN_CREATED
-  RUN_CREATED --> E2B_PREFLIGHT
-  E2B_PREFLIGHT --> RESEARCH_FROZEN
-  RESEARCH_FROZEN --> PORTFOLIO_PLANNED
-  PORTFOLIO_PLANNED --> MISSION_QUEUE_FROZEN
-  MISSION_QUEUE_FROZEN --> MISSION_BASELINE
-  MISSION_BASELINE --> PROFILE
-  PROFILE --> HYPOTHESIS
-  PROFILE --> NOT_HOT: 没有可复现热点
-  HYPOTHESIS --> CANDIDATE_FORK
-  CANDIDATE_FORK --> BUILD
-  BUILD --> LOCAL_VERIFY
-  LOCAL_VERIFY --> BUILD: 修复
-  LOCAL_VERIFY --> ADVERSARIAL_REVIEW
-  ADVERSARIAL_REVIEW --> BUILD: 可修复问题
-  ADVERSARIAL_REVIEW --> CLEAN_JUDGE
-  CLEAN_JUDGE --> BUILD: 可修复拒绝
-  CLEAN_JUDGE --> LOCAL_WIN
-  CLEAN_JUDGE --> SYSTEM_WIN
-  CLEAN_JUDGE --> REJECTED
-  CLEAN_JUDGE --> INVALID
-  LOCAL_WIN --> NEXT_MISSION
-  SYSTEM_WIN --> NEXT_MISSION
-  REJECTED --> NEXT_MISSION
-  INVALID --> NEXT_MISSION
-  NOT_HOT --> NEXT_MISSION
-  NEXT_MISSION --> MISSION_BASELINE
-  NEXT_MISSION --> PORTFOLIO_E2E
-  PORTFOLIO_E2E --> RELEASE_READY
-  PORTFOLIO_E2E --> COMPLETED_WITHOUT_RELEASE
+flowchart TD
+  START([lda run]) --> PREFLIGHT[E2B Preflight]
+  PREFLIGHT -->|失败| STOP_PRE[停止并保留诊断<br/>禁止本地 fallback]
+  PREFLIGHT -->|通过| INGEST[逐字节导入研究文件<br/>校验 SHA-256]
+  INGEST --> RESEARCH[冻结 Research Snapshot]
+  RESEARCH --> QUALIFY[Top 10 Qualification<br/>核对 package / source / dependency / rebuild]
+  QUALIFY --> PLAN[Portfolio Planner<br/>按实测证据重新排序]
+  PLAN --> FREEZE[冻结 Mission Queue 与预算]
+  FREEZE --> CANARY[Canary Barrier<br/>libcairo2 + libsoup-3.0-0]
+  CANARY --> MISSION[调度下一个 Mission]
+
+  MISSION --> BASELINE[固定官方 source 与 deb<br/>记录 hash / symbol / header / SONAME]
+  BASELINE --> MICRO[建立 Micro Benchmark]
+  MICRO --> WORKLOAD[建立 Mission E2E Workload]
+  WORKLOAD --> PROFILE[在官方 baseline 上 Profile]
+  PROFILE -->|无稳定热点| NOT_HOT[Mission: NOT_HOT]
+  PROFILE -->|热点可复现| CONTRACT[冻结 Mission Contract]
+  CONTRACT --> FORK[从同一 Baseline Snapshot<br/>fork 最多 3 个 Candidate]
+  FORK --> LOOP[[Candidate Development Loop]]
+  LOOP --> OUTCOME{Mission 是否收敛?}
+  NOT_HOT --> OUTCOME
+
+  OUTCOME -->|否| LOOP
+  OUTCOME -->|是| TERMINAL[Mission 终态<br/>SYSTEM_WIN / LOCAL_WIN / REJECTED / INVALID / NOT_HOT]
+  TERMINAL --> MORE{冻结队列还有 Mission?}
+  MORE -->|有| MISSION
+  MORE -->|无| PORTFOLIO[干净 lda-e2e Sandbox<br/>安装全部可用 Candidate deb]
+  PORTFOLIO --> PORTFOLIO_AB[随机化官方包 / Candidate 包<br/>运行 Chrome / GUI / Web workload]
+  PORTFOLIO_AB --> RELEASE{Portfolio Policy 通过?}
+  RELEASE -->|通过| READY([RELEASE_READY])
+  RELEASE -->|未通过| NO_RELEASE([COMPLETED_WITHOUT_RELEASE])
 ```
+
+图中的 `Candidate Development Loop` 不是一个黑盒。它由持续实现、独立审查和
+全新环境验收组成，控制流如下：
+
+```mermaid
+flowchart TD
+  HYPOTHESIS[Mission Planner<br/>结构化优化假设] --> BUILDER[Builder<br/>Persistent Session]
+  BUILDER --> EDIT[在 Candidate Workspace 修改源码]
+  EDIT --> BUILD[构建 Candidate deb]
+  BUILD --> LOCAL[快速本地验证与 Micro 反馈]
+  LOCAL -->|失败且仍有预算| BUILDER
+  LOCAL -->|通过| SEAL[封存 Patch / Trace / Test Result]
+
+  SEAL --> REVIEWER[全新 Reviewer Session<br/>只读 Contract 与封存证据]
+  SEAL --> AUDITOR[全新 Trace Auditor Session<br/>检查越界与作弊]
+  REVIEWER --> REVIEW_RESULT[结构化 Review]
+  AUDITOR --> AUDIT_RESULT[结构化 Audit]
+
+  REVIEW_RESULT --> DECIDE{Controller 路由}
+  AUDIT_RESULT --> DECIDE
+  DECIDE -->|作弊或不可修复越界| REJECTED([REJECTED])
+  DECIDE -->|可修复问题且未收敛| BUILDER
+  DECIDE -->|允许确定性验收| JUDGE[全新 Judge Sandbox<br/>从官方输入重新构建]
+
+  JUDGE --> ABI{ABI / API / FFI<br/>Package Fence}
+  ABI -->|失败| REJECTED
+  ABI -->|通过| FUNCTION{Self + Dependency<br/>Application Tests}
+  FUNCTION -->|失败| REJECTED
+  FUNCTION -->|通过| BENCH{Micro + Mission E2E<br/>统计验收}
+  BENCH -->|环境或证据无效| INVALID([INVALID])
+  BENCH -->|未达到性能策略| REJECTED
+  BENCH -->|局部显著且 E2E 无回退| LOCAL_WIN([LOCAL_WIN])
+  BENCH -->|目标 E2E 也显著改善| SYSTEM_WIN([SYSTEM_WIN])
+```
+
+这里有三条不可跨越的边界：Builder 不能修改 Contract、官方 baseline、测试或
+Benchmark harness；Reviewer 和 Trace Auditor 不能修改源码，也不能读取 Builder
+对话；Judge 不使用模型，且只有 Judge 结果与确定性收敛规则能够改变 Candidate
+终态。任何 Agent 输出的“完成”都只是下一步控制输入，不是终止信号。
 
 每个 Mission 依次执行：
 
