@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shlex
 import uuid
@@ -8,6 +9,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from lda.e2b.gateway import SharedGateway
+
+
+TESTED_E2B_SDK_VERSION = "2.10.2"
 
 
 @dataclass
@@ -29,6 +33,7 @@ class E2BClient:
         self.allow_agent_stub = allow_agent_stub
         self.sandboxes: dict[str, Sandbox] = {}
         self._fake_files: dict[tuple[str, str], str | bytes] = {}
+        self._snapshots: dict[str, dict[str, bytes]] = {}
 
     def _require_runtime(self) -> None:
         if self.fake:
@@ -160,7 +165,22 @@ class E2BClient:
             return {"status": "completed", "exit_code": result.exit_code, "stdout": result.stdout, "stderr": result.stderr, "command": command}
         if background:
             return {"pid": 1, "status": "started", "command": command}
-        return {"status": "completed", "exit_code": 0, "stdout": "", "stderr": "", "command": command}
+        stdout = ""
+        if command == "printf lda-preflight":
+            stdout = "lda-preflight"
+        elif "json.dumps({'cpu_model'" in command:
+            stdout = json.dumps({
+                "cpu_model": "Intel(R) Xeon(R) Processor",
+                "vendor_id": "GenuineIntel",
+                "family": 6,
+                "model": 207,
+                "stepping": 2,
+                "microcode": "0x1",
+                "flags": ["avx2", "avx512f", "avx512dq", "avx512bw", "avx512vl",
+                          "avx512_vnni", "amx_tile", "amx_int8", "amx_bf16"],
+                "hypervisor": "kvm",
+            }) + "\n"
+        return {"status": "completed", "exit_code": 0, "stdout": stdout, "stderr": "", "command": command}
 
     def filesystem_write(self, sandbox: Sandbox, path: str, content: str | bytes) -> None:
         self._require_runtime()
@@ -197,11 +217,27 @@ class E2BClient:
 
     def snapshot(self, sandbox: Sandbox) -> dict[str, Any]:
         self._require_runtime()
-        return {"snapshot_id": "snap_" + sandbox.sandbox_id, "sandbox_id": sandbox.sandbox_id}
+        files: dict[str, bytes] = {}
+        for path in ("/tmp/preflight",):
+            try:
+                payload = self.filesystem_read_bytes(sandbox, path)
+            except Exception:
+                continue
+            if payload:
+                files[path] = payload
+        digest = hashlib.sha256()
+        for path, payload in sorted(files.items()):
+            digest.update(path.encode()); digest.update(b"\0"); digest.update(payload)
+        snapshot_id = "artifact_" + digest.hexdigest()[:24]
+        self._snapshots[snapshot_id] = files
+        return {"snapshot_id": snapshot_id, "sandbox_id": sandbox.sandbox_id,
+                "mode": "artifact_fallback", "files": sorted(files)}
 
     def fork(self, sandbox: Sandbox, metadata: dict[str, str]) -> Sandbox:
         snapshot = self.snapshot(sandbox)
         child = self.create({**metadata, "snapshot_id": snapshot["snapshot_id"]})
+        for path, payload in self._snapshots.get(snapshot["snapshot_id"], {}).items():
+            self.filesystem_write(child, path, payload)
         return child
 
     def kill(self, sandbox: Sandbox) -> None:
@@ -211,8 +247,36 @@ class E2BClient:
 
     def reap(self, run_id: str) -> int:
         count = 0
+        killed_ids: set[str] = set()
         for sandbox in self.sandboxes.values():
             if sandbox.metadata.get("run_id") == run_id and sandbox.alive:
                 self.kill(sandbox)
                 count += 1
+                killed_ids.add(sandbox.sandbox_id)
+        if not self.fake:
+            try:
+                from e2b import Sandbox as NativeSandbox
+                from e2b.sandbox.sandbox_api import SandboxQuery
+
+                opts = {
+                    "api_key": self.gateway.api_key,
+                    "access_token": self.gateway.config.access_token,
+                    "api_url": self.gateway.config.api_url,
+                    "sandbox_url": self.gateway.config.sandbox_url,
+                    "headers": self.gateway.headers(),
+                }
+                paginator = NativeSandbox.list(
+                    query=SandboxQuery(metadata={"project": "lda", "run_id": run_id}),
+                    **opts,
+                )
+                while paginator.has_next:
+                    for info in paginator.next_items():
+                        if info.sandbox_id in killed_ids:
+                            continue
+                        native = NativeSandbox.connect(info.sandbox_id, **opts)
+                        native.kill()
+                        killed_ids.add(info.sandbox_id)
+                        count += 1
+            except Exception as exc:
+                raise RuntimeError(f"E2B orphan reap failed: {exc}") from exc
         return count
