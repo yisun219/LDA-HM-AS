@@ -5,11 +5,15 @@ baseline_root=/opt/lda/baseline/root
 candidate_root=/opt/lda/candidate/root
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-pkg_args=()
-if test -n "${LDA_PKG_CONFIG_MODULES:-}"; then
-  IFS=, read -ra requested_modules <<<"$LDA_PKG_CONFIG_MODULES"
-  read -ra pkg_args <<<"$(pkg-config --cflags --libs "${requested_modules[@]}")"
-fi
+pkg_args_for() {
+  local root="$1"
+  local -a modules=() dirs=() args=()
+  test -n "${LDA_PKG_CONFIG_MODULES:-}" || return 0
+  IFS=, read -ra modules <<<"$LDA_PKG_CONFIG_MODULES"
+  while IFS= read -r directory; do dirs+=("$directory"); done < <(find "$root/usr/lib" "$root/usr/share" -type d -name pkgconfig -print 2>/dev/null | sort -u)
+  PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$(IFS=:; printf '%s' "${dirs[*]}")" \
+    pkg-config --cflags --libs "${modules[@]}"
+}
 mapfile -t baseline_libraries </opt/lda/baseline/libraries.list
 mapfile -t candidate_libraries </opt/lda/candidate/libraries.list
 test "${#baseline_libraries[@]}" = "${#candidate_libraries[@]}"
@@ -21,6 +25,22 @@ pair_for() {
   candidate="$candidate_root/$relative"
   test -f "$candidate"
   printf '%s\n' "$candidate"
+}
+ffi_library_for() {
+  local mode="$1" pattern="${LDA_FFI_LIBRARY_PATTERN:?FFI library pattern required}"
+  local -a matches=()
+  mapfile -t matches < <(grep -F "$pattern" "/opt/lda/$mode/libraries.list" || true)
+  test "${#matches[@]}" = 1
+  printf '%s\n' "${matches[0]}"
+}
+assert_ffi_symbol() {
+  local library="$1" symbol="${LDA_FFI_SYMBOL:?FFI symbol required}"
+  readelf --dyn-syms --wide "$library" \
+    | awk -v symbol="$symbol" '$8 == symbol || index($8, symbol "@") == 1 {found=1} END {exit !found}'
+}
+run_ffi_functional_probe() {
+  test -n "${LDA_FFI_CHECK_COMMAND:-}"
+  bash -euo pipefail -c "$LDA_FFI_CHECK_COMMAND"
 }
 
 case "$check" in
@@ -52,6 +72,7 @@ case "$check" in
     test -n "${LDA_PUBLIC_HEADER:-}"
     printf '#include <%s>\nint main(void){return 0;}\n' "$LDA_PUBLIC_HEADER" >"$tmp/test.c"
     includes=(); while IFS= read -r directory; do includes+=("-I$directory"); done < <(find "$candidate_root/usr/include" -type d | sort)
+    read -ra pkg_args <<<"$(pkg_args_for "$candidate_root")"
     cc -Werror "${includes[@]}" "${pkg_args[@]}" "$tmp/test.c" -c -o "$tmp/test.o"
     ;;
   struct-layout)
@@ -59,12 +80,21 @@ case "$check" in
     printf '#include <%s>\n#include <stdio.h>\nint main(void){%s}\n' "$LDA_PUBLIC_HEADER" "$LDA_LAYOUT_BODY" >"$tmp/layout.c"
     for mode in baseline candidate; do
       root="/opt/lda/$mode/root"; includes=(); while IFS= read -r directory; do includes+=("-I$directory"); done < <(find "$root/usr/include" -type d | sort)
+      read -ra pkg_args <<<"$(pkg_args_for "$root")"
       cc "${includes[@]}" "${pkg_args[@]}" "$tmp/layout.c" -o "$tmp/$mode"
     done
     test "$("$tmp/baseline")" = "$("$tmp/candidate")"
     ;;
   calling-convention)
-    for mode in baseline candidate; do readelf -h "$(head -1 /opt/lda/$mode/libraries.list)" | awk -F: '/Class:|Data:|Machine:/{print $1,$2}' >"$tmp/$mode"; done
+    for mode in baseline candidate; do
+      library="$(ffi_library_for "$mode")"
+      assert_ffi_symbol "$library"
+      {
+        readelf -h "$library" | awk -F: '/Class:|Data:|Machine:|Flags:/{print $1,$2}'
+        readelf --dyn-syms --wide "$library" \
+          | awk -v symbol="$LDA_FFI_SYMBOL" '$8 == symbol || index($8, symbol "@") == 1 {print $4,$5,$6,$8}'
+      } >"$tmp/$mode"
+    done
     diff -u "$tmp/baseline" "$tmp/candidate"
     ;;
   pkg-config|cmake-config|install-paths)
@@ -106,51 +136,65 @@ case "$check" in
     test "$(LD_LIBRARY_PATH="$baseline_libdir" /opt/lda/fixtures/generic/probe 100)" = "$(LD_LIBRARY_PATH="$candidate_libdir" /opt/lda/fixtures/generic/probe 100)"
     ;;
   python-ctypes)
-    library="$(head -1 /opt/lda/candidate/libraries.list)"
-    python3 - "$library" <<'PY'
+    library="$(ffi_library_for candidate)"
+    assert_ffi_symbol "$library"
+    python3 - "$library" "$LDA_FFI_SYMBOL" <<'PY'
 import ctypes, sys
-ctypes.CDLL(sys.argv[1])
+library = ctypes.CDLL(sys.argv[1])
+getattr(library, sys.argv[2])
 PY
+    run_ffi_functional_probe
     ;;
   python-cffi)
-    library="$(head -1 /opt/lda/candidate/libraries.list)"
-    python3 - "$library" <<'PY'
+    library="$(ffi_library_for candidate)"
+    assert_ffi_symbol "$library"
+    python3 - "$library" "$LDA_FFI_SYMBOL" <<'PY'
 import cffi, sys
-cffi.FFI().dlopen(sys.argv[1])
+ffi = cffi.FFI()
+ffi.cdef(f"void {sys.argv[2]}(void);")
+getattr(ffi.dlopen(sys.argv[1]), sys.argv[2])
 PY
+    run_ffi_functional_probe
     ;;
   rust-ffi)
-    library="$(head -1 /opt/lda/candidate/libraries.list)"
+    library="$(ffi_library_for candidate)"
+    assert_ffi_symbol "$library"
     cat >"$tmp/dlopen.rs" <<'RS'
 use std::env;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
 #[link(name="dl")]
-extern "C" { fn dlopen(name: *const c_char, flags: c_int) -> *mut c_void; fn dlclose(handle: *mut c_void) -> c_int; }
+extern "C" { fn dlopen(name: *const c_char, flags: c_int) -> *mut c_void; fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void; fn dlclose(handle: *mut c_void) -> c_int; }
 fn main() {
     let path = CString::new(env::args().nth(1).unwrap()).unwrap();
+    let symbol = CString::new(env::args().nth(2).unwrap()).unwrap();
     let handle = unsafe { dlopen(path.as_ptr(), 1) };
     assert!(!handle.is_null());
+    assert!(!unsafe { dlsym(handle, symbol.as_ptr()) }.is_null());
     unsafe { dlclose(handle); }
 }
 RS
     rustc "$tmp/dlopen.rs" -o "$tmp/rust-dlopen"
-    "$tmp/rust-dlopen" "$library"
+    "$tmp/rust-dlopen" "$library" "$LDA_FFI_SYMBOL"
+    run_ffi_functional_probe
     ;;
   dlopen-dlsym)
-    library="$(head -1 /opt/lda/candidate/libraries.list)"
+    library="$(ffi_library_for candidate)"
+    assert_ffi_symbol "$library"
     cat >"$tmp/dlopen.c" <<'C'
 #include <dlfcn.h>
-int main(int argc, char **argv) { void *h = dlopen(argv[1], RTLD_LAZY | RTLD_LOCAL); if (!h) return 1; return dlclose(h); }
+int main(int argc, char **argv) { void *h = dlopen(argv[1], RTLD_LAZY | RTLD_LOCAL); if (!h || !dlsym(h, argv[2])) return 1; return dlclose(h); }
 C
     cc -Werror "$tmp/dlopen.c" -ldl -o "$tmp/dlopen"
-    "$tmp/dlopen" "$library"
+    "$tmp/dlopen" "$library" "$LDA_FFI_SYMBOL"
+    run_ffi_functional_probe
     ;;
   c-cpp-source)
     test -n "${LDA_LINK_LIBRARIES:-}"
     includes=(); while IFS= read -r directory; do includes+=("-I$directory"); done < <(find "$candidate_root/usr/include" -type d | sort)
     lib_args=(); while IFS= read -r directory; do lib_args+=("-L$directory" "-Wl,-rpath-link,$directory"); done < <(find "$candidate_root/usr/lib" -type d | sort)
     read -ra requested_libraries <<<"$LDA_LINK_LIBRARIES"
+    read -ra pkg_args <<<"$(pkg_args_for "$candidate_root")"
     cp /opt/lda/fixtures/generic/probe.c "$tmp/probe.c"
     cp /opt/lda/fixtures/generic/probe.c "$tmp/probe.cc"
     cc -O2 -Werror "${includes[@]}" "$tmp/probe.c" "${lib_args[@]}" "${pkg_args[@]}" "${requested_libraries[@]}" -o "$tmp/probe-c"

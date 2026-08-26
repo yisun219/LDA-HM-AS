@@ -8,6 +8,8 @@ probe_body: "void *h=dlopen(\"libgsd.so\",RTLD_LAZY|RTLD_LOCAL); sink ^= (uintpt
 link_libraries: "-ldl"
 layout_body: "printf(\"opaque\\n\");"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+ffi_library_pattern: "libgsd.so"
+ffi_symbol: "gsd_device_manager_get_type"
 target_functions: [plugin activation, settings propagation, power event handling]
 target_workloads: [desktop login, settings changes, power management]
 allowed_source_paths: [/opt/lda/work/plugins, /opt/lda/work/gnome-settings-daemon, /opt/lda/work/debian/rules]

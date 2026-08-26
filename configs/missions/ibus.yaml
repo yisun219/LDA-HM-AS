@@ -9,6 +9,8 @@ link_libraries: "-libus-1.0"
 pkg_config_modules: [ibus-1.0]
 layout_body: "printf(\"%zu %zu\\n\",sizeof(IBusRectangle),_Alignof(IBusRectangle));"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+ffi_library_pattern: "libibus-1.0.so"
+ffi_symbol: "ibus_get_address"
 target_functions: [ibus_bus_call_sync, input event processing, candidate lookup]
 target_workloads: [desktop typing latency, input method startup, candidate window]
 allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/bus, /opt/lda/work/debian/rules]

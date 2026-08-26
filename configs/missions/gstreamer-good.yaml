@@ -8,6 +8,8 @@ probe_body: "void *h=dlopen(\"libgstvideofilter.so\",RTLD_LAZY|RTLD_LOCAL); sink
 link_libraries: "-ldl"
 layout_body: "printf(\"opaque\\n\");"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+ffi_library_pattern: "libgstvideofilter.so"
+ffi_symbol: "gst_plugin_videofilter_get_desc"
 target_functions: [video scale, RTP handling, audio conversion]
 target_workloads: [video playback, screen capture, browser media]
 allowed_source_paths: [/opt/lda/work/gst, /opt/lda/work/sys, /opt/lda/work/ext, /opt/lda/work/debian/rules]

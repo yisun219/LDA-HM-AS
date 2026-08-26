@@ -8,6 +8,8 @@ probe_body: "void *h=dlopen(\"libmergedlo.so\",RTLD_LAZY|RTLD_LOCAL); sink ^= (u
 link_libraries: "-ldl"
 layout_body: "printf(\"opaque\\n\");"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+ffi_library_pattern: "libmergedlo.so"
+ffi_symbol: "lok_init_2"
 target_functions: [document import, text layout, spreadsheet recalculation]
 target_workloads: [LibreOffice cold start, document open, PDF export]
 allowed_source_paths: [/opt/lda/work/vcl, /opt/lda/work/sw, /opt/lda/work/sc, /opt/lda/work/debian/rules]

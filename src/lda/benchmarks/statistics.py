@@ -89,12 +89,24 @@ def _geomean(values: list[float]) -> float:
 def compare_paired(series: BenchmarkSeries, config: BenchmarkConfig, *, bootstrap_samples: int = 10_000) -> BenchmarkComparison:
     ratios = [baseline / candidate for baseline, candidate in zip(series.baseline, series.candidate, strict=True)]
     ratio = _geomean(ratios)
-    baseline_cv = _cv(series.baseline)
-    candidate_cv = _cv(series.candidate)
     rng = random.Random(series.seed)
     scenario_samples: dict[str, list[float]] = {}
-    for scenario, sample_ratio in zip(series.scenario_ids, ratios, strict=True):
+    scenario_baselines: dict[str, list[float]] = {}
+    scenario_candidates: dict[str, list[float]] = {}
+    for scenario, baseline, candidate, sample_ratio in zip(
+        series.scenario_ids,
+        series.baseline,
+        series.candidate,
+        ratios,
+        strict=True,
+    ):
         scenario_samples.setdefault(scenario, []).append(sample_ratio)
+        scenario_baselines.setdefault(scenario, []).append(baseline)
+        scenario_candidates.setdefault(scenario, []).append(candidate)
+    # Absolute duration is expected to differ across input sizes and concurrency
+    # modes. Noise is therefore measured within each homogeneous scenario.
+    baseline_cv = max(_cv(samples) for samples in scenario_baselines.values())
+    candidate_cv = max(_cv(samples) for samples in scenario_candidates.values())
     scenario_ratios = {
         scenario: _geomean(samples)
         for scenario, samples in sorted(scenario_samples.items())

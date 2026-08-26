@@ -30,6 +30,8 @@ class MissionDefinition(BaseModel):
     pkg_config_modules: list[str] = Field(default_factory=list)
     layout_body: str
     ffi_check_command: str
+    ffi_library_pattern: str = ""
+    ffi_symbol: str = ""
     target_functions: list[str]
     target_workloads: list[str]
     seed_hypotheses: list[HypothesisSeed] = Field(default_factory=list)
@@ -97,6 +99,8 @@ class MissionDefinition(BaseModel):
                     f"LDA_PUBLIC_HEADER={self.public_header}",
                     f"LDA_LAYOUT_BODY={self.layout_body}",
                     f"LDA_FFI_CHECK_COMMAND={self.ffi_check_command}",
+                    f"LDA_FFI_LIBRARY_PATTERN={self.ffi_library_pattern}",
+                    f"LDA_FFI_SYMBOL={self.ffi_symbol}",
                     f"LDA_PKG_CONFIG_MODULES={','.join(self.pkg_config_modules)}",
                     f"LDA_LINK_LIBRARIES={self.link_libraries}",
                     "/opt/lda/harness/checks/run-generic-compatibility-check.sh",
@@ -142,7 +146,7 @@ class MissionDefinition(BaseModel):
                             ],
                             timeout_seconds=7200,
                         )
-                        for package in self.reverse_dependency_tests[:1]
+                        for package in self.reverse_dependency_tests
                     ],
                 ],
                 application_smokes=[CommandCheck(

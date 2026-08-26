@@ -9,6 +9,8 @@ link_libraries: "-lgtk-4"
 pkg_config_modules: [gtk4]
 layout_body: "printf(\"%zu %zu\\n\",sizeof(GtkBorder),_Alignof(GtkBorder));"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+ffi_library_pattern: "libgtk-4.so"
+ffi_symbol: "gtk_get_major_version"
 target_functions: [gtk_snapshot_append_node, gtk_widget_snapshot, gsk_renderer_render]
 target_workloads: [GTK4 rendering, Chromium integration, desktop applications]
 allowed_source_paths: [/opt/lda/work/gtk, /opt/lda/work/gdk, /opt/lda/work/gsk, /opt/lda/work/debian/rules]

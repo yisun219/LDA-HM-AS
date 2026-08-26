@@ -8,6 +8,8 @@ probe_body: "void *h=dlopen(\"libsss_util.so\",RTLD_LAZY|RTLD_LOCAL); sink ^= (u
 link_libraries: "-ldl"
 layout_body: "printf(\"opaque\\n\");"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+ffi_library_pattern: "libsss_util.so"
+ffi_symbol: "sss_strerror"
 target_functions: [NSS lookup, cache lookup, LDAP response handling]
 target_workloads: [identity lookup, login authentication, directory cache]
 allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/debian/rules]

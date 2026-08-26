@@ -9,6 +9,8 @@ link_libraries: "-lsoup-3.0"
 pkg_config_modules: [libsoup-3.0]
 layout_body: "printf(\"opaque\\n\");"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/libsoup-header-bench 100"
+ffi_library_pattern: "libsoup-3.0.so"
+ffi_symbol: "soup_headers_parse_request"
 target_functions: [soup_headers_parse_request, soup_headers_parse, soup_message_headers_append]
 target_workloads: [HTTP request parsing, local web server, GNOME network clients]
 seed_hypotheses:

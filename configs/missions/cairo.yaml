@@ -9,6 +9,8 @@ link_libraries: "-lcairo"
 pkg_config_modules: [cairo]
 layout_body: "printf(\"%zu %zu\\n\",sizeof(cairo_matrix_t),_Alignof(cairo_matrix_t));"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+ffi_library_pattern: "libcairo.so"
+ffi_symbol: "cairo_status"
 target_functions: [cairo_fill, cairo_paint, cairo_image_surface_create]
 target_workloads: [GTK rendering, Chromium canvas, desktop compositing]
 allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/perf, /opt/lda/work/debian/rules]

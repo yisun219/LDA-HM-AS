@@ -8,6 +8,8 @@ probe_body: "void *h=dlopen(\"libgnome-shell.so\",RTLD_LAZY|RTLD_LOCAL); sink ^=
 link_libraries: "-ldl"
 layout_body: "printf(\"opaque\\n\");"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+ffi_library_pattern: "libgnome-shell.so"
+ffi_symbol: "shell_global_get"
 target_functions: [shell_global_get, shell_app_system_lookup_app, st_theme_node_paint]
 target_workloads: [GNOME Shell startup, overview animation, desktop compositing]
 allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/js, /opt/lda/work/debian/rules]
