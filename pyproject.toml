@@ -3,15 +3,16 @@ requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lda-pure-humanize"
-version = "0.2.2"
-description = "E2B-native Pure Humanize flow for Ubuntu package optimization"
+name = "linux-development-agent"
+version = "0.3.1"
+description = "E2B-native Linux package optimization agent for Ubuntu 26.04"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "e2b==2.45.0",
   "openai-codex==0.147.0; sys_platform == 'linux'",
   "pydantic==2.12.5",
   "PyYAML==6.0.2",
+  "jsonschema==4.25.1",
 ]
 
 [project.optional-dependencies]
@@ -25,6 +26,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["lda", "lda.*"]
 
 [project.scripts]
 lda = "lda.cli.main:main"

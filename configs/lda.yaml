@@ -6,11 +6,11 @@ e2b:
   api_key_env: "E2B_API_KEY"
   shared_gateway: true
   validate_api_key: true
-  controller_template: "lda-controller-lda-hm-0-3-22"
-  agent_template: "lda-agent-runtime-lda-hm-0-3-5"
-  base_template: "lda-base-lda-hm-0-3-0"
-  judge_template: "lda-judge-lda-hm-0-3-3"
-  e2e_template: "lda-e2e-lda-hm-0-3-0"
+  controller_template: "lda-controller-lda-hm-0-3-29"
+  agent_template: "lda-agent-runtime-lda-hm-0-3-9"
+  base_template: "lda-base-lda-hm-0-3-3"
+  judge_template: "lda-judge-lda-hm-0-3-6"
+  e2e_template: "lda-e2e-lda-hm-0-3-2"
 ubuntu_snapshot: "https://snapshot.ubuntu.com/ubuntu/20260825T000000Z"
 scheduler:
   max_active_missions: 2

@@ -1,0 +1,23 @@
+package: gstreamer1.0-plugins-good
+source_package: gst-plugins-good1.0
+source_version: 1.28.2-2
+binary_packages: [gstreamer1.0-plugins-good]
+runtime_packages: [gstreamer1.0-plugins-good]
+public_header: dlfcn.h
+probe_body: "void *h=dlopen(\"libgstvideofilter.so\",RTLD_LAZY|RTLD_LOCAL); sink ^= (uintptr_t)h; if(h) dlclose(h);"
+link_libraries: "-ldl"
+layout_body: "printf(\"opaque\\n\");"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+target_functions: [video scale, RTP handling, audio conversion]
+target_workloads: [video playback, screen capture, browser media]
+allowed_source_paths: [/opt/lda/work/gst, /opt/lda/work/sys, /opt/lda/work/ext, /opt/lda/work/debian/rules]
+forbidden_paths: [/opt/lda/work/tests]
+abi_manifest: manifests/gstreamer-good/abi.json
+api_manifest: manifests/gstreamer-good/api.json
+ffi_manifest: manifests/gstreamer-good/ffi.json
+microbench_manifest: manifests/gstreamer-good/micro.json
+e2e_manifest: manifests/gstreamer-good/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [totem]
+candidate_budget: 8
+acceptance_policy: Plugin ABI and media correctness fences pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

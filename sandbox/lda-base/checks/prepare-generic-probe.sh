@@ -4,6 +4,7 @@ set -euo pipefail
 header="${1:?header required}"
 body="${2:?loop body required}"
 libraries="${3:?link libraries required}"
+modules="${4:-}"
 root=/opt/lda/baseline/root
 fixture=/opt/lda/fixtures/generic
 mkdir -p "$fixture"
@@ -25,6 +26,11 @@ while IFS= read -r directory; do include_args+=("-I$directory"); done < <(find "
 lib_args=()
 while IFS= read -r directory; do lib_args+=("-L$directory" "-Wl,-rpath-link,$directory"); done < <(find "$root/usr/lib" -type d | sort)
 read -ra requested_libraries <<<"$libraries"
-cc -O2 -Werror "${include_args[@]}" "$fixture/probe.c" "${lib_args[@]}" "${requested_libraries[@]}" -o "$fixture/probe"
+pkg_args=()
+if test -n "$modules"; then
+  IFS=, read -ra requested_modules <<<"$modules"
+  read -ra pkg_args <<<"$(pkg-config --cflags --libs "${requested_modules[@]}")"
+fi
+cc -O2 -Werror "${include_args[@]}" "$fixture/probe.c" "${lib_args[@]}" "${pkg_args[@]}" "${requested_libraries[@]}" -o "$fixture/probe"
 baseline_libdir="$(dirname "$(head -1 /opt/lda/baseline/libraries.list)")"
 LD_LIBRARY_PATH="$baseline_libdir" "$fixture/probe" 10 >"$fixture/baseline-output"

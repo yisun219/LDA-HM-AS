@@ -3,24 +3,24 @@ python: "3.12.12"
 uv: "0.8.13"
 openai_codex_sdk: "0.147.0"
 templates:
-  lda-controller-lda-hm-0-3-22:
+  lda-controller-lda-hm-0-3-29:
     base: ubuntu:26.04
     codex: false
     e2b_credentials: runtime-only
-  lda-agent-runtime-lda-hm-0-3-5:
+  lda-agent-runtime-lda-hm-0-3-9:
     base: ubuntu:26.04
     codex_cli: "0.149.1"
     intel_skills_commit: e9d0b6410fb1ad7a50fb81e0868fd23ae886882c
     e2b_credentials: forbidden
-  lda-base-lda-hm-0-3-0:
+  lda-base-lda-hm-0-3-3:
     base: ubuntu:26.04
     intel_skills_commit: e9d0b6410fb1ad7a50fb81e0868fd23ae886882c
     model_credentials: forbidden
-  lda-judge-lda-hm-0-3-3:
-    parent: lda-base-lda-hm-0-3-0
+  lda-judge-lda-hm-0-3-6:
+    parent: lda-base-lda-hm-0-3-3
     codex: false
     model_credentials: forbidden
-  lda-e2e-lda-hm-0-3-0:
+  lda-e2e-lda-hm-0-3-2:
     base: ubuntu:26.04
     playwright: "1.55.0"
     model_credentials: forbidden

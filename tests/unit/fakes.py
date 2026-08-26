@@ -32,6 +32,10 @@ class FakeCommands:
     async def run(self, command: str, **kwargs):
         self.calls.append(command)
         result = self._result(command)
+        if "tar -C /home/agent/.codex -czf" in command:
+            match = re.search(r"-czf ([^ ]+)", command)
+            if match:
+                self.owner.files.values[match.group(1).strip("'")] = b"session-checkpoint"
         if "/opt/lda/command-state/" in command:
             match = re.search(r"(/opt/lda/command-state/[0-9a-f]+)", command)
             if match:
@@ -45,6 +49,12 @@ class FakeCommands:
     def _result(self, command: str) -> FakeResult:
         if self.owner.fail_token and self.owner.fail_token in command:
             return FakeResult(1, "", "forced failure")
+        if "find /opt/lda/baseline" in command and "*.deb" in command:
+            paths = sorted(
+                path for path in self.owner.files.values
+                if path.startswith("/opt/lda/baseline/") and path.endswith(".deb")
+            )
+            return FakeResult(0, "\n".join(paths) + ("\n" if paths else ""), "")
         if "run-paired-probe-benchmark.py" in command:
             import json
 

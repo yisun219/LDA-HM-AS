@@ -1,4 +1,5 @@
 from pathlib import Path
+from hashlib import sha256
 
 import pytest
 
@@ -13,6 +14,8 @@ from .fakes import FakeSandbox
 class Manager:
     def __init__(self, fail_token: str) -> None:
         self.sandbox = FakeSandbox("judge", fail_token)
+        self.sandbox.files.values["/opt/lda/baseline/source.tar.bundle"] = b"source"
+        self.sandbox.files.values["/opt/lda/baseline/fixture.deb"] = b"deb"
 
     async def create(self, lease, **kwargs):
         return self.sandbox
@@ -43,8 +46,8 @@ def contract() -> MissionContract:
         mission_id="mission",
         source_package="fixture",
         binary_packages=["fixture"],
-        official_source_hash="a" * 64,
-        official_deb_hashes={"fixture.deb": "b" * 64},
+        official_source_hash=sha256(b"source").hexdigest(),
+        official_deb_hashes={"fixture.deb": sha256(b"deb").hexdigest()},
         target_functions=["fixture"],
         target_workloads=["fixture"],
         allowed_source_paths=["/opt/lda/work/src"],

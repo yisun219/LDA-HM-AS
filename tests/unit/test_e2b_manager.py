@@ -1,9 +1,11 @@
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 from lda.config import E2BConfig
 from lda.e2b.manager import E2BSandboxManager, SandboxLease, SandboxRole
+from lda.e2b.manager import _is_missing_sandbox
 from lda.state import EventStore
 
 from .fakes import FakeSandbox
@@ -109,3 +111,8 @@ async def test_snapshot_releases_slot_and_kill_is_idempotent(monkeypatch, tmp_pa
 
     replacement = SandboxLease.create(run_id="run", role=SandboxRole.WORKSPACE, template="base")
     await asyncio.wait_for(manager.create(replacement), timeout=1)
+
+
+def test_empty_gateway_404_decode_failure_is_treated_as_missing() -> None:
+    assert _is_missing_sandbox(json.JSONDecodeError("Expecting value", "", 0))
+    assert not _is_missing_sandbox(json.JSONDecodeError("Expecting value", "not-json", 0))

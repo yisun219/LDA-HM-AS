@@ -4,13 +4,14 @@ source_version: 1.18.4-3
 binary_packages: [libcairo2, libcairo2-dev]
 runtime_packages: [libcairo2, libcairo2-dev]
 public_header: cairo/cairo.h
-probe_body: "sink ^= (uintptr_t)cairo_version();"
+probe_body: "static cairo_surface_t *s; static cairo_t *cr; if (!cr) { s=cairo_image_surface_create(CAIRO_FORMAT_ARGB32,64,64); cr=cairo_create(s); } cairo_set_source_rgba(cr,(double)(i&255)/255.0,0.25,0.75,1.0); cairo_rectangle(cr,(double)(i&31),(double)((i>>5)&31),16.0,16.0); cairo_fill(cr); cairo_paint(cr); sink ^= (uintptr_t)cairo_status(cr);"
 link_libraries: "-lcairo"
+pkg_config_modules: [cairo]
 layout_body: "printf(\"%zu %zu\\n\",sizeof(cairo_matrix_t),_Alignof(cairo_matrix_t));"
 ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
 target_functions: [cairo_fill, cairo_paint, cairo_image_surface_create]
 target_workloads: [GTK rendering, Chromium canvas, desktop compositing]
-allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/perf]
+allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/perf, /opt/lda/work/debian/rules]
 forbidden_paths: [/opt/lda/work/test]
 abi_manifest: manifests/cairo/abi.json
 api_manifest: manifests/cairo/api.json

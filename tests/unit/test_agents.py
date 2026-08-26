@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from lda.agents import AgentFactory, FakeCodexBackend
+from lda.agents.factory import CodexCliBackend
 from lda.artifacts import ArtifactStore
 from lda.gateway import CapabilityAuthority
 from lda.models import AgentSpec, SessionPolicy
@@ -77,3 +78,90 @@ def test_reviewer_policy_is_enforced(tmp_path: Path) -> None:
         AgentFactory._validate_independence(
             spec("reviewer", "schema", candidate="candidate", policy=SessionPolicy.PERSISTENT)
         )
+
+
+async def test_cli_backend_ignores_non_json_trace_lines(tmp_path: Path) -> None:
+    sandbox = FakeSandbox("agent")
+    original_run = sandbox.commands.run
+
+    async def run(command, **kwargs):
+        result = await original_run(command, **kwargs)
+        if "command-state" in command:
+            roots = [path.rsplit("/", 1)[0] for path in sandbox.files.values if path.endswith("/schema.json")]
+            root = roots[0]
+            sandbox.files.values[f"{root}/output.json"] = b'{"ok":true}'
+            sandbox.files.values[f"{root}/trace.jsonl"] = (
+                b"diagnostic text\n\n"
+                b'{"type":"thread.started","thread_id":"thread-1"}\n'
+            )
+        return result
+
+    sandbox.commands.run = run
+    result = await CodexCliBackend().run(
+        sandbox,
+        spec("research-curator", "unused", candidate=None, policy=SessionPolicy.FRESH),
+        prompt="prompt",
+        schema={"type": "object"},
+        thread_id=None,
+        capability_token="token",
+    )
+    assert result.thread_id == "thread-1"
+    assert result.output == {"ok": True}
+
+
+async def test_cli_backend_retries_malformed_structured_output(tmp_path: Path) -> None:
+    sandbox = FakeSandbox("agent")
+    original_run = sandbox.commands.run
+    attempts = 0
+
+    async def run(command, **kwargs):
+        nonlocal attempts
+        result = await original_run(command, **kwargs)
+        if "command-state" in command:
+            attempts += 1
+            roots = [path.rsplit("/", 1)[0] for path in sandbox.files.values if path.endswith("/schema.json")]
+            root = roots[0]
+            output = b"not-json" if attempts == 1 else b'{"ok":true}'
+            sandbox.files.values[f"{root}/output.json"] = output
+            sandbox.files.values[f"{root}/trace.jsonl"] = b'{"type":"thread.started","thread_id":"thread-2"}\n'
+        return result
+
+    sandbox.commands.run = run
+    result = await CodexCliBackend().run(
+        sandbox,
+        spec("research-curator", "unused", candidate=None, policy=SessionPolicy.FRESH),
+        prompt="prompt",
+        schema={"type": "object"},
+        thread_id=None,
+        capability_token="token",
+    )
+    assert attempts == 2
+    assert result.output == {"ok": True}
+
+
+async def test_cli_backend_retries_schema_invalid_json(tmp_path: Path) -> None:
+    sandbox = FakeSandbox("agent")
+    original_run = sandbox.commands.run
+    attempts = 0
+
+    async def run(command, **kwargs):
+        nonlocal attempts
+        result = await original_run(command, **kwargs)
+        if "command-state" in command:
+            attempts += 1
+            root = next(path.rsplit("/", 1)[0] for path in sandbox.files.values if path.endswith("/schema.json"))
+            sandbox.files.values[f"{root}/output.json"] = b"{}" if attempts == 1 else b'{"ok":true}'
+            sandbox.files.values[f"{root}/trace.jsonl"] = b'{"type":"thread.started","thread_id":"thread-3"}\n'
+        return result
+
+    sandbox.commands.run = run
+    result = await CodexCliBackend().run(
+        sandbox,
+        spec("research-curator", "unused", candidate=None, policy=SessionPolicy.FRESH),
+        prompt="prompt",
+        schema={"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
+        thread_id=None,
+        capability_token="token",
+    )
+    assert attempts == 2
+    assert result.output == {"ok": True}

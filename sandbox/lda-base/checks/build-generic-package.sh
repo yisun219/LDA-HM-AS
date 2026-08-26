@@ -7,25 +7,33 @@ case "$mode" in baseline|candidate) ;; *) exit 64 ;; esac
 source_root=/opt/lda/work
 output_root="/opt/lda/$mode"
 package_root="$output_root/root"
+rebuild_root="$output_root/rebuild-root"
 package_dir="$output_root/packages"
 cd "$source_root"
 test -d .git
 test -z "$(git status --porcelain)" || { echo "source must be committed before build" >&2; exit 65; }
 source_commit="$(git rev-parse HEAD)"
 build_parent="/opt/lda/build/$mode"
-sudo mkdir -p /opt/lda/build
-sudo chown "$(id -u):$(id -g)" /opt/lda/build
+if ! test -d /opt/lda/build -a -w /opt/lda/build; then
+  sudo mkdir -p /opt/lda/build
+  sudo chown "$(id -u):$(id -g)" /opt/lda/build
+fi
 rm -rf "$build_parent"
 mkdir -p "$build_parent"
 git clone --quiet --no-hardlinks "$source_root" "$build_parent/source"
 cd "$build_parent/source"
 test "$(git rev-parse HEAD)" = "$source_commit"
-sudo mkdir -p "$output_root"
-sudo chown "$(id -u):$(id -g)" "$output_root"
-rm -rf "$package_root" "$package_dir"
+if ! test -d "$output_root" -a -w "$output_root"; then
+  sudo mkdir -p "$output_root"
+  sudo chown "$(id -u):$(id -g)" "$output_root"
+fi
+rm -rf "$package_root" "$package_dir" "$rebuild_root"
 rm -f "$output_root/runtime-debs.list" "$output_root/runtime-deb.path" \
   "$output_root/libraries.list" "$output_root/upstream-tests-passed"
 mkdir -p "$package_root" "$package_dir"
+if test "$mode" = baseline; then
+  mkdir -p "$rebuild_root"
+fi
 find "$build_parent" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.ddeb' -o -name '*.changes' -o -name '*.buildinfo' \) -delete
 build_options="parallel=$(nproc)"
 if test "${LDA_BUILD_NOCHECK:-0}" = 1; then
@@ -49,7 +57,12 @@ fi
 find "$build_parent" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.ddeb' -o -name '*.changes' -o -name '*.buildinfo' \) -exec mv -t "$package_dir" -- {} +
 IFS=, read -ra wanted <<<"$runtime_packages"
 runtime_debs=()
-for deb in "$package_dir"/*.deb; do
+deb_candidates=("$package_dir"/*.deb)
+if test "$mode" = baseline; then
+  deb_candidates=("$output_root"/*.deb)
+fi
+for deb in "${deb_candidates[@]}"; do
+  test -e "$deb" || continue
   package="$(dpkg-deb -f "$deb" Package)"
   for expected in "${wanted[@]}"; do
     if test "$package" = "$expected"; then
@@ -58,11 +71,31 @@ for deb in "$package_dir"/*.deb; do
     fi
   done
 done
+if test "$mode" = baseline; then
+  for deb in "$package_dir"/*.deb; do
+    test -e "$deb" || continue
+    package="$(dpkg-deb -f "$deb" Package)"
+    for expected in "${wanted[@]}"; do
+      test "$package" = "$expected" && dpkg-deb -x "$deb" "$rebuild_root"
+    done
+  done
+fi
+for debug_deb in "$package_dir"/*.ddeb; do
+  test -e "$debug_deb" || continue
+  dpkg-deb -x "$debug_deb" "$(test "$mode" = baseline && printf '%s' "$rebuild_root" || printf '%s' "$package_root")"
+done
 test "${#runtime_debs[@]}" -gt 0
 printf '%s\n' "${runtime_debs[@]}" >"$output_root/runtime-debs.list"
 printf '%s\n' "${runtime_debs[0]}" >"$output_root/runtime-deb.path"
-find "$package_root/usr/lib" -type f -name '*.so.*' | sort >"$output_root/libraries.list"
+find "$package_root/usr/lib" -type f -name '*.so*' | sort >"$output_root/libraries.list"
 test -s "$output_root/libraries.list"
+if test "$mode" = baseline; then
+  find "$rebuild_root/usr/lib" -type f -name '*.so*' | sort >"$output_root/rebuild-libraries.list"
+  test -s "$output_root/rebuild-libraries.list"
+  sed "s#$package_root/##" "$output_root/libraries.list" >"$output_root/official-relative.list"
+  sed "s#$rebuild_root/##" "$output_root/rebuild-libraries.list" >"$output_root/rebuild-relative.list"
+  diff -u "$output_root/official-relative.list" "$output_root/rebuild-relative.list"
+fi
 touch "$output_root/build-completed"
 if test "${LDA_BUILD_NOCHECK:-0}" != 1; then
   touch "$output_root/upstream-tests-passed"

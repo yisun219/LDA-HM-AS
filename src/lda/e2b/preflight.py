@@ -43,7 +43,17 @@ async def run_preflight(
     if installed != config.sdk_version:
         raise RuntimeError(f"E2B SDK mismatch: installed={installed} required={config.sdk_version}")
     target = template or config.base_template
-    if not template_class.exists(target):
+    exists = False
+    for attempt in range(8):
+        try:
+            exists = bool(template_class.exists(target))
+            break
+        except Exception as error:
+            transient = any(marker in str(error).lower() for marker in ("530", "502", "503", "timeout", "connection"))
+            if not transient or attempt == 7:
+                raise RuntimeError(f"E2B template lookup failed for {target}: {error}") from error
+            await asyncio.sleep(min(2 ** attempt, 10))
+    if not exists:
         raise RuntimeError(f"E2B template does not exist: {target}")
     report = PreflightReport(preflight_id=uuid4().hex, template=target)
     metadata = {
@@ -143,12 +153,15 @@ async def run_preflight(
                 await sandbox.kill()
             except Exception:
                 pass
-        paginator = sandbox_class.list(query=SandboxQuery(metadata={"preflight_id": report.preflight_id}))
-        async for item in iterate_pages(paginator):
-            sandbox_id = str(getattr(item, "sandbox_id", getattr(item, "id", "")))
-            if sandbox_id:
-                try:
-                    orphan = await sandbox_class.connect(sandbox_id=sandbox_id)
-                    await orphan.kill()
-                except Exception:
-                    pass
+        try:
+            paginator = sandbox_class.list(query=SandboxQuery(metadata={"preflight_id": report.preflight_id}))
+            async for item in iterate_pages(paginator):
+                sandbox_id = str(getattr(item, "sandbox_id", getattr(item, "id", "")))
+                if sandbox_id:
+                    try:
+                        orphan = await sandbox_class.connect(sandbox_id=sandbox_id)
+                        await orphan.kill()
+                    except Exception:
+                        pass
+        except Exception:
+            pass

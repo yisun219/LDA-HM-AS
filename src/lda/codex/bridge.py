@@ -36,6 +36,21 @@ def _chat_request(value: dict) -> dict:
         "messages": messages,
         "stream": False,
     }
+    text_config = value.get("text") or {}
+    response_format = text_config.get("format") if isinstance(text_config, dict) else None
+    if isinstance(response_format, dict):
+        format_type = response_format.get("type")
+        if format_type == "json_schema":
+            request["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_format.get("name", "structured_output"),
+                    "strict": response_format.get("strict", True),
+                    "schema": response_format.get("schema", {}),
+                },
+            }
+        elif format_type == "json_object":
+            request["response_format"] = {"type": "json_object"}
     for source, target in (("max_output_tokens", "max_tokens"), ("temperature", "temperature")):
         if source in value:
             request[target] = value[source]

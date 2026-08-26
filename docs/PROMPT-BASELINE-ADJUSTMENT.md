@@ -1,4 +1,7 @@
-# Baseline Adjustment Prompt
+# 历史 ISO Baseline 调整 Prompt
+
+> 历史说明：这份 Prompt 早于当前固定 Packages/Sources Snapshot 实现，仅作为设计
+> 演化记录保留，不是当前运行规范。当前行为以 `docs/BASELINE.md` 为准。
 
 You are modifying the LDA-HM flow for Ubuntu 26.04 package optimization.
 Preserve the Humanize control loop, but make the execution baseline

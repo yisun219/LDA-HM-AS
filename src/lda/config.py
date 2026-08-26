@@ -16,11 +16,11 @@ class E2BConfig(BaseModel):
     api_key_env: str = "E2B_API_KEY"
     shared_gateway: bool = True
     validate_api_key: bool = True
-    controller_template: str = "lda-controller-lda-hm-0-3-22"
-    agent_template: str = "lda-agent-runtime-lda-hm-0-3-5"
-    base_template: str = "lda-base-lda-hm-0-3-0"
-    judge_template: str = "lda-judge-lda-hm-0-3-3"
-    e2e_template: str = "lda-e2e-lda-hm-0-3-0"
+    controller_template: str = "lda-controller-lda-hm-0-3-29"
+    agent_template: str = "lda-agent-runtime-lda-hm-0-3-9"
+    base_template: str = "lda-base-lda-hm-0-3-3"
+    judge_template: str = "lda-judge-lda-hm-0-3-6"
+    e2e_template: str = "lda-e2e-lda-hm-0-3-2"
 
     def apply_public_environment(self) -> None:
         os.environ.setdefault("E2B_API_URL", self.api_url)

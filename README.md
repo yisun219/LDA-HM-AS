@@ -1,162 +1,343 @@
-# LDA Pure Humanize
+# Linux Development Agent
 
-This branch implements the E2B-native production flow used to research Ubuntu
-26.04 package optimizations. It preserves the older `lda_hm` package only for
-artifact compatibility; the production command is `lda`, backed by `src/lda`.
+Linux Development Agent（LDA）是一套运行在 E2B Sandbox 中的多 Agent Linux
+性能开发系统。当前目标是自动研究、实现并验证 Ubuntu 26.04 library/package
+优化，最终产出能够原位替换 Ubuntu 官方包的 `.deb`。
+
+LDA 的第一原则不是“跑分快”，而是“手术刀式替换”：现有 binary 不重新编译，
+现有源代码和头文件使用方式不修改，动态链接和 FFI 调用不改变。只有 ABI、API、
+FFI、功能、Debian 包关系和反作弊检查全部通过后，性能结果才有资格参与验收。
+
+## 设计目标与默认任务边界
+
+LDA 使用 Ubuntu 26.04 Desktop amd64 ISO manifest 作为候选选择证据，
+使用固定 Ubuntu Packages/Sources Snapshot 作为可执行 package baseline：
 
 ```text
-Pure Humanize
-= multi-Mission Humanize harness
-+ LDA Mission flow
-+ frozen Research Snapshot
-+ frozen Mission Queue
-+ independent deterministic Judge
-+ E2B-only execution
+https://snapshot.ubuntu.com/ubuntu/20260825T000000Z
 ```
 
-ABI, API, and FFI compatibility are hard fences. A candidate that changes a
-SONAME, exported symbol, symbol version, public type layout, calling convention,
-metadata, install path, precompiled consumer behavior, or Debian relationship is
-rejected before performance is considered.
+ISO 调研原文会逐字节导入、计算 SHA-256、上传到本次 Run 的 E2B 持久化空间，
+并作为不可变 artifact 保存。调研中的排名只是待验证证据，不会直接授权 Agent
+修改源码。
 
-## Prerequisites
+默认首批固定队列包含 10 个 package：
 
-- Python 3.12
-- `uv`
-- E2B SDK `2.45.0`
-- a private Codex login at `~/.codex/auth.json`, mode `0600`
-- E2B credentials in the environment or the private file below
+1. `libgtk-4-1`
+2. `libgtk-3-0t64`
+3. `gnome-shell`
+4. `libreoffice-core`
+5. `sssd-common`
+6. `libcairo2`
+7. `gnome-settings-daemon`
+8. `gstreamer1.0-plugins-good`
+9. `ibus`
+10. `libsoup-3.0-0`
 
-The E2B key may be stored outside Git at `~/.config/lda-hm/e2b.yaml`:
+LDA 会根据使用频率、实测 CPU 占比、依赖图中心性、workload 通用性、预期投入
+产出比和兼容风险重新计算优先级。`libcairo2` 和 `libsoup-3.0-0` 是强制 Canary：
+两者都到达终态后，剩余八个 Mission 才会开始。Portfolio Planning 完成后队列
+被冻结，本次 Run 中任何 Agent 都不能动态新增普通优化 Mission。
 
-```yaml
-e2b_api_key: "..."
+## 系统架构
+
+```mermaid
+flowchart LR
+  CLI[Bootstrap CLI] --> CTRL[Controller E2B]
+  CTRL --> VOL[(Run Volume)]
+  CTRL --> AF[AgentFactory]
+  AF --> AR[Codex Agent Runtime E2B]
+  AR -->|短期 Capability Token| GW[Scoped Tool Gateway]
+  GW --> WS[Candidate Workspace E2B]
+  CTRL --> J[Deterministic Judge E2B]
+  CTRL --> E2E[Portfolio E2E Sandbox]
+  WS -->|Patch + Trace| J
+  J -->|通过验收的 deb| E2E
+  J --> ART[(Content-addressed Artifacts)]
+  E2E --> ART
 ```
 
-The file must be mode `0600`. The key is injected only into the Controller.
-Agent Runtime receives Codex authentication; Workspace, Judge, and E2E
-Sandboxes receive neither model nor E2B credentials.
+本地 CLI 只负责创建和操作 Run。Controller、源码准备、构建、测试、Profile、
+Benchmark 和 Judge 全部在 E2B 中执行，不存在 Docker、本机 shell 或裸机静默
+fallback。
 
-Install the locked environment:
+系统使用五类不可变 Template：
+
+| Template | 职责 | 可获得的凭据 |
+| --- | --- | --- |
+| `lda-controller` | Scheduler、状态、Artifact、E2B 生命周期、Tool Gateway | E2B 和 Codex bootstrap 凭据 |
+| `lda-agent-runtime` | Codex CLI、Schema、Prompt、Intel Performance Skills | 仅 Codex 认证 |
+| `lda-base` | Ubuntu 源码、编译器、Profiler、ABI 和 Benchmark Workspace | 无 |
+| `lda-judge` | 从零构建并执行确定性验收 | 无 |
+| `lda-e2e` | Chromium、Playwright、Web 和 GUI 系统 workload | 无 |
+
+所有 Sandbox 都通过 lease 管理，并写入 Run、Mission、Candidate、role、lease、
+project 和 owner metadata。创建请求发生网络不确定错误时，Controller 会先按唯一
+`lease_id` 查询已存在 Sandbox，再决定是否重试，避免重复创建。
+
+## 完整 Flow
+
+```mermaid
+stateDiagram-v2
+  [*] --> RUN_CREATED
+  RUN_CREATED --> E2B_PREFLIGHT
+  E2B_PREFLIGHT --> RESEARCH_FROZEN
+  RESEARCH_FROZEN --> PORTFOLIO_PLANNED
+  PORTFOLIO_PLANNED --> MISSION_QUEUE_FROZEN
+  MISSION_QUEUE_FROZEN --> MISSION_BASELINE
+  MISSION_BASELINE --> PROFILE
+  PROFILE --> HYPOTHESIS
+  PROFILE --> NOT_HOT: 没有可复现热点
+  HYPOTHESIS --> CANDIDATE_FORK
+  CANDIDATE_FORK --> BUILD
+  BUILD --> LOCAL_VERIFY
+  LOCAL_VERIFY --> BUILD: 修复
+  LOCAL_VERIFY --> ADVERSARIAL_REVIEW
+  ADVERSARIAL_REVIEW --> BUILD: 可修复问题
+  ADVERSARIAL_REVIEW --> CLEAN_JUDGE
+  CLEAN_JUDGE --> BUILD: 可修复拒绝
+  CLEAN_JUDGE --> LOCAL_WIN
+  CLEAN_JUDGE --> SYSTEM_WIN
+  CLEAN_JUDGE --> REJECTED
+  CLEAN_JUDGE --> INVALID
+  LOCAL_WIN --> NEXT_MISSION
+  SYSTEM_WIN --> NEXT_MISSION
+  REJECTED --> NEXT_MISSION
+  INVALID --> NEXT_MISSION
+  NOT_HOT --> NEXT_MISSION
+  NEXT_MISSION --> MISSION_BASELINE
+  NEXT_MISSION --> PORTFOLIO_E2E
+  PORTFOLIO_E2E --> RELEASE_READY
+  PORTFOLIO_E2E --> COMPLETED_WITHOUT_RELEASE
+```
+
+每个 Mission 依次执行：
+
+1. 在固定 Snapshot 中核对 binary package 名称、版本、架构、source package、
+   source version、Depends、Pre-Depends、Provides、alternative dependency 和
+   安装解析。
+2. 下载精确官方 `.deb`、`.dsc`、upstream archive 和 Debian source archive，
+   记录确定性 source bundle 与全部 package 的 SHA-256。
+3. 在干净 `lda-base` 中重建未修改源码，建立官方 package/API/ABI baseline。
+4. 使用 `perf stat` 和 `perf record/report` 验证真实性能热点。版本查询、简单
+   `dlopen`、进程启动或依赖图高排名不算热点证据。
+5. 生成不可变 Mission Contract，封存路径边界、官方哈希、测试、workload、
+   hardware、预算和 acceptance policy。
+6. 从同一个 baseline Snapshot fork 最多三个 Candidate Workspace。
+7. 为每个 Candidate 创建独立且可持续的 Builder thread；每轮 Review 和 Trace
+   Audit 都创建全新的独立 thread。
+8. 把 Patch 和封存证据交给全新 Judge Sandbox，从头构建 Candidate `.deb`，
+   依照固定规则分类。
+9. 保存每个终态并继续执行，直到固定队列中的所有 package 都得到 Mission 终态。
+10. 在干净 E2E 环境随机切换 Candidate/官方 `.deb`，运行 Chromium Canvas 等
+    系统 workload，最后恢复官方包并决定是否具备 release 条件。
+
+Planner、Builder、Reviewer 和 Trace Auditor 的输出都是 JSON Schema 约束的
+建议数据，不拥有终止权。只有确定性 Judge 和 `ConvergenceEvaluator` 可以接受、
+拒绝、判无效或终止 Candidate。
+
+## Agent 与工具隔离
+
+一次 `lda run` 之后，Controller 的 `AgentFactory` 动态创建以下角色：
+
+| 角色 | Session 策略 | 责任 |
+| --- | --- | --- |
+| Research Curator | 每批资料 Fresh | 整理研究提示，不把提示当事实 |
+| Portfolio Planner | 每个 Run Fresh | 评议固定候选集合和优先级 |
+| Mission Planner | 每个 Mission Fresh | 根据 Contract 和 Profile 提出至多三个假设 |
+| Profiler | 每个 Mission Fresh | 判断 Profile 是否真的覆盖目标热点 |
+| Builder | 每个 Candidate Persistent | 修改、构建、修复 Candidate |
+| Reviewer | 每轮 Fresh | 独立检查 Patch、测试、Benchmark 和 Trace |
+| Trace Auditor | 每个 Candidate/轮次 Fresh | 检查作弊、越界和污染行为 |
+| Judge | 非 Agent | 执行确定性 Fence 并改变状态 |
+
+Reviewer 看不到 Builder 对话，不能 resume Builder thread，也不能写源码。Controller
+签发短期 Capability Token，绑定 Run、Mission、Candidate、角色、Workspace、
+allowed tools 和过期时间。Builder 只能操作自己的 Workspace；Reviewer 只能读取
+封存的 Contract、Patch、测试、Benchmark 和 Trace artifact。
+
+任何 Agent 都不能调用 `judge.accept`、修改 baseline/test manifest、读取 secret、
+创建无 scope Sandbox 或发布 release。
+
+## ABI / API / FFI Fence
+
+Judge 的比较基准是 Ubuntu 官方 `.deb`，不是本地 rebuild。Judge 在应用 Candidate
+Patch 前会重新下载固定 Snapshot 中的 source 和 package，并与 Mission Contract
+中的 SHA-256 逐项比较。
+
+SONAME、symbol、安装路径和预编译 binary 始终直接对比官方 `.deb`。Ubuntu 官方
+runtime binary 通常已 strip，因此需要 DWARF 的 `abi-dumper` 使用同一固定 source
+产生的未修改 debug rebuild；Candidate 使用相同构建链生成 debug rebuild。这个
+debug 对照只负责公开类型 ABI，不会被当成官方 binary 身份。
+
+兼容性检查包括：
+
+- SONAME、exported symbol、symbol version、`abidiff`、`abi-dumper` 和
+  `abi-compliance-checker`；
+- header compile、公开 struct/union 的 size、alignment、offset、calling
+  convention，以及 C/C++ source compatibility；
+- Python `ctypes`、Python `cffi`、Rust FFI、`dlopen`/`dlsym` 和已预编译 consumer；
+- pkg-config、CMake metadata、安装路径、`ldconfig`；
+- Debian Package、Version、Architecture、Depends、Pre-Depends、Provides、
+  Conflicts、Breaks 和 Replaces；
+- upstream self tests、Candidate `.deb` 安装、直接反向依赖源码构建/测试、应用
+  smoke、Micro Benchmark 和 E2E guardrail。
+
+任何兼容或功能失败都会直接得到 `REJECTED`，不再查看性能。硬件不一致、噪声过高、
+样本或 Trace 不完整、环境被污染时得到 `INVALID`。
+
+## 性能策略
+
+当前目标机器是 Intel Xeon Gold 6548Y+。每次 package baseline 和 Benchmark 都会
+通过 `lscpu`/CPUID 证据确认 CPU。公共 drop-in package 禁止全局
+`-march=native`。允许 baseline ISA、function multiversioning、IFUNC、CPUID
+runtime dispatch、AVX2/AVX-512 专用路径，但非目标 CPU 必须自动走兼容 fallback。
+
+Micro Benchmark 是 Candidate 的局部 reward。默认要求：
+
+- 至少 10 次 warmup；
+- 至少 30 对有效样本；
+- 固定随机种子并随机化 baseline/candidate 顺序；
+- 固定 CPU affinity 和 NUMA 策略；
+- 保存原始样本、CPU、kernel、microcode、governor 和 workload 信息；
+- 使用 paired ratio 和 bootstrap 95% CI；
+- speedup 至少 1.03，CI lower bound 至少 1.01。
+
+E2E Benchmark 是系统效果与回归 Fence。`LOCAL_WIN` 表示 Micro 显著提升、全部
+Fence 通过且 E2E 回退不超过 0.5%；`SYSTEM_WIN` 还要求目标 E2E 有显著贡献。
+
+默认 release 不能把多个 Micro speedup 相加。Portfolio E2E 必须达到几何平均
+speedup 1.01，并至少有两个显著改善的 workload，否则 Run 只能结束为
+`COMPLETED_WITHOUT_RELEASE`。
+
+## Anti-cheat
+
+Trace 记录命令、文件、进程、网络、构建参数和全部 Benchmark 样本。以下行为会被
+拒绝：
+
+- 修改 Benchmark 输入、测试或 workload 大小；
+- hardcode 输出或对已知输入缓存答案；
+- 跳过错误检查、降低精度或改变功能；
+- 修改 CPU affinity、让 baseline 变慢或隐藏失败样本；
+- 使用未声明 `LD_PRELOAD`；
+- 在 package artifact 之外修改系统 library；
+- 下载未记录的预编译结果；
+- 只报告最好一次结果；
+- 修改 Mission Contract 之外的源码路径。
+
+Trace 不保存或要求模型暴露隐藏思维过程，只记录可审计执行行为。
+
+## 收敛、状态与恢复
+
+Candidate 在以下任一条件满足时收敛：Judge 通过、达到八次尝试、连续三轮没有改善，
+或预算耗尽。Mission 在获得 win、所有 Candidate 失败、Profile 证明不在关键路径，
+或预算耗尽时收敛。Project 只有在固定队列全部终止且 Portfolio E2E 已执行后才结束。
+
+状态以事务方式保存在 SQLite，并镜像为可读 JSON；全部事件追加到 JSONL。生产环境
+优先使用 E2B Volume；对于没有 Volume API 的兼容网关，Controller filesystem 是
+显式持久化路径。Research、Contract、Patch、Trace、测试、Benchmark、Judge 结果
+和 `.deb` 全部使用 SHA-256 content address。
+
+`lda resume` 使用冻结 request 和持久化状态恢复。baseline/Candidate Workspace 使用
+确定性 lease ID，Controller 重启后优先重连旧 Sandbox；Builder thread ID 也会恢复。
+Research Snapshot、Mission Queue、官方 baseline 或 Contract 发生变化时必须创建新
+Run，不能静默沿用旧状态。
+
+## 安装与配置
+
+需要 Python 3.12、`uv`、E2B SDK `2.45.0` 和 Codex 认证。Python、Codex CLI、
+Intel Skills 和 E2B Template 版本分别锁定在 `pyproject.toml`、`uv.lock`、
+`e2b_builders.py` 和 `e2b_templates/lock.yaml`。
 
 ```bash
 uv sync --extra test
-source .venv/bin/activate
 ```
 
-## Build and verify E2B
+公开网关配置：
 
 ```bash
-lda template build --all
-lda e2b preflight
+export E2B_API_URL="https://e2b.fact-lab.work"
+export E2B_SANDBOX_URL="$E2B_API_URL"
+export E2B_ACCESS_TOKEN="dummy"
+export E2B_API_KEY="..."
 ```
 
-Preflight creates a real Sandbox, runs OS/CPU checks, tests files and foreground
-and background commands, reconnects by Sandbox ID and PID, creates and restores
-a Snapshot, tests fork when supported, validates metadata, and reaps every
-Sandbox carrying its `preflight_id`. It never falls back to Docker or the host.
+Secret 不得提交到 Git。CLI 也支持从 `~/.config/lda-hm/e2b.yaml` 读取 E2B Key，
+从 `~/.config/lda-hm/codex.yaml` 读取自定义 Codex endpoint；两个文件都必须是
+`0600` 权限。
 
-## Start a Pure Humanize run
+共享网关适配只在 `E2B_API_URL == E2B_SANDBOX_URL` 时启用，并在 SDK 原 Header
+基础上增加 `X-API-KEY`，不会覆盖 Sandbox ID、Port 或 Access Token Header。
 
-Research input can be JSON/YAML with structured hints or plain text. Structured
-hints should name the exact Ubuntu binary package used by the inventory.
+## 构建、验证与启动
 
 ```bash
-lda research ingest research/
-lda portfolio plan \
+uv run lda template build --all
+uv run lda e2b preflight
+
+uv run lda research ingest RESEARCH_INPUT_PATH
+
+uv run lda portfolio plan \
   --research-snapshot RESEARCH_SNAPSHOT_ID \
   --inventory configs/package-inventory.yaml \
-  --limit 5
+  --limit 10
 
-lda run \
+uv run lda run \
   --flow pure-humanize \
   --research-snapshot RESEARCH_SNAPSHOT_ID \
   --inventory configs/package-inventory.yaml \
   --missions configs/missions \
-  --queue-limit 5
+  --queue-limit 10 \
+  --agent-backend codex-cli
 ```
 
-`lda run` verifies/builds missing Templates, creates an E2B Volume, launches
-`lda-controller` inside E2B, injects the E2B key and a generated capability
-signing key only into that Controller, injects Codex authentication only into
-Agent Runtime Sandboxes, returns the Run ID, and starts the frozen Mission Queue.
-
-Run operations:
+运行管理：
 
 ```bash
-lda status --run-id RUN_ID
-lda logs --run-id RUN_ID
-lda resume --run-id RUN_ID
-lda cancel --run-id RUN_ID
-lda e2b reap --run-id RUN_ID
-lda report --run-id RUN_ID
+uv run lda status --run-id RUN_ID
+uv run lda logs --run-id RUN_ID
+uv run lda resume --run-id RUN_ID
+uv run lda cancel --run-id RUN_ID
+uv run lda e2b reap --run-id RUN_ID
+uv run lda report --run-id RUN_ID
 ```
 
-State is transactionally stored in SQLite, mirrored as readable run JSON, and
-audited in append-only JSONL on the Run's E2B Volume. Candidate source patches,
-Agent output, traces, tests, and benchmark samples are content-addressed.
-
-## Execution model
-
-Each run follows this state sequence:
-
-```text
-RUN_CREATED -> E2B_PREFLIGHT -> RESEARCH_FROZEN -> PORTFOLIO_PLANNED
--> MISSION_QUEUE_FROZEN -> MISSION_BASELINE -> PROFILE -> HYPOTHESIS
--> CANDIDATE_FORK -> BUILD -> LOCAL_VERIFY -> ADVERSARIAL_REVIEW
--> CLEAN_JUDGE -> NEXT_MISSION -> PORTFOLIO_E2E
--> RELEASE_READY | COMPLETED_WITHOUT_RELEASE
-```
-
-Research Curator, Portfolio Planner, Mission Planner, Profiler, Builder,
-Reviewer, and Trace Auditor are independent AgentFactory products. Builder keeps
-one thread per Candidate. Reviewer and Trace Auditor always receive new threads,
-cannot see Builder conversation, cannot modify source, and cannot accept a
-Candidate. Only the deterministic Judge changes acceptance state.
-
-The scoped Tool Gateway signs short-lived HMAC capabilities bound to run,
-mission, candidate, role, workspace, tools, and expiration. Builder can access
-only its Workspace tools. Reviewer can read only sealed artifacts. No Agent can
-call acceptance, baseline/test mutation, unscoped Sandbox creation, secret read,
-or release publication operations.
-
-Judge order is fixed:
-
-```text
-Level 0 upstream self tests
-Level 1 ABI/API/FFI
-Level 2 original binary with candidate library
-Level 3 reverse dependency build/test
-Level 4 application install/launch/smoke
-Level 5 E2E guardrail
-```
-
-Micro benchmarks use ten warmups, thirty paired randomized samples, fixed seed,
-CPU affinity, raw sample retention, geometric paired ratios, and bootstrap 95%
-confidence intervals. Micro wins are local rewards. Default release requires
-Portfolio E2E and never adds independent micro speedups together.
-
-## Templates
-
-- `lda-controller`: scheduler, state, gateway, artifacts, E2B SDK
-- `lda-agent-runtime`: Python 3.12, Codex CLI `0.149.1`, schemas, prompts, Intel skills
-- `lda-base`: Ubuntu 26.04 compilers, Debian tooling, perf and ABI/FFI tools
-- `lda-judge`: immutable deterministic fences derived from `lda-base`, no Codex
-- `lda-e2e`: clean Ubuntu 26.04, Chromium, Playwright, web and GUI fixtures
-
-Intel Performance Skills are pinned to commit
-`e9d0b6410fb1ad7a50fb81e0868fd23ae886882c`. Public packages may use baseline
-ISA plus runtime dispatch, IFUNC, AVX2, or AVX-512 paths with a compatible
-fallback. Global `-march=native` is rejected by trace audit.
-
-## Tests
+本地验证不能代替真实 E2B smoke：
 
 ```bash
+find sandbox -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+uv run python -m compileall -q src sandbox/lda-base/checks fixtures
 uv run pytest -q
+git diff --check
 ```
 
-Tests cover FakeE2B, FakeCodex, shared gateway headers, Sandbox leases and
-reaping, Agent resume and independence, frozen queues, ABI/FFI rejection,
-benchmark statistics, anti-cheat, convergence, crash recovery, secret
-redaction, concurrency limits, and state-machine transition guards. Real E2B
-tests live under `tests/e2b` and are never replaced by mocks.
+## 仓库结构
+
+| 路径 | 内容 |
+| --- | --- |
+| `src/lda/controller` | Run 编排、收敛规则、请求模型 |
+| `src/lda/agents`, `src/lda/codex` | Agent 生命周期和 Codex CLI/SDK Backend |
+| `src/lda/e2b` | 共享网关、Preflight、Template、Lease、Snapshot、Reaper |
+| `src/lda/gateway` | Capability-scoped Agent tools |
+| `src/lda/judge`, `src/lda/fences` | 确定性验收和 Anti-cheat |
+| `src/lda/benchmarks` | Paired statistics 和状态分类 |
+| `src/lda/research`, `src/lda/packages`, `src/lda/missions` | Research freeze、优先级、Qualification、Contract |
+| `src/lda/state`, `src/lda/artifacts` | SQLite/JSONL 状态和 content-addressed 证据 |
+| `configs/missions` | Top 10 package-specific Mission 定义 |
+| `sandbox/lda-base/checks` | 构建、兼容、Profile 和 Benchmark harness |
+| `e2b_builders.py`, `e2b_templates` | 可复现 E2B Template 和版本锁 |
+| `schemas`, `prompts` | Agent 输出协议和只读角色 Prompt |
+| `tests/unit`, `tests/e2b` | Fake Backend、确定性测试和真实 E2B smoke |
+
+## 方法来源
+
+LDA 的 Actor/Reviewer 分离、持续写入 Session 与 Fresh Reviewer、不可变计划/合同
+锚点、可恢复事件执行、对抗 Review 和确定性终止边界，基于 Humanize 项目的方法和
+Runtime/Flow 分层思想发展而来：
+
+- [Humanize2](https://github.com/humanfia/humanize2)
+- [Flowverse](https://github.com/humanfia/flowverse)
+- [Humanize1 Flow](https://github.com/humanfia/flowverse/tree/main/flows/humanize1)
+
+LDA 自己定义并实现 Linux package qualification、E2B 隔离、ABI/API/FFI Fence、
+Benchmark 统计、`.deb` 原位替换和 Portfolio release policy。

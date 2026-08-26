@@ -1,0 +1,23 @@
+package: gnome-settings-daemon
+source_package: gnome-settings-daemon
+source_version: 50.0-1ubuntu1
+binary_packages: [gnome-settings-daemon]
+runtime_packages: [gnome-settings-daemon]
+public_header: dlfcn.h
+probe_body: "void *h=dlopen(\"libgsd.so\",RTLD_LAZY|RTLD_LOCAL); sink ^= (uintptr_t)h; if(h) dlclose(h);"
+link_libraries: "-ldl"
+layout_body: "printf(\"opaque\\n\");"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+target_functions: [plugin activation, settings propagation, power event handling]
+target_workloads: [desktop login, settings changes, power management]
+allowed_source_paths: [/opt/lda/work/plugins, /opt/lda/work/gnome-settings-daemon, /opt/lda/work/debian/rules]
+forbidden_paths: [/opt/lda/work/tests]
+abi_manifest: manifests/gnome-settings-daemon/abi.json
+api_manifest: manifests/gnome-settings-daemon/api.json
+ffi_manifest: manifests/gnome-settings-daemon/ffi.json
+microbench_manifest: manifests/gnome-settings-daemon/micro.json
+e2e_manifest: manifests/gnome-settings-daemon/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [gnome-shell, ubuntu-desktop]
+candidate_budget: 8
+acceptance_policy: ABI and D-Bus behavior fences pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

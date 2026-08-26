@@ -231,6 +231,7 @@ class MissionContract(FrozenModel):
     microbench_manifest: str
     e2e_manifest: str
     hardware_profile: str
+    qualification_evidence: list[str] = Field(default_factory=list)
     candidate_budget: int = Field(gt=0)
     acceptance_policy: str
     contract_hash: str = ""

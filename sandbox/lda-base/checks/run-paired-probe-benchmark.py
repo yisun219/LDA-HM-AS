@@ -23,14 +23,15 @@ def main() -> None:
     parser.add_argument("--name", required=True)
     parser.add_argument("--loops", type=int, default=100000)
     parser.add_argument("--seed", type=int, default=2604)
-    parser.add_argument("--affinity", default="0")
+    parser.add_argument("--affinity", default="auto")
     args = parser.parse_args()
+    affinity = str(min(os.sched_getaffinity(0))) if args.affinity == "auto" else args.affinity
     binary = Path("/opt/lda/fixtures/generic/probe")
     baseline_libdir = str(Path(Path("/opt/lda/baseline/libraries.list").read_text().splitlines()[0]).parent)
     candidate_libdir = str(Path(Path("/opt/lda/candidate/libraries.list").read_text().splitlines()[0]).parent)
     for _ in range(10):
-        duration(binary, baseline_libdir, args.loops, args.affinity)
-        duration(binary, candidate_libdir, args.loops, args.affinity)
+        duration(binary, baseline_libdir, args.loops, affinity)
+        duration(binary, candidate_libdir, args.loops, affinity)
     rng = random.Random(args.seed)
     baseline: list[float] = []
     candidate: list[float] = []
@@ -40,7 +41,7 @@ def main() -> None:
         order.append(first)
         values = {}
         for mode in (first, "candidate" if first == "baseline" else "baseline"):
-            values[mode] = duration(binary, baseline_libdir if mode == "baseline" else candidate_libdir, args.loops, args.affinity)
+            values[mode] = duration(binary, baseline_libdir if mode == "baseline" else candidate_libdir, args.loops, affinity)
         baseline.append(values["baseline"])
         candidate.append(values["candidate"])
     environment = {
@@ -57,7 +58,7 @@ def main() -> None:
         "warmups": 10,
         "seed": args.seed,
         "randomized_order": order,
-        "cpu_affinity": args.affinity,
+        "cpu_affinity": affinity,
         "numa_policy": "local",
         "environment": environment,
     }))

@@ -1,0 +1,23 @@
+package: libreoffice-core
+source_package: libreoffice
+source_version: 4:26.2.2.2-0ubuntu1
+binary_packages: [libreoffice-core]
+runtime_packages: [libreoffice-core]
+public_header: dlfcn.h
+probe_body: "void *h=dlopen(\"libmergedlo.so\",RTLD_LAZY|RTLD_LOCAL); sink ^= (uintptr_t)h; if(h) dlclose(h);"
+link_libraries: "-ldl"
+layout_body: "printf(\"opaque\\n\");"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+target_functions: [document import, text layout, spreadsheet recalculation]
+target_workloads: [LibreOffice cold start, document open, PDF export]
+allowed_source_paths: [/opt/lda/work/vcl, /opt/lda/work/sw, /opt/lda/work/sc, /opt/lda/work/debian/rules]
+forbidden_paths: [/opt/lda/work/test, /opt/lda/work/qa]
+abi_manifest: manifests/libreoffice/abi.json
+api_manifest: manifests/libreoffice/api.json
+ffi_manifest: manifests/libreoffice/ffi.json
+microbench_manifest: manifests/libreoffice/micro.json
+e2e_manifest: manifests/libreoffice/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [libreoffice-writer, libreoffice-calc]
+candidate_budget: 8
+acceptance_policy: ABI and UNO integration fences pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

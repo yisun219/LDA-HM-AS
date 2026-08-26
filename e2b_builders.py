@@ -139,21 +139,27 @@ def e2e_template():
         Template().from_ubuntu_image("26.04").set_user("root")
         .run_cmd(
             f"apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
-            f"chromium-browser nodejs npm nginx apache2-utils xvfb xauth dbus-x11 fonts-dejavu-core "
+            f"nodejs npm nginx apache2-utils xvfb xauth dbus-x11 fonts-dejavu-core "
             f"jq dpkg-dev apt-utils {PYTHON_BUILD_PACKAGES} "
             "libglib2.0-0t64 libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 "
-            "libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libasound2t64 libcairo2 "
+            "libgtk-3-0t64 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libasound2t64 libcairo2 "
             "libcups2t64 libdbus-1-3 libdrm2 libgbm1 libnspr4 libnss3 libpango-1.0-0 "
-            "libx11-6 libxcb1 libxext6 libxrandr2 && rm -rf /var/lib/apt/lists/*"
+            "libx11-6 libx11-xcb1 libxcb1 libxext6 libxrandr2 libxshmfence1 && rm -rf /var/lib/apt/lists/*"
         )
         .run_cmd(python_runtime_command())
         .run_cmd("mkdir -p /opt/playwright /opt/lda && chmod 0755 /opt/playwright /opt/lda")
         .set_envs({"PLAYWRIGHT_BROWSERS_PATH": "/opt/playwright", "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE": "ubuntu24.04-x64"})
-        .run_cmd("npm install -g playwright@1.55.0 && PLAYWRIGHT_BROWSERS_PATH=/opt/playwright PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium")
+        .run_cmd(
+            "npm install -g playwright@1.55.0 && "
+            "PLAYWRIGHT_BROWSERS_PATH=/opt/playwright PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 "
+            "npx playwright install chromium && "
+            "browser=$(find /opt/playwright -type f -path '*/chrome-linux*/chrome' | head -1) && "
+            "test -n \"$browser\" && ln -sf \"$browser\" /usr/local/bin/chromium"
+        )
     )
     builder = embed_path(builder, "fixtures", "/opt/lda/fixtures")
     return (
-        builder.run_cmd("useradd --create-home --shell /bin/bash e2e || true; mkdir -p /opt/lda/work /opt/lda/packages /opt/lda/results; chown -R e2e:e2e /opt/lda")
+        builder.run_cmd("useradd --create-home --shell /bin/bash e2e || true; printf '%s\\n' 'e2e ALL=(ALL) NOPASSWD:/usr/bin/dpkg' >/etc/sudoers.d/lda-e2e; chmod 0440 /etc/sudoers.d/lda-e2e; mkdir -p /opt/lda/work /opt/lda/packages/candidate /opt/lda/packages/baseline /opt/lda/results; chown -R e2e:e2e /opt/lda")
         .set_workdir("/opt/lda/work")
         .set_envs({"PATH": "/opt/lda/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "PLAYWRIGHT_BROWSERS_PATH": "/opt/playwright", "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE": "ubuntu24.04-x64"})
         .set_user("e2e")

@@ -1,0 +1,23 @@
+package: gnome-shell
+source_package: gnome-shell
+source_version: 50.1-0ubuntu1
+binary_packages: [gnome-shell]
+runtime_packages: [gnome-shell]
+public_header: dlfcn.h
+probe_body: "void *h=dlopen(\"libgnome-shell.so\",RTLD_LAZY|RTLD_LOCAL); sink ^= (uintptr_t)h; if(h) dlclose(h);"
+link_libraries: "-ldl"
+layout_body: "printf(\"opaque\\n\");"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 10"
+target_functions: [shell_global_get, shell_app_system_lookup_app, st_theme_node_paint]
+target_workloads: [GNOME Shell startup, overview animation, desktop compositing]
+allowed_source_paths: [/opt/lda/work/src, /opt/lda/work/js, /opt/lda/work/debian/rules]
+forbidden_paths: [/opt/lda/work/tests]
+abi_manifest: manifests/gnome-shell/abi.json
+api_manifest: manifests/gnome-shell/api.json
+ffi_manifest: manifests/gnome-shell/ffi.json
+microbench_manifest: manifests/gnome-shell/micro.json
+e2e_manifest: manifests/gnome-shell/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [ubuntu-desktop-minimal]
+candidate_budget: 8
+acceptance_policy: ABI and public integration fences pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

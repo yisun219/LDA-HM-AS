@@ -26,9 +26,10 @@ async def test_controlled_package_build_fence_and_benchmark() -> None:
             "rm -rf /opt/lda/work && cp -a /opt/lda/fixtures/controlled-package /opt/lda/work && "
             "cd /opt/lda/work && git init -b baseline && git -c user.name=LDA -c user.email=lda@localhost add -A && "
             "git -c user.name=LDA -c user.email=lda@localhost commit -m baseline && "
-            "tar -C /opt/lda -czf /opt/lda/baseline/source.tar.gz work && "
+            "tar -C /opt/lda -cf /opt/lda/baseline/source.tar.bundle work && "
+            "/opt/lda/harness/checks/build-generic-package.sh candidate liblda-fixture1,liblda-fixture-dev && "
+            "cp /opt/lda/candidate/packages/*.deb /opt/lda/baseline/ && rm -rf /opt/lda/candidate && "
             "/opt/lda/harness/checks/build-generic-package.sh baseline liblda-fixture1,liblda-fixture-dev && "
-            "cp /opt/lda/baseline/packages/*.deb /opt/lda/baseline/ && "
             "/opt/lda/harness/checks/prepare-generic-probe.sh lda_fixture.h 'sink ^= lda_accumulate(1000);' '-llda-fixture' && "
             "git apply /opt/lda/fixtures/controlled-package/optimized.patch && git add -A && "
             "git -c user.name=LDA -c user.email=lda@localhost commit -m optimized && "
@@ -36,7 +37,7 @@ async def test_controlled_package_build_fence_and_benchmark() -> None:
             timeout=2400,
         )
         assert setup.exit_code == 0, setup.stderr
-        for check in ("soname", "exported-symbols", "symbol-versions", "abidiff", "header-compile", "struct-layout", "calling-convention", "pkg-config", "cmake-config", "install-paths", "precompiled-binary", "debian-relationships"):
+        for check in ("soname", "exported-symbols", "symbol-versions", "abidiff", "header-compile", "struct-layout", "calling-convention", "pkg-config", "cmake-config", "install-paths", "ldconfig", "precompiled-binary", "debian-relationships"):
             command = [
                 "env", "LDA_PUBLIC_HEADER=lda_fixture.h",
                 'LDA_LAYOUT_BODY=printf("%zu %zu\\n",sizeof(struct lda_fixture_state),_Alignof(struct lda_fixture_state));',

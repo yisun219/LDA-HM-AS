@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -45,7 +46,18 @@ def build_templates(config: LDAConfig, root: Path, *, all_templates: bool = True
     ]
     built: list[str] = []
     for alias, factory in definitions:
-        if Template.exists(alias) and not rebuild:
+        exists = False
+        for attempt in range(8):
+            try:
+                exists = bool(Template.exists(alias))
+                break
+            except Exception as error:
+                message = str(error).lower()
+                transient = any(marker in message for marker in ("530", "502", "503", "timeout", "connection"))
+                if not transient or attempt == 7:
+                    raise
+                time.sleep(min(2 ** attempt, 10))
+        if exists and not rebuild:
             print(f"[lda template] exists {alias}", file=sys.stderr, flush=True)
             continue
         print(f"[lda template] building {alias}", file=sys.stderr, flush=True)

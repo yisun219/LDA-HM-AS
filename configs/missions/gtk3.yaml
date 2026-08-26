@@ -1,0 +1,24 @@
+package: libgtk-3-0t64
+source_package: gtk+3.0
+source_version: 3.24.52-0ubuntu1
+binary_packages: [libgtk-3-0t64, libgtk-3-dev]
+runtime_packages: [libgtk-3-0t64, libgtk-3-dev]
+public_header: gtk/gtk.h
+probe_body: "sink ^= (uintptr_t)gtk_get_major_version();"
+link_libraries: "-lgtk-3"
+pkg_config_modules: [gtk+-3.0]
+layout_body: "printf(\"%zu %zu\\n\",sizeof(GtkBorder),_Alignof(GtkBorder));"
+ffi_check_command: "candidate=$(dirname $(head -1 /opt/lda/candidate/libraries.list)); LD_LIBRARY_PATH=$candidate /opt/lda/fixtures/generic/probe 100"
+target_functions: [gtk_widget_draw, gtk_css_gadget_draw, gtk_render_background]
+target_workloads: [GTK3 rendering, legacy desktop applications, GUI launch]
+allowed_source_paths: [/opt/lda/work/gtk, /opt/lda/work/gdk, /opt/lda/work/debian/rules]
+forbidden_paths: [/opt/lda/work/testsuite, /opt/lda/work/tests]
+abi_manifest: manifests/gtk3/abi.json
+api_manifest: manifests/gtk3/api.json
+ffi_manifest: manifests/gtk3/ffi.json
+microbench_manifest: manifests/gtk3/micro.json
+e2e_manifest: manifests/gtk3/e2e.json
+self_tests: [dpkg-buildpackage upstream test target]
+reverse_dependency_tests: [ibus, libreoffice-core]
+candidate_budget: 8
+acceptance_policy: ABI/API/FFI pass first; paired micro CI lower >= 1.01; no E2E regression over 0.5 percent.

@@ -4,10 +4,13 @@ import json
 import shlex
 import asyncio
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from uuid import uuid4
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 from lda.artifacts import ArtifactStore
 from lda.e2b import E2BSandboxManager, SandboxLease, SandboxRole, run_durable_command
 from lda.gateway import CapabilityAuthority
@@ -26,6 +29,12 @@ class CodexBackend(Protocol):
         thread_id: str | None,
         capability_token: str,
     ) -> AgentResult: ...
+
+
+def _agent_key(spec: AgentSpec) -> str:
+    return ":".join(
+        [spec.run_id, spec.mission_id, spec.candidate_id or "", spec.role, spec.independence_group]
+    )
 
 
 class CodexCliBackend:
@@ -53,6 +62,7 @@ class CodexCliBackend:
         capability = shlex.quote(capability_token)
         environment = (
             f"LDA_CAPABILITY_TOKEN={capability} "
+            "LDA_GATEWAY_URL=$(cat /opt/lda/agent-state/gateway-url) "
             f"LDA_RUN_ID={shlex.quote(spec.run_id)} "
             f"LDA_MISSION_ID={shlex.quote(spec.mission_id)} "
             f"LDA_CANDIDATE_ID={shlex.quote(spec.candidate_id or '')} "
@@ -66,7 +76,10 @@ class CodexCliBackend:
                 f"{shlex.quote(thread_id)} \"$(cat {root}/prompt.txt)\" >{trace}"
             )
         else:
-            sandbox_mode = "workspace-write" if spec.role == "builder" else "read-only"
+            # Source mutation is available only through the capability-scoped
+            # MCP gateway. The Agent Runtime's built-in shell remains read-only
+            # for every role, including Builder.
+            sandbox_mode = "read-only"
             command = (
                 f"{environment} codex --disable plugins --disable skill_search --disable skill_mcp_dependency_install "
                 f"exec --json --model {model} "
@@ -78,6 +91,8 @@ class CodexCliBackend:
         command = f"rm -f {shlex.quote(output)} {shlex.quote(trace)}; {command}"
         completed = None
         raw_trace = b""
+        parsed_output: Any | None = None
+        invalid_output = ""
         for attempt in range(5):
             completed = await run_durable_command(
                 sandbox,
@@ -96,9 +111,16 @@ class CodexCliBackend:
                     candidate_output = b""
                 rendered_output = candidate_output if isinstance(candidate_output, bytes) else str(candidate_output).encode()
                 if rendered_output.strip():
-                    break
+                    try:
+                        parsed_output = json.loads(rendered_output)
+                        Draft202012Validator(schema).validate(parsed_output)
+                    except (json.JSONDecodeError, ValidationError):
+                        invalid_output = rendered_output.decode(errors="replace")[-1000:]
+                    else:
+                        break
                 if attempt == 4:
-                    raise RuntimeError("Codex completed without a structured output file")
+                    detail = f": {invalid_output}" if invalid_output else ""
+                    raise RuntimeError(f"Codex completed without valid structured JSON{detail}")
                 await asyncio.sleep(2 ** attempt)
                 continue
             diagnostic = (completed.stderr or "") + "\n" + raw_trace.decode(errors="replace")
@@ -114,11 +136,19 @@ class CodexCliBackend:
         raw_output = await sandbox.files.read(output)
         output_text = raw_output.decode() if isinstance(raw_output, bytes) else str(raw_output)
         trace_text = raw_trace.decode() if isinstance(raw_trace, bytes) else str(raw_trace)
-        parsed = json.loads(output_text)
+        parsed = parsed_output if parsed_output is not None else json.loads(output_text)
         actual_thread = thread_id
         if not actual_thread:
             for line in trace_text.splitlines():
-                event = json.loads(line)
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
                 if event.get("type") == "thread.started":
                     actual_thread = str(event["thread_id"])
                     break
@@ -196,6 +226,7 @@ class AgentHandle:
     lease: SandboxLease
     backend: CodexBackend
     capability_token: str
+    capability_factory: Callable[[], str]
     artifacts: ArtifactStore
     store: EventStore
     manager: E2BSandboxManager
@@ -205,15 +236,14 @@ class AgentHandle:
 
     @property
     def key(self) -> str:
-        return ":".join(
-            [self.spec.run_id, self.spec.mission_id, self.spec.candidate_id or "", self.spec.role, self.spec.independence_group]
-        )
+        return _agent_key(self.spec)
 
     async def run(self, input_ref: str) -> AgentResult:
         if self.cancelled:
             raise RuntimeError("agent was cancelled")
         prompt = self.artifacts.read_bytes(input_ref).decode()
         schema = self.artifacts.read_json(self.spec.output_schema)
+        self.capability_token = self.capability_factory()
         result = await self.backend.run(
             self.sandbox,
             self.spec,
@@ -223,6 +253,7 @@ class AgentHandle:
             capability_token=self.capability_token,
         )
         result = await self._persist_trace(result)
+        result = await self._persist_session_checkpoint(result)
         self.thread_id = result.thread_id
         if self.spec.session_policy is SessionPolicy.PERSISTENT:
             self.store.save_thread(self.key, result.thread_id, result.checkpoint_ref)
@@ -237,6 +268,7 @@ class AgentHandle:
             raise RuntimeError("persistent thread has no checkpoint")
         prompt = self.artifacts.read_bytes(input_ref).decode()
         schema = self.artifacts.read_json(self.spec.output_schema)
+        self.capability_token = self.capability_factory()
         result = await self.backend.run(
             self.sandbox,
             self.spec,
@@ -246,6 +278,7 @@ class AgentHandle:
             capability_token=self.capability_token,
         )
         result = await self._persist_trace(result)
+        result = await self._persist_session_checkpoint(result)
         self.thread_id = result.thread_id
         self.store.save_thread(self.key, result.thread_id, result.checkpoint_ref)
         return result
@@ -257,6 +290,22 @@ class AgentHandle:
         content = raw if isinstance(raw, bytes) else str(raw).encode()
         reference = self.artifacts.put_bytes(content)
         return result.model_copy(update={"trace_ref": reference})
+
+    async def _persist_session_checkpoint(self, result: AgentResult) -> AgentResult:
+        if self.spec.session_policy is not SessionPolicy.PERSISTENT:
+            return result
+        archive = f"/tmp/lda-session-{uuid4().hex}.tar.gz"
+        created = await self.sandbox.commands.run(
+            "mkdir -p /home/agent/.codex/sessions && "
+            f"tar -C /home/agent/.codex -czf {shlex.quote(archive)} sessions"
+        )
+        if created.exit_code != 0:
+            raise RuntimeError(f"could not checkpoint Codex session: {created.stderr[-1000:]}")
+        raw = await self.sandbox.files.read(archive)
+        content = raw if isinstance(raw, bytes) else str(raw).encode()
+        reference = self.artifacts.put_bytes(content)
+        await self.sandbox.commands.run(f"rm -f {shlex.quote(archive)}")
+        return result.model_copy(update={"checkpoint_ref": reference})
 
     async def checkpoint(self) -> str:
         reference = await self.manager.create_snapshot(self.lease.lease_id)
@@ -311,14 +360,28 @@ class AgentFactory:
             if not provider.get("base_url") or not provider.get("api_key"):
                 self._session_semaphore.release()
                 raise RuntimeError("controller Codex provider configuration is incomplete")
-        lease = SandboxLease.create(
-            run_id=spec.run_id,
-            mission_id=spec.mission_id,
-            candidate_id=spec.candidate_id or "",
-            role=SandboxRole.AGENT,
-            template=spec.runtime_template,
-        )
+        if spec.session_policy is SessionPolicy.PERSISTENT:
+            lease = SandboxLease.deterministic(
+                f"agent:{_agent_key(spec)}",
+                run_id=spec.run_id,
+                mission_id=spec.mission_id,
+                candidate_id=spec.candidate_id or "",
+                role=SandboxRole.AGENT,
+                template=spec.runtime_template,
+            )
+        else:
+            lease = SandboxLease.create(
+                run_id=spec.run_id,
+                mission_id=spec.mission_id,
+                candidate_id=spec.candidate_id or "",
+                role=SandboxRole.AGENT,
+                template=spec.runtime_template,
+            )
         try:
+            chat_url = ""
+            if provider:
+                base_url = provider["base_url"].rstrip("/")
+                chat_url = base_url if base_url.endswith("/chat/completions") else base_url + "/chat/completions"
             sandbox = await self.manager.create(
                 lease,
                 timeout=spec.timeout_seconds,
@@ -327,8 +390,10 @@ class AgentFactory:
                     "LDA_AGENT_ROLE": spec.role,
                     "LDA_GATEWAY_URL": self.gateway_url,
                     **({"LDA_CODEX_API_KEY": provider["api_key"]} if provider else {}),
+                    **({"LDA_CODEX_CHAT_URL": chat_url} if chat_url else {}),
                 },
             )
+            await sandbox.files.write("/opt/lda/agent-state/gateway-url", self.gateway_url)
         except Exception:
             self._session_semaphore.release()
             raise
@@ -359,7 +424,7 @@ class AgentFactory:
                         + bridge_log.stdout[-1000:]
                     )
             config_lines: list[str] = []
-            if spec.role == "builder":
+            if spec.allowed_tools:
                 config_lines = [
                     "[mcp_servers.lda]",
                     'command = "lda-mcp"',
@@ -393,32 +458,56 @@ class AgentFactory:
                 protected = await sandbox.commands.run("chmod 0600 /home/agent/.codex/auth.json")
                 if protected.exit_code != 0:
                     raise RuntimeError("could not protect Agent Runtime Codex authentication")
+            saved_thread = self.store.load_thread(_agent_key(spec))
+            if (
+                spec.session_policy is SessionPolicy.PERSISTENT
+                and saved_thread
+                and saved_thread[1]
+            ):
+                checkpoint = self.artifacts.read_bytes(saved_thread[1])
+                archive = f"/tmp/lda-restore-{uuid4().hex}.tar.gz"
+                await sandbox.files.write(archive, checkpoint)
+                restored = await sandbox.commands.run(
+                    "rm -rf /home/agent/.codex/sessions && "
+                    f"tar -C /home/agent/.codex -xzf {shlex.quote(archive)} && "
+                    f"rm -f {shlex.quote(archive)}"
+                )
+                if restored.exit_code != 0:
+                    raise RuntimeError(
+                        "could not restore persistent Codex session: "
+                        + restored.stderr[-1000:]
+                    )
         except Exception:
             self._bridge_processes.pop(lease.lease_id, None)
             await self.manager.kill(lease.lease_id)
             self._session_semaphore.release()
             raise
-        token = self.authority.issue(
-            run_id=spec.run_id,
-            mission_id=spec.mission_id,
-            candidate_id=spec.candidate_id,
-            role=spec.role,
-            workspace_id=spec.workspace_id,
-            allowed_tools=spec.allowed_tools,
-        )
+        def issue_capability() -> str:
+            return self.authority.issue(
+                run_id=spec.run_id,
+                mission_id=spec.mission_id,
+                candidate_id=spec.candidate_id,
+                role=spec.role,
+                workspace_id=spec.workspace_id,
+                allowed_tools=spec.allowed_tools,
+                lifetime=timedelta(seconds=spec.timeout_seconds + 300),
+            )
+
+        token = issue_capability()
         backend = self.backends.get(spec.backend)
         if backend is None:
             raise RuntimeError(f"agent backend is unavailable: {spec.backend}")
         return AgentHandle(
-            spec,
-            sandbox,
-            lease,
-            backend,
-            token,
-            self.artifacts,
-            self.store,
-            self.manager,
-            self._session_semaphore,
+            spec=spec,
+            sandbox=sandbox,
+            lease=lease,
+            backend=backend,
+            capability_token=token,
+            capability_factory=issue_capability,
+            artifacts=self.artifacts,
+            store=self.store,
+            manager=self.manager,
+            session_semaphore=self._session_semaphore,
         )
 
     @staticmethod

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from enum import StrEnum
+from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 
@@ -58,6 +60,20 @@ class SandboxLease:
     ) -> "SandboxLease":
         return cls(uuid4().hex, run_id, mission_id, candidate_id, role, template)
 
+    @classmethod
+    def deterministic(
+        cls,
+        key: str,
+        *,
+        run_id: str,
+        role: SandboxRole,
+        template: str,
+        mission_id: str = "",
+        candidate_id: str = "",
+    ) -> "SandboxLease":
+        lease_id = sha256(f"lda:{run_id}:{key}".encode()).hexdigest()
+        return cls(lease_id, run_id, mission_id, candidate_id, role, template)
+
 
 class E2BSandboxManager:
     def __init__(
@@ -97,6 +113,7 @@ class E2BSandboxManager:
     ) -> Any:
         existing_record = self.store.lease(lease.lease_id)
         if existing_record and existing_record.get("sandbox_id"):
+            await self._acquire(lease.lease_id)
             try:
                 sandbox = await self._sandbox_class.connect(
                     sandbox_id=existing_record["sandbox_id"], timeout=timeout
@@ -105,30 +122,36 @@ class E2BSandboxManager:
                 return sandbox
             except Exception:
                 snapshot_id = existing_record.get("metadata", {}).get("snapshot_id")
-                if not snapshot_id:
-                    raise
-                await self._semaphore.acquire()
-                self._acquired.add(lease.lease_id)
-                try:
-                    sandbox = await _create_snapshot_with_retry(
-                        self._sandbox_class,
-                        snapshot_id,
-                        timeout=timeout,
-                        metadata=lease.metadata(),
-                        envs=child_environment(envs or {}, agent_runtime=agent_runtime),
-                        allow_internet_access=allow_internet_access,
+                if snapshot_id:
+                    try:
+                        sandbox = await _create_snapshot_with_retry(
+                            self._sandbox_class,
+                            snapshot_id,
+                            timeout=timeout,
+                            metadata=lease.metadata(),
+                            envs=child_environment(envs or {}, agent_runtime=agent_runtime),
+                            allow_internet_access=allow_internet_access,
+                        )
+                    except Exception:
+                        self._release(lease.lease_id)
+                        raise
+                    sandbox_id = str(sandbox.sandbox_id)
+                    self.store.record_lease(
+                        lease.lease_id, lease.run_id, lease.metadata(), "running", sandbox_id
                     )
-                except Exception:
-                    self._release(lease.lease_id)
-                    raise
-                sandbox_id = str(sandbox.sandbox_id)
+                    self._owned[lease.lease_id] = sandbox
+                    return sandbox
+                self._release(lease.lease_id)
                 self.store.record_lease(
-                    lease.lease_id, lease.run_id, lease.metadata(), "running", sandbox_id
+                    lease.lease_id,
+                    lease.run_id,
+                    existing_record["metadata"],
+                    "stale",
+                    existing_record["sandbox_id"],
                 )
-                self._owned[lease.lease_id] = sandbox
-                return sandbox
         existing = await self.find_by_lease(lease.lease_id)
         if existing is not None:
+            await self._acquire(lease.lease_id)
             sandbox_id = str(existing.sandbox_id)
             self.store.record_lease(
                 lease.lease_id, lease.run_id, lease.metadata(), "running", sandbox_id
@@ -137,8 +160,7 @@ class E2BSandboxManager:
             return existing
         self.store.record_lease(lease.lease_id, lease.run_id, lease.metadata(), "creating")
         filtered = child_environment(envs or {}, agent_runtime=agent_runtime)
-        await self._semaphore.acquire()
-        self._acquired.add(lease.lease_id)
+        await self._acquire(lease.lease_id)
         try:
             sandbox = await _create_template_with_retry(
                 self._sandbox_class,
@@ -235,8 +257,20 @@ class E2BSandboxManager:
             self._acquired.remove(lease_id)
             self._semaphore.release()
 
+    async def _acquire(self, lease_id: str) -> None:
+        if lease_id in self._acquired:
+            return
+        await self._semaphore.acquire()
+        self._acquired.add(lease_id)
+
 
 def _is_missing_sandbox(error: Exception) -> bool:
+    # The shared Fact-Lab gateway can return an empty 404 after a successful
+    # kill. e2b 2.45.0 attempts to decode that empty body and surfaces the
+    # response as JSONDecodeError. Treat it as an idempotent delete only in
+    # missing/cleanup paths; normal create and command failures still surface.
+    if isinstance(error, json.JSONDecodeError):
+        return error.pos == 0 and error.doc == ""
     message = str(error).lower()
     return "404" in message or "not found" in message or "does not exist" in message
 

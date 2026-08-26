@@ -39,7 +39,7 @@ async def test_real_ubuntu_2604_libpng_baseline() -> None:
         verify = await sandbox.commands.run(
             "test \"$(. /etc/os-release; echo $VERSION_ID)\" = 26.04 && "
             "test \"$(lscpu | sed -n 's/^Model:[[:space:]]*//p')\" = 207 && "
-            "test -s /opt/lda/baseline/source.tar.xz && "
+            "test -s /opt/lda/baseline/source.tar.bundle && "
             "test \"$(find /opt/lda/baseline -maxdepth 1 -name '*.deb' | wc -l)\" -ge 2 && "
             "git -C /opt/lda/work diff --quiet && git -C /opt/lda/work diff --cached --quiet"
         )

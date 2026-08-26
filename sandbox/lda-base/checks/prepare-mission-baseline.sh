@@ -6,6 +6,12 @@ source_version="${2:?source version required}"
 shift 2
 test "$#" -gt 0 || { echo "at least one binary package required" >&2; exit 64; }
 
+cpu_model="$(lscpu | sed -n 's/^Model name:[[:space:]]*//p')"
+case "$cpu_model" in
+  *"Xeon"*"6548Y+"*) ;;
+  *) echo "LDA benchmark host is not Intel Xeon Gold 6548Y+: $cpu_model" >&2; exit 78 ;;
+esac
+
 snapshot="${LDA_BASELINE_APT_SNAPSHOT:-https://snapshot.ubuntu.com/ubuntu/20260825T000000Z}"
 apt_root=/opt/lda/apt
 download=/opt/lda/source-download
@@ -43,10 +49,40 @@ for package in "$@"; do
   apt-get "${apt_options[@]}" download "$package"
 done
 
-source_archive="$(find . -maxdepth 1 -type f \( -name '*.orig.tar.*' -o -name '*.tar.*' \) | sort | head -1)"
-test -n "$source_archive"
-cp "$source_archive" "$baseline/source.tar.${source_archive##*.}"
+for package_spec in "$@"; do
+  package="${package_spec%%=*}"
+  version="${package_spec#*=}"
+  matched=0
+  for deb in ./*.deb; do
+    test -e "$deb" || continue
+    test "$(dpkg-deb -f "$deb" Package)" = "$package" || continue
+    test "$(dpkg-deb -f "$deb" Version)" = "$version"
+    architecture="$(dpkg-deb -f "$deb" Architecture)"
+    case "$architecture" in amd64|all) ;; *) exit 78 ;; esac
+    declared_source="$(dpkg-deb -f "$deb" Source 2>/dev/null || true)"
+    declared_source="${declared_source%% *}"
+    test "${declared_source:-$package}" = "$source_package"
+    matched=1
+  done
+  test "$matched" = 1
+done
+
+mapfile -t source_files < <(find . -maxdepth 1 -type f \( -name '*.dsc' -o -name '*.orig.tar.*' -o -name '*.debian.tar.*' -o -name '*.diff.gz' \) -printf '%f\n' | sort)
+test "${#source_files[@]}" -gt 1
+tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf "$baseline/source.tar.bundle" "${source_files[@]}"
 cp ./*.deb "$baseline/"
+metadata="$baseline/package-metadata.txt"
+: >"$metadata"
+for package_spec in "$@"; do
+  package="${package_spec%%=*}"
+  version="${package_spec#*=}"
+  printf '=== %s %s ===\n' "$package" "$version" >>"$metadata"
+  apt-cache "${apt_options[@]}" show "$package=$version" \
+    | sed -n '/^Package:/p;/^Source:/p;/^Version:/p;/^Architecture:/p;/^Depends:/p;/^Pre-Depends:/p;/^Provides:/p;/^Conflicts:/p;/^Breaks:/p;/^Replaces:/p' \
+    >>"$metadata"
+  apt-get "${apt_options[@]}" --simulate --allow-downgrades install "$package=$version" \
+    >>"$metadata"
+done
 
 cd "$work"
 apt-get "${apt_options[@]}" source "$source_package=$source_version"

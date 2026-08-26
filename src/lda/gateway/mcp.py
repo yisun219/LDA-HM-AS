@@ -9,10 +9,39 @@ from lda.gateway.capabilities import ROLE_TOOLS
 
 
 def _schema(tool: str) -> dict:
+    if tool == "workspace.read":
+        properties = {"path": {"type": "string"}}
+        required = ["path"]
+    elif tool == "workspace.write":
+        properties = {"path": {"type": "string"}, "content": {"type": "string"}}
+        required = ["path", "content"]
+    elif tool == "workspace.apply_patch":
+        properties = {"patch": {"type": "string"}}
+        required = ["patch"]
+    elif tool in {"workspace.exec", "workspace.profile"}:
+        properties = {
+            "command": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        }
+        required = ["command"]
+    elif tool == "workspace.git_diff":
+        properties = {"base_commit": {"type": "string"}}
+        required = ["base_commit"]
+    elif tool == "artifact.publish":
+        properties = {"content": {"type": "string"}}
+        required = ["content"]
+    else:
+        properties = {"ref": {"type": "string"}}
+        required = ["ref"]
     return {
         "name": tool,
         "description": f"Scoped LDA capability: {tool}",
-        "inputSchema": {"type": "object", "additionalProperties": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False,
+        },
     }
 
 

@@ -98,6 +98,22 @@ async def launch_controller(
     controller = await _create_controller_with_retry(config.e2b.controller_template, **create_kwargs)
     controller_id = str(controller.sandbox_id)
     await controller.commands.run("mkdir -p /opt/lda/secrets /opt/lda/persist/logs")
+    existing_process = await controller.commands.run(
+        "if test -s /opt/lda/persist/controller.json; then "
+        "pid=$(/opt/lda/venv/bin/python3 -c 'import json; print(json.load(open(\"/opt/lda/persist/controller.json\"))[\"pid\"])' 2>/dev/null || true); "
+        "test -n \"$pid\" && kill -0 \"$pid\" 2>/dev/null && "
+        "tr '\\0' ' ' </proc/$pid/cmdline | grep -q 'lda controller execute' && printf '%s' \"$pid\"; "
+        "fi"
+    )
+    if existing_process.exit_code == 0 and existing_process.stdout.strip().isdigit():
+        return {
+            "run_id": request.run_id,
+            "controller_sandbox_id": controller_id,
+            "pid": int(existing_process.stdout.strip()),
+            "volume_id": volume.volume_id if volume is not None else None,
+            "persistence": "e2b-volume" if volume is not None else "e2b-controller-filesystem",
+            "already_running": True,
+        }
     if volume is None:
         await controller.files.write("/opt/lda/persist/request.json", request.model_dump_json(indent=2))
         for path, content, _mode in source_files:
@@ -113,6 +129,7 @@ async def launch_controller(
     command = (
         "cd /opt/lda/runtime && "
         f"LDA_CONTROLLER_SANDBOX_ID={controller_id} "
+        "LDA_DEBUG_TRACEBACK=1 "
         "lda controller execute --request /opt/lda/persist/request.json "
         "--persist-root /opt/lda/persist "
         ">>/opt/lda/persist/logs/controller.stdout "
@@ -161,7 +178,11 @@ async def _find_controller(run_id: str) -> AsyncSandbox:
 
 def _is_volume_unavailable(error: Exception) -> bool:
     message = str(error).lower()
-    return "route not found" in message or "404" in message and "volume" in message
+    return (
+        "route not found" in message
+        or "404" in message and "volume" in message
+        or "530 is not a valid httpstatus" in message
+    )
 
 
 async def _create_controller_with_retry(template: str, **kwargs: Any) -> Any:

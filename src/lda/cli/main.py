@@ -6,6 +6,8 @@ import json
 import os
 import stat
 import sys
+import time
+import traceback
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,6 +27,21 @@ from lda.e2b.templates import build_templates
 from lda.models import ResearchSnapshot
 from lda.packages import InventoryMetrics, freeze_mission_queue
 from lda.research import ingest_research
+
+
+def _template_exists_with_retry(name: str, *, attempts: int = 8) -> bool:
+    from e2b import Template
+
+    for attempt in range(attempts):
+        try:
+            return bool(Template.exists(name))
+        except Exception as error:
+            message = str(error).lower()
+            transient = any(marker in message for marker in ("530", "502", "503", "timeout", "connection"))
+            if not transient or attempt == attempts - 1:
+                raise
+            time.sleep(min(2 ** attempt, 10))
+    return False
 
 
 def _root() -> Path:
@@ -112,9 +129,7 @@ async def _async_main(args: argparse.Namespace, config: LDAConfig) -> int:
             config.e2b.judge_template,
             config.e2b.e2e_template,
         ):
-            from e2b import Template
-
-            if not Template.exists(template):
+            if not _template_exists_with_retry(template):
                 build_templates(config, _root())
                 break
         snapshot = _snapshot(config, args.research_snapshot)
@@ -173,7 +188,13 @@ async def _async_main(args: argparse.Namespace, config: LDAConfig) -> int:
     if args.command == "controller":
         request = RunRequest.model_validate_json(args.request.read_text(encoding="utf-8"))
         controller = PureHumanizeController(request, config, args.persist_root)
-        state = await controller.run()
+        try:
+            state = await controller.run()
+        except Exception as error:
+            state = controller._load_or_create_state()
+            state.failure = f"{type(error).__name__}: {error}"
+            controller.store.save_run(state, "run.interrupted", {"error": state.failure})
+            raise
         print(state.model_dump_json(indent=2))
         return 0
     raise RuntimeError("unhandled command")
@@ -221,7 +242,7 @@ def _parser() -> argparse.ArgumentParser:
     resume = sub.add_parser("resume")
     resume.add_argument("--run-id", required=True)
     resume.add_argument("--codex-auth", type=Path, default=Path.home() / ".codex" / "auth.json")
-    controller = sub.add_parser("controller", help=argparse.SUPPRESS)
+    controller = sub.add_parser("controller", help="internal E2B Controller entrypoint")
     controller_sub = controller.add_subparsers(dest="controller_command", required=True)
     execute = controller_sub.add_parser("execute")
     execute.add_argument("--request", type=Path, required=True)
@@ -250,6 +271,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return asyncio.run(_async_main(args, config))
     except Exception as error:
+        if os.getenv("LDA_DEBUG_TRACEBACK") == "1":
+            traceback.print_exc()
         print(f"lda: {type(error).__name__}: {error}", file=sys.stderr)
         return 2
 
