@@ -3,19 +3,12 @@ from __future__ import annotations
 import json
 import os
 
+from lda.config.templates import TemplateAliases
 from lda.e2b.client import E2BClient, Sandbox
 from lda.agents.outputs import ROLE_SCHEMAS, schema_for
 from lda.models import AgentSpec, new_id
 
 
-ROLE_TEMPLATES = {
-    "Argus Manager": "lda-agent-runtime", "World State Summarizer": "lda-agent-runtime",
-    "Research Curator": "lda-agent-runtime", "Mission Planner": "lda-agent-runtime",
-    "Profiler": "lda-agent-runtime", "Builder": "lda-agent-runtime", "Reviewer": "lda-agent-runtime",
-    "Trace Auditor": "lda-agent-runtime", "Outcome Classifier": "lda-agent-runtime",
-    "Capability Planner": "lda-agent-runtime", "Capability Builder": "lda-agent-runtime",
-}
-RUNTIME_TEMPLATE = os.environ.get("LDA_AGENT_RUNTIME_TEMPLATE", "lda-production-2604-v10")
 THREAD_POLICIES = {"Argus Manager": "new_life_cycle", "World State Summarizer": "new_cycle",
                    "Mission Planner": "new_mission", "Builder": "candidate_persistent",
                    "Reviewer": "fresh_round", "Outcome Classifier": "new_outcome",
@@ -23,8 +16,10 @@ THREAD_POLICIES = {"Argus Manager": "new_life_cycle", "World State Summarizer": 
 
 
 class AgentFactory:
-    def __init__(self, client: E2BClient, session_state: dict[str, dict] | None = None):
+    def __init__(self, client: E2BClient, session_state: dict[str, dict] | None = None,
+                 *, templates: TemplateAliases | None = None):
         self.client = client
+        self.templates = templates or TemplateAliases()
         self.session_state = session_state if session_state is not None else {}
         self.sessions: dict[str, str] = {
             key: value["session_id"] for key, value in self.session_state.items()
@@ -39,7 +34,7 @@ class AgentFactory:
 
     def spec(self, **kwargs) -> AgentSpec:
         role = kwargs["role"]
-        return AgentSpec(runtime_template=RUNTIME_TEMPLATE,
+        return AgentSpec(runtime_template=self.templates.agent_runtime,
                           session_policy=THREAD_POLICIES.get(role, "fresh"),
                           backend=kwargs.get("backend", "codex"), model=kwargs.get("model", "gpt-5"),
                           reasoning_effort=kwargs.get("reasoning_effort", "high"),

@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+exec python3 /opt/lda/run_portfolio_e2e.py "$@"

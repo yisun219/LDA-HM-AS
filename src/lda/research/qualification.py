@@ -5,6 +5,7 @@ from typing import Any
 import hashlib
 import json
 
+from lda.config.templates import TemplateAliases
 from lda.e2b.client import E2BClient, Sandbox
 from lda.research.campaign import CampaignInput
 
@@ -12,9 +13,10 @@ from lda.research.campaign import CampaignInput
 class QualificationRunner:
     """Validates report candidates before they enter the Mission Graph."""
 
-    def __init__(self, client: E2BClient):
+    def __init__(self, client: E2BClient, *, templates: TemplateAliases | None = None):
         self.client = client
-        self.base_template = "lda-base-lda-hm-as-prod-20260825-v12"
+        self.templates = templates or TemplateAliases()
+        self.base_template = self.templates.base
         self.snapshot = "20260825T000000Z"
 
     def _snapshot_root(self, campaign: CampaignInput) -> Path | None:

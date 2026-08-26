@@ -10,8 +10,10 @@ from lda.argus.capabilities.registry import CapabilityRegistry
 from lda.argus.convergence.evaluator import ConvergenceEvaluator
 from lda.argus.outcome.classifier import OutcomeClassifier
 from lda.argus.policy.engine import PolicyEngine, PolicyViolation
-from lda.benchmarks.runner import BenchmarkRunner
 from lda.artifacts.store import ArtifactStore
+from lda.benchmarks.portfolio_e2e import SCHEMA as PORTFOLIO_SCHEMA
+from lda.benchmarks.portfolio_e2e import config_hash, parse_result
+from lda.config.templates import TemplateAliases
 from lda.e2b.client import E2BClient
 from lda.humanize.mission import HumanizeMission
 from lda.models import ManagerAction, Mission, WorldState, new_id
@@ -20,11 +22,13 @@ from lda.state.store import EventStore
 
 
 class ArgusSupervisor:
-    def __init__(self, root: str | Path, *, client: E2BClient, world: WorldState | None = None):
+    def __init__(self, root: str | Path, *, client: E2BClient, world: WorldState | None = None,
+                 templates: TemplateAliases | None = None):
         self.store = EventStore(root)
         self.client = client
+        self.templates = templates or TemplateAliases()
         self.world = world or self.store.recover()
-        self.agents = AgentFactory(client, self.world.agent_sessions)
+        self.agents = AgentFactory(client, self.world.agent_sessions, templates=self.templates)
         self.policy = PolicyEngine()
         self.outcomes = OutcomeClassifier()
         self.capabilities = CapabilityRegistry()
@@ -43,7 +47,8 @@ class ArgusSupervisor:
 
     @classmethod
     def bootstrap(cls, root: str | Path, run_id: str, *, client: E2BClient, packages: list[str],
-                  campaign: dict[str, Any] | None = None, qualification: dict[str, Any] | None = None) -> "ArgusSupervisor":
+                  campaign: dict[str, Any] | None = None, qualification: dict[str, Any] | None = None,
+                  templates: TemplateAliases | None = None) -> "ArgusSupervisor":
         world = WorldState(run_id=run_id, campaign_input=campaign or {}, qualification=qualification or {})
         canary = list(dict.fromkeys((campaign or {}).get("canary", [])))
         canary_set = set(canary)
@@ -60,7 +65,7 @@ class ArgusSupervisor:
                 qualified_top10.append(row["package"])
         world.convergence_signals["qualified_packages"] = qualified_top10 or list(packages)
         world.convergence_signals["canary_pending"] = list(canary)
-        supervisor = cls(root, client=client, world=world)
+        supervisor = cls(root, client=client, world=world, templates=templates)
         supervisor.store.save_world(world)
         supervisor.store.append(run_id, None, "controller", "BOOTSTRAP", payload={"packages": packages,
             "campaign_input_sha256": (campaign or {}).get("sha256"), "qualification": qualification or {}})
@@ -119,8 +124,53 @@ class ArgusSupervisor:
                 self.world.missions.append(mission)
             if mission is None:
                 raise PolicyViolation("target mission does not exist")
-            result = HumanizeMission(self.world, mission, self.agents).run()
+            result = HumanizeMission(
+                self.world, mission, self.agents, self.artifacts, templates=self.templates).run()
+            candidate = result["candidate"]
+            if result.get("artifact_refs"):
+                self.store.append(
+                    self.world.run_id, str(self.world.life_cycle), "candidate-builder",
+                    "CANDIDATE_ARTIFACTS", output_refs=list(result["artifact_refs"].values()),
+                    payload={"mission_id": mission.mission_id, "candidate": candidate.__dict__},
+                )
+                self.store.save_world(self.world)
             classified = self.outcomes.classify(result["judge"], result["benchmark"])
+            classifier = self.agents.spec(
+                run_id=self.world.run_id,
+                life_cycle_id=str(self.world.life_cycle),
+                mission_id=mission.mission_id,
+                candidate_id=candidate.candidate_id,
+                role="Outcome Classifier",
+                independence_group="outcome-classifier",
+                timeout_seconds=180,
+            )
+            self.agents.create(classifier)
+            classifier_result: dict[str, Any] = {}
+            try:
+                classifier_result = self.agents.run(
+                    classifier,
+                    "Classify the Mission outcome from these immutable Judge and Benchmark facts. "
+                    "Do not change evidence, Fence results, measurements, or acceptance. Return schema JSON only:\n"
+                    + json.dumps({
+                        "mission_id": mission.mission_id,
+                        "candidate_id": candidate.candidate_id,
+                        "judge": result["judge"],
+                        "benchmark": result["benchmark"],
+                        "deterministic_classification": classified["classification"],
+                    }, sort_keys=True, default=str),
+                )
+            except Exception as exc:
+                classifier_result = {"error": str(exc), "status": "agent_failure"}
+            finally:
+                self.agents.release(classifier)
+            advisory = classifier_result.get("output") if isinstance(classifier_result, dict) else None
+            if isinstance(advisory, dict) and advisory.get("classification") == classified["classification"]:
+                classified["reusable_lessons"] = list(advisory.get("reusable_lessons", []))
+                classified["mission_policy_updates"] = list(advisory.get("mission_policy_updates", []))
+                classified["capability_gap"] = advisory.get("capability_gap") or classified.get("capability_gap")
+                classified["classifier_agent_accepted"] = True
+            else:
+                classified["classifier_agent_accepted"] = False
             self.world.outcome_ledger.append({"mission_id": mission.mission_id, **classified})
             benchmark = dict(result["benchmark"])
             benchmark["mission_id"] = mission.mission_id
@@ -130,10 +180,30 @@ class ArgusSupervisor:
         if action.action == "RUN_PORTFOLIO_E2E":
             e2e = self.client.create({"project": "lda", "run_id": self.world.run_id,
                 "life_cycle": str(self.world.life_cycle), "mission_id": "portfolio",
-                "candidate_id": "none", "role": "e2e", "template": "lda-e2e", "lease_id": new_id("lease")})
-            command_result = self.client.command(e2e, "./run-portfolio-e2e", background=False)
-            portfolio = self._portfolio_from_result(command_result)
-            self.client.kill(e2e)
+                "candidate_id": "none", "role": "e2e", "template": self.templates.e2e,
+                "lease_id": new_id("lease")})
+            try:
+                expected_hash = self._stage_portfolio_e2e(e2e)
+                command_result = self.client.command(
+                    e2e,
+                    "run-portfolio-e2e --config /workspace/portfolio-e2e.json "
+                    "--output /workspace/artifacts/portfolio-e2e.json",
+                    background=False,
+                    timeout=3600,
+                )
+                portfolio = self._portfolio_from_result(
+                    command_result, expected_config_hash=expected_hash)
+                if command_result.get("stdout"):
+                    portfolio["evidence_refs"] = [self.artifacts.put(
+                        f"portfolio-cycle-{self.world.life_cycle}.json",
+                        command_result["stdout"].encode(),
+                    )]
+            except (OSError, RuntimeError, ValueError) as exc:
+                portfolio = {"invalid": True, "geomean_speedup": 0.0,
+                             "improved_workloads": 0,
+                             "reason": f"portfolio_e2e_staging_failed:{exc}"}
+            finally:
+                self.client.kill(e2e)
             self.world.portfolio_e2e.append(portfolio)
             self.world.convergence_signals.update({"portfolio_geomean_speedup": portfolio["geomean_speedup"], "improved_workloads": portfolio["improved_workloads"]})
             return {"action": action.__dict__, "portfolio": portfolio}
@@ -168,7 +238,8 @@ class ArgusSupervisor:
             if capability is None:
                 raise PolicyViolation("capability target does not exist")
             execution = CapabilityExecutor(
-                self.world, self.agents, self.capabilities, self.artifacts).run(capability)
+                self.world, self.agents, self.capabilities, self.artifacts).run(
+                    capability, templates=self.templates)
             self.store.append(self.world.run_id, str(self.world.life_cycle), "capability-judge",
                               "CAPABILITY_RESULT", payload=execution,
                               output_refs=list(capability.artifact_refs.values()))
@@ -187,19 +258,73 @@ class ArgusSupervisor:
         except (TypeError, ValueError):
             return None
 
+    def _stage_portfolio_e2e(self, e2e) -> str:
+        accepted = [candidate for candidate in self.world.candidates
+                    if candidate.status == "ACCEPTED" and candidate.artifact_refs.get("runtime")]
+        if not accepted:
+            raise RuntimeError("no accepted candidate package artifacts")
+        baseline_root = "/workspace/portfolio/baseline"
+        candidate_root = "/workspace/portfolio/candidate"
+        library_root = "/workspace/portfolio/candidate-root"
+        prepared = self.client.command(
+            e2e,
+            f"rm -rf /workspace/portfolio && mkdir -p {baseline_root} {candidate_root} "
+            f"{library_root} /workspace/portfolio/debs /workspace/artifacts",
+            timeout=120,
+        )
+        if prepared.get("exit_code") != 0:
+            raise RuntimeError("failed to prepare Portfolio E2E workspace")
+        page = ("<!doctype html><meta charset=utf-8><title>LDA Portfolio</title>"
+                "<canvas id=c width=1024 height=768></canvas><div id=ready>LDA_E2E_READY</div>"
+                "<script>const x=c.getContext('2d');for(let i=0;i<5000;i++){"
+                "x.fillStyle=`rgb(${i%255},${(i*7)%255},${(i*13)%255})`;"
+                "x.fillRect(i%1024,(i*17)%768,16,16)}"
+                "ready.textContent='LDA_E2E_READY '+c.toDataURL().length</script>")
+        self.client.filesystem_write(e2e, baseline_root + "/index.html", page)
+        self.client.filesystem_write(e2e, candidate_root + "/index.html", page)
+        for index, candidate in enumerate(accepted):
+            ref = candidate.artifact_refs["runtime"]
+            payload = self.artifacts.get(ref)
+            remote = f"/workspace/portfolio/debs/{index}.deb"
+            self.client.filesystem_write(e2e, remote, payload)
+            extracted = self.client.command(
+                e2e, f"dpkg-deb -x {remote} {library_root}", timeout=300)
+            if extracted.get("exit_code") != 0:
+                raise RuntimeError(f"failed to extract accepted Candidate {candidate.candidate_id}")
+        candidate_library_path = ":".join((
+            library_root + "/usr/lib/x86_64-linux-gnu",
+            library_root + "/lib/x86_64-linux-gnu",
+            library_root + "/usr/lib",
+            library_root + "/lib",
+        ))
+        raw_config = {
+            "warmups": 10,
+            "samples": 30,
+            "baseline": {"document_root": baseline_root, "env": {}},
+            "candidate": {"document_root": candidate_root,
+                          "env": {"LD_LIBRARY_PATH": candidate_library_path}},
+            "workloads": [
+                {"name": "loopback-web", "kind": "web_server",
+                 "path": "/index.html", "iterations": 10},
+                {"name": "chrome-render", "kind": "chrome_gui",
+                 "path": "/index.html", "iterations": 1},
+            ],
+        }
+        canonical = {"schema": PORTFOLIO_SCHEMA, **raw_config}
+        self.client.filesystem_write(
+            e2e, "/workspace/portfolio-e2e.json",
+            json.dumps(raw_config, sort_keys=True) + "\n")
+        return config_hash(canonical)
+
     @staticmethod
-    def _portfolio_from_result(command_result: dict[str, Any]) -> dict[str, Any]:
+    def _portfolio_from_result(command_result: dict[str, Any], *,
+                               expected_config_hash: str | None = None) -> dict[str, Any]:
         """Consume only JSON emitted by the E2E harness; never invent reward data."""
         if command_result.get("exit_code") != 0:
             return {"invalid": True, "geomean_speedup": 0.0, "improved_workloads": 0,
                     "reason": "portfolio_e2e_command_failed"}
-        try:
-            payload = json.loads(command_result.get("stdout", ""))
-            workloads = payload["workloads"]
-            return BenchmarkRunner().portfolio(workloads)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            return {"invalid": True, "geomean_speedup": 0.0, "improved_workloads": 0,
-                    "reason": f"missing_or_invalid_portfolio_evidence: {exc}"}
+        return parse_result(command_result.get("stdout", ""),
+                            expected_config_hash=expected_config_hash)
 
     def create_dynamic_mission(self, package: str, *, priority: float = 0.5, estimated_cost: float = 1.0,
                                evidence_refs: list[str] | None = None) -> Mission:

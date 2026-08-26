@@ -5,7 +5,9 @@ import json
 from typing import Any
 
 from lda.benchmarks.canary import architecture_compatibility
+from lda.config.templates import TemplateAliases
 from lda.e2b.client import E2BClient, TESTED_E2B_SDK_VERSION
+from lda.templates import expected_template_manifests
 
 
 class Preflight:
@@ -13,8 +15,9 @@ class Preflight:
               "pid_reconnect", "snapshot", "fork_fallback", "metadata", "network_restriction",
               "hardware_fingerprint", "orphan_cleanup", "template_exists", "kill")
 
-    def __init__(self, client: E2BClient):
+    def __init__(self, client: E2BClient, templates: TemplateAliases | None = None):
         self.client = client
+        self.templates = templates or TemplateAliases()
 
     def run(self, run_id: str = "preflight") -> dict[str, Any]:
         result = {name: False for name in self.CHECKS}
@@ -25,6 +28,7 @@ class Preflight:
         details["required_sdk_version"] = TESTED_E2B_SDK_VERSION
         sandbox = self.client.create({"project": "lda", "run_id": run_id, "life_cycle": "preflight",
                                       "mission_id": "none", "candidate_id": "none", "role": "preflight",
+                                      "template": self.templates.controller,
                                       "lease_id": "preflight-" + run_id})
         result["control_create"] = True
         command = self.client.command(sandbox, "printf lda-preflight")
@@ -67,8 +71,40 @@ class Preflight:
         orphan = self.client.create({"project": "lda", "run_id": run_id + "-orphan", "life_cycle": "preflight",
             "mission_id": "none", "candidate_id": "none", "role": "preflight", "lease_id": "orphan-" + run_id})
         result["orphan_cleanup"] = self.client.reap(run_id + "-orphan") == 1 and not orphan.alive
-        manifest = self.client.command(sandbox, "test -f /opt/lda/template-manifest.json || test -d /workspace")
-        result["template_exists"] = manifest.get("exit_code") == 0
+        template_details: dict[str, Any] = {}
+        expected_manifests = expected_template_manifests(self.templates)
+        manifests_valid = True
+        for name, expected in expected_manifests.items():
+            alias = expected["alias"]
+            template_box = self.client.create({
+                "project": "lda", "run_id": run_id, "life_cycle": "preflight",
+                "mission_id": name, "candidate_id": "none", "role": "template-check",
+                "template": alias, "lease_id": f"template-check-{run_id}-{name}",
+            })
+            try:
+                if self.client.fake:
+                    remote = dict(expected)
+                else:
+                    remote = json.loads(self.client.filesystem_read(
+                        template_box, "/opt/lda/template-manifest.json"))
+                valid = all(remote.get(key) == expected.get(key)
+                            for key in ("name", "version", "spec_hash"))
+            except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
+                remote = {}
+                valid = False
+            finally:
+                self.client.kill(template_box)
+            manifests_valid = manifests_valid and valid
+            template_details[name] = {
+                "alias": alias,
+                "valid": valid,
+                "expected_version": expected["version"],
+                "observed_version": remote.get("version"),
+                "expected_spec_hash": expected["spec_hash"],
+                "observed_spec_hash": remote.get("spec_hash"),
+            }
+        result["template_exists"] = manifests_valid
+        details["template_manifests"] = template_details
         self.client.kill(child)
         self.client.kill(sandbox)
         reconnected.alive = False

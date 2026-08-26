@@ -1,6 +1,5 @@
 {
   "name": "lda-controller",
-  "version": "1",
   "roles": [
     "Argus Supervisor",
     "LDA Mission Runtime",
@@ -15,5 +14,7 @@
     "State Store",
     "Artifact Store",
     "Secret Redactor"
-  ]
+  ],
+  "spec_hash": "69727bcd0c20ae6c539a4e49628b49c5dd2665d0e83f67cf7fd8916d47db48ca",
+  "version": "1"
 }

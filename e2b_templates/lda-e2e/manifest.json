@@ -1,11 +1,16 @@
 {
+  "harness": "/usr/local/bin/run-portfolio-e2e",
   "name": "lda-e2e",
-  "version": "1",
+  "network_scope": "loopback-only",
+  "schema": "lda.portfolio-e2e.v1",
+  "secrets": false,
+  "spec_hash": "9e26e93a1b556dbaf554c575b42c1b0ea118ae565f6d24fbdadbac590a0b6a24",
   "tools": [
     "Chrome",
-    "Playwright",
+    "Playwright 1.55.0",
     "Web server",
     "GUI",
     "system workload"
-  ]
+  ],
+  "version": "2"
 }

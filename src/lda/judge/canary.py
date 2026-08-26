@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from lda.config.templates import TemplateAliases
 from lda.e2b.client import E2BClient, Sandbox
 
 
@@ -24,7 +25,7 @@ SPECS = {
     "libcairo2": CanaryJudgeSpec("libcairo2", "libcairo2-dev", "libcairo.so.2", "cairo_version"),
     "libsoup-3.0-0": CanaryJudgeSpec("libsoup-3.0-0", "libsoup-3.0-dev", "libsoup-3.0.so.0", "soup_get_major_version"),
 }
-JUDGE_TEMPLATE = "lda-judge-v4-20260826"
+JUDGE_TEMPLATE = TemplateAliases().judge
 
 
 # The script runs inside lda-judge. It has no network, model runtime, or
@@ -207,8 +208,9 @@ class CleanCanaryJudge:
         "package_install", "precompiled_binary", "dlopen_dlsym", "python_ctypes", "rollback",
     })
 
-    def __init__(self, client: E2BClient):
+    def __init__(self, client: E2BClient, *, templates: TemplateAliases | None = None):
         self.client = client
+        self.templates = templates or TemplateAliases()
 
     def download_official(self, work: Sandbox, package: str, candidate_debs: dict[str, str]) -> dict[str, Any]:
         spec = SPECS.get(package)
@@ -237,7 +239,8 @@ class CleanCanaryJudge:
         if spec is None:
             raise ValueError(f"unsupported canary package: {package}")
         official = self.download_official(work, package, candidate_debs)
-        judge_box = self.client.create({**metadata, "role": "judge", "template": JUDGE_TEMPLATE})
+        judge_box = self.client.create(
+            {**metadata, "role": "judge", "template": self.templates.judge})
         if not official["passed"]:
             return self._failure("official_baseline_deb_unavailable", official), judge_box
         try:
@@ -292,7 +295,7 @@ class CleanCanaryJudge:
             result["evidence_refs"] = [output_path, official_path, official_dev_path,
                                        candidate_path, candidate_dev_path]
             result["official_download"] = official
-            result["sandbox_policy"] = {"template": JUDGE_TEMPLATE, "llm": False,
+            result["sandbox_policy"] = {"template": self.templates.judge, "llm": False,
                                         "allow_internet_access": False, "injected_secret_names": []}
             return result, judge_box
         except (OSError, RuntimeError, ValueError) as exc:

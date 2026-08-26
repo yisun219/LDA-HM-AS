@@ -1,6 +1,4 @@
 {
-  "name": "lda-judge",
-  "version": "1",
   "checks": [
     "ABI/API/FFI Fence",
     "self test",
@@ -13,5 +11,8 @@
     "headers/pkg-config",
     "precompiled dlopen/dlsym and ctypes"
   ],
-  "llm": false
+  "llm": false,
+  "name": "lda-judge",
+  "spec_hash": "b97d03371c0e22e086f252fa0c00184516223c222e3fc7f64eb1ccbf5d058829",
+  "version": "1"
 }

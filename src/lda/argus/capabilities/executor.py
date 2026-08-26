@@ -9,6 +9,7 @@ from typing import Any
 from lda.agents.factory import AgentFactory
 from lda.argus.capabilities.registry import CapabilityRegistry
 from lda.artifacts.store import ArtifactStore
+from lda.config.templates import TemplateAliases
 from lda.models import Capability, WorldState, new_id
 
 
@@ -20,11 +21,12 @@ class CapabilityExecutor:
     )
 
     def __init__(self, world: WorldState, agents: AgentFactory, registry: CapabilityRegistry,
-                 artifacts: ArtifactStore):
+                 artifacts: ArtifactStore, *, templates: TemplateAliases | None = None):
         self.world = world
         self.agents = agents
         self.registry = registry
         self.artifacts = artifacts
+        self.templates = templates or getattr(agents, "templates", TemplateAliases())
 
     @staticmethod
     def _safe_files(raw: Any) -> dict[str, bytes]:
@@ -60,7 +62,8 @@ class CapabilityExecutor:
         return {"capability_id": capability.capability_id, "status": capability.status,
                 "passed": False, "reason": reason}
 
-    def run(self, capability: Capability) -> dict[str, Any]:
+    def run(self, capability: Capability, *, templates: TemplateAliases | None = None) -> dict[str, Any]:
+        template_aliases = templates or self.templates
         work = None
         judge = None
         builder = None
@@ -76,7 +79,7 @@ class CapabilityExecutor:
             metadata = {"project": "lda", "run_id": self.world.run_id,
                 "life_cycle": str(self.world.life_cycle), "mission_id": "capability",
                 "candidate_id": "none", "capability_id": capability.capability_id,
-                "role": "capability-work", "template": "lda-base-lda-hm-as-prod-20260825-v12",
+                "role": "capability-work", "template": template_aliases.base,
                 "lease_id": new_id("lease")}
             work = self.agents.client.create(metadata)
             builder = self.agents.spec(
@@ -132,6 +135,7 @@ class CapabilityExecutor:
             self.registry.transition(capability, "CAPABILITY_JUDGE")
 
             judge = self.agents.client.create({**metadata, "role": "capability-judge",
+                                                "template": template_aliases.base,
                                                 "lease_id": new_id("lease")})
             judge_root = f"/workspace/capability-judge/{capability.capability_id}"
             for name, ref in capability.artifact_refs.items():

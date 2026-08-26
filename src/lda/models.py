@@ -126,6 +126,8 @@ class Candidate:
     e2e_speedup: float = 1.0
     fence_passed: bool = False
     judge_status: str = "PENDING"
+    artifact_refs: dict[str, str] = field(default_factory=dict)
+    evidence_refs: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -97,7 +97,7 @@ class CleanCanaryJudgeTest(unittest.TestCase):
                       "mission_id": "m", "candidate_id": "c", "lease_id": "judge-c"})
         self.assertTrue(result["valid"])
         self.assertEqual(judge_box.metadata["role"], "judge")
-        self.assertEqual(judge_box.metadata["template"], "lda-judge-v4-20260826")
+        self.assertEqual(judge_box.metadata["template"], "lda-judge")
         self.assertEqual(client.filesystem_read_bytes(judge_box, "/workspace/judge/input/candidate.deb"),
                          b"candidate-runtime")
         self.assertEqual(client.filesystem_read_bytes(judge_box, "/workspace/judge/input/candidate-dev.deb"),

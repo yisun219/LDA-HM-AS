@@ -41,6 +41,7 @@ class E2BClient:
             return
         if not self.gateway.api_key:
             raise RuntimeError("E2B_API_KEY is missing; refusing to run outside E2B")
+        self.gateway.install_sdk_adapter()
 
     @staticmethod
     def _private_env_file() -> str:
@@ -64,6 +65,13 @@ class E2BClient:
             values["OPENAI_API_KEY"] = values["CODEX_API_KEY"]
         return {key: value for key, value in values.items() if key in {"OPENAI_API_KEY", "OPENAI_BASE_URL"}}
 
+    def agent_process_env(self) -> dict[str, str]:
+        """Credentials injected only into the authorized Codex process."""
+        env = self._agent_env()
+        if not env.get("OPENAI_API_KEY"):
+            raise RuntimeError("Codex model credential is missing; refusing Agent Runtime execution")
+        return env
+
     def codex_command(self, prompt: str, *, session_id: str | None = None,
                       model: str = "gpt-5", reasoning_effort: str = "high",
                       output_schema_path: str | None = None) -> str:
@@ -78,7 +86,8 @@ class E2BClient:
                 "-c", "model_providers.fact.base_url=" + json.dumps(env.get("OPENAI_BASE_URL", "https://api.openai.com/v1")),
                 "-c", "model_providers.fact.env_key=\"OPENAI_API_KEY\"",
                 "-c", "model_providers.fact.wire_api=\"responses\"",
-                "-c", "model_reasoning_effort=" + json.dumps(reasoning_effort)])
+                "-c", "model_reasoning_effort=" + json.dumps(reasoning_effort),
+                "-c", "shell_environment_policy.exclude=[\"OPENAI_API_KEY\",\"CODEX_API_KEY\",\"E2B_API_KEY\",\"E2B_ACCESS_TOKEN\"]"])
         if output_schema_path:
             args.extend(["--output-schema", output_schema_path])
         if session_id:
@@ -98,7 +107,6 @@ class E2BClient:
                 template = metadata.get("template") or self.template_fallback or "lda-controller"
                 role = metadata.get("role", "")
                 agent_role = role in {"Argus Manager", "World State Summarizer", "Research Curator", "Mission Planner", "Profiler", "Builder", "Reviewer", "Trace Auditor", "Outcome Classifier", "Capability Planner", "Capability Builder"}
-                agent_env = self._agent_env() if agent_role else {}
                 # Qualification/build sandboxes may reach the pinned package mirror
                 # for dependency resolution, but receive no credentials. Judges do
                 # not receive network access.
@@ -106,11 +114,12 @@ class E2BClient:
                 server_metadata = {str(key): str(value) for key, value in metadata.items()
                                    if key not in {"timeout"}}
                 native = NativeSandbox.create(template=template,
-                    timeout=int(metadata.get("timeout", 3600)), metadata=server_metadata, envs=agent_env,
+                    timeout=int(metadata.get("timeout", 3600)), metadata=server_metadata, envs={},
                     secure=True, allow_internet_access=network_role,
                     api_key=self.gateway.api_key, access_token=self.gateway.config.access_token,
                     api_url=self.gateway.config.api_url, sandbox_url=self.gateway.config.sandbox_url,
                     headers=headers)
+                self.gateway.bind_sandbox(native)
                 sandbox = Sandbox(native.sandbox_id, dict(metadata), native=native)
             except Exception as exc:
                 raise RuntimeError(f"E2B Sandbox.create failed: {exc}") from exc
@@ -131,6 +140,7 @@ class E2BClient:
             native = NativeSandbox.connect(sandbox_id, api_key=self.gateway.api_key,
                 access_token=self.gateway.config.access_token, api_url=self.gateway.config.api_url,
                 sandbox_url=self.gateway.config.sandbox_url, headers=self.gateway.headers())
+            self.gateway.bind_sandbox(native)
             sandbox = Sandbox(sandbox_id, {"project": "lda"}, native=native)
             self.sandboxes[sandbox_id] = sandbox
             return sandbox
@@ -138,7 +148,7 @@ class E2BClient:
             raise RuntimeError(f"E2B Sandbox.connect failed: {exc}") from exc
 
     def command(self, sandbox: Sandbox, command: str, *, background: bool = False,
-                timeout: float | None = None) -> dict[str, Any]:
+                timeout: float | None = None, envs: dict[str, str] | None = None) -> dict[str, Any]:
         self._require_runtime()
         if not sandbox.alive:
             raise RuntimeError("sandbox is not alive")
@@ -147,6 +157,8 @@ class E2BClient:
                 kwargs = {"background": background}
                 if timeout is not None:
                     kwargs["timeout"] = timeout
+                if envs:
+                    kwargs["envs"] = dict(envs)
                 result = sandbox.native.commands.run(command, **kwargs)
             except Exception as exc:
                 # e2b raises CommandExitException for ordinary non-zero exits.

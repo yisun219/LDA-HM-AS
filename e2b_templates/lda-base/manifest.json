@@ -1,6 +1,7 @@
 {
+  "intel_performance_skills_commit": "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c",
   "name": "lda-base",
-  "version": "1",
+  "spec_hash": "91fec8d479ac04d21a2efe1caa1d4fb84df3e7188cbc99460678ec6a169ceba2",
   "tools": [
     "Ubuntu 26.04",
     "GCC",
@@ -17,6 +18,10 @@
     "bpftrace",
     "numactl",
     "abi-compliance-checker",
-    "Benchmark Harness"
-  ]
+    "abidiff",
+    "C/C++/Python/Rust FFI",
+    "Benchmark Harness",
+    "Intel Performance Skills"
+  ],
+  "version": "1"
 }

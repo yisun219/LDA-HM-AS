@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from lda.agents.factory import AgentFactory
+from lda.artifacts.store import ArtifactStore
 from lda.benchmarks.canary import CANARY_PACKAGES, CanaryBenchmarkRunner, upload_source_snapshot
 from lda.benchmarks.runner import BenchmarkRunner
+from lda.config.templates import TemplateAliases
 from lda.fences.abi import CompatibilityFence, FenceManifest
 from lda.judge.anti_cheat import AntiCheat
 from lda.judge.canary import CleanCanaryJudge, SPECS as JUDGE_SPECS
@@ -15,13 +17,51 @@ from lda.judge.clean import CleanJudge
 from lda.missions.contract import MissionContract
 from lda.models import Candidate, Mission, WorldState, new_id
 from lda.packages.source_build import DebianSourceBuilder
+from lda.security.redaction import redact
 
 
 class HumanizeMission:
     """The inner fixed pipeline for one package candidate."""
 
-    def __init__(self, world: WorldState, mission: Mission, agents: AgentFactory):
+    def __init__(self, world: WorldState, mission: Mission, agents: AgentFactory,
+                 artifacts: ArtifactStore, *, templates: TemplateAliases | None = None):
         self.world, self.mission, self.agents = world, mission, agents
+        self.artifacts = artifacts
+        self.templates = templates or getattr(agents, "templates", TemplateAliases())
+
+    def _persist_candidate_artifacts(self, candidate: Candidate, work,
+                                     build_evidence: dict[str, Any] | None,
+                                     candidate_debs: dict[str, str]) -> dict[str, str]:
+        """Copy candidate outputs out of E2B before sandbox teardown."""
+        evidence = build_evidence or {"passed": False, "reason": "missing_build_evidence"}
+        paths: dict[str, str] = dict(candidate_debs)
+        runtime = evidence.get("runtime_artifact")
+        if isinstance(runtime, str) and runtime:
+            paths.setdefault("runtime", runtime)
+        for package, path in (evidence.get("dev_artifacts") or {}).items():
+            if isinstance(path, str) and path:
+                paths.setdefault(f"dev:{package}", path)
+
+        refs: dict[str, str] = {}
+        metadata = {item.get("path"): item for item in evidence.get("artifacts", [])
+                    if isinstance(item, dict) and item.get("path")}
+        for kind, path in paths.items():
+            payload = self.agents.client.filesystem_read_bytes(work, path)
+            digest = __import__("hashlib").sha256(payload).hexdigest()
+            expected = (metadata.get(path) or {}).get("sha256")
+            if not expected and path == evidence.get("target_artifact"):
+                expected = evidence.get("target_sha256")
+            if expected and digest != expected:
+                raise RuntimeError(f"candidate artifact hash mismatch: {kind}")
+            refs[kind] = self.artifacts.put(Path(path).name, payload)
+
+        evidence_payload = json.dumps(redact(evidence), sort_keys=True, default=str).encode()
+        refs["build_evidence"] = self.artifacts.put(
+            f"{candidate.candidate_id}-build-evidence.json", evidence_payload)
+        candidate.artifact_refs.update(refs)
+        candidate.evidence_refs = list(dict.fromkeys(
+            candidate.evidence_refs + [refs["build_evidence"]]))
+        return refs
 
     def _run_agent(self, spec, prompt: str) -> dict[str, Any]:
         """Run scoped Codex work with a bounded transport lifetime.
@@ -50,7 +90,8 @@ class HumanizeMission:
         candidate.status = "ACTIVE"
         work = self.agents.client.create({"project": "lda", "run_id": self.world.run_id,
             "life_cycle": str(self.world.life_cycle), "mission_id": self.mission.mission_id,
-            "candidate_id": candidate.candidate_id, "role": "candidate-work", "template": "lda-base-lda-hm-as-prod-20260825-v12", "lease_id": new_id("lease")})
+            "candidate_id": candidate.candidate_id, "role": "candidate-work",
+            "template": self.templates.base, "lease_id": new_id("lease")})
         canary_runner = CanaryBenchmarkRunner(self.agents.client)
         build_evidence = None
         candidate_root = ""
@@ -179,13 +220,15 @@ class HumanizeMission:
             "candidate_id": candidate.candidate_id, "lease_id": new_id("lease")}
         if self.mission.package in CANARY_PACKAGES:
             if not candidate_debs:
-                judge_box = self.agents.client.create({**judge_metadata, "role": "judge", "template": "lda-judge-v4-20260826"})
+                judge_box = self.agents.client.create(
+                    {**judge_metadata, "role": "judge", "template": self.templates.judge})
                 judge_result = {"valid": False, "fence_passed": False, "checks": {},
                                 "failure_category": "JUDGE_EVIDENCE_INVALID",
                                 "reason": "runtime_and_dev_candidate_debs_required",
                                 "evidence_refs": [], "confidence": 1.0}
             else:
-                judge_result, judge_box = CleanCanaryJudge(self.agents.client).run(
+                judge_result, judge_box = CleanCanaryJudge(
+                    self.agents.client, templates=self.templates).run(
                     work=work, package=self.mission.package,
                     candidate_debs=candidate_debs, metadata=judge_metadata)
         else:
@@ -193,7 +236,8 @@ class HumanizeMission:
             # immutable manifest and clean Judge adapter have been qualified.
             manifest = FenceManifest(self.mission.package, "")
             judge = CleanJudge(CompatibilityFence(manifest))
-            judge_box = self.agents.client.create({**judge_metadata, "role": "judge", "template": "lda-judge-v4-20260826"})
+            judge_box = self.agents.client.create(
+                {**judge_metadata, "role": "judge", "template": self.templates.judge})
             judge_result = judge.run({}, self_test=False, reverse_dependencies=False,
                                      anti_cheat=AntiCheat().inspect({}))
         if self.mission.package in CANARY_PACKAGES:
@@ -218,6 +262,17 @@ class HumanizeMission:
         })
         if build_evidence is not None:
             benchmark_result["build_evidence"] = build_evidence
+        artifact_refs: dict[str, str] = {}
+        try:
+            artifact_refs = self._persist_candidate_artifacts(
+                candidate, work, build_evidence, candidate_debs)
+        except (OSError, RuntimeError, ValueError) as exc:
+            benchmark_result["accepted"] = False
+            benchmark_result["invalid"] = True
+            benchmark_result["reason"] = f"candidate_artifact_persistence_failed: {exc}"
+            if build_evidence is not None:
+                build_evidence["passed"] = False
+                build_evidence["reason"] = benchmark_result["reason"]
         if not benchmark_result["build_passed"] or not benchmark_result["local_verify_passed"]:
             benchmark_result["accepted"] = False
             benchmark_result["invalid"] = True
@@ -249,6 +304,7 @@ class HumanizeMission:
             self.agents.release(builder)
         self.agents.release(reviewer)
         return {"contract": contract.dump(), "candidate": candidate, "judge": judge_result, "benchmark": benchmark_result,
+                "artifact_refs": artifact_refs,
                 "agents": {"planner": planner_result, "builder": builder_result, "reviewer": reviewer_result},
                 "sandboxes": {"work": work.sandbox_id, "judge": judge_box.sandbox_id}}
 

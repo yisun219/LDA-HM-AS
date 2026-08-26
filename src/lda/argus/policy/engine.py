@@ -28,7 +28,7 @@ class PolicyEngine:
                 raise PolicyViolation("dynamic missions require a package target and evidence")
             allowed = set(world.convergence_signals.get("qualified_packages", []))
             allowed.update(item.get("package") for item in world.package_inventory if item.get("qualified") is True)
-            if allowed and action.target_id not in allowed:
+            if action.target_id not in allowed:
                 raise PolicyViolation("dynamic mission target is not qualified")
             if any(m.package == action.target_id and m.status not in {"STOPPED", "REJECTED"} for m in world.missions):
                 raise PolicyViolation("dynamic mission duplicates an existing live mission")

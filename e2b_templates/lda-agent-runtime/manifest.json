@@ -1,6 +1,7 @@
 {
+  "codex_release": "0.149.1",
+  "intel_performance_skills_commit": "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c",
   "name": "lda-agent-runtime",
-  "version": "1",
   "roles": [
     "Codex SDK/CLI",
     "Agent Runner",
@@ -8,5 +9,7 @@
     "MCP Client",
     "Role Prompt",
     "Intel Performance Skills"
-  ]
+  ],
+  "spec_hash": "1990e30063be01ae6efaf916c2b29e880149056a30fc1af3d31ce5ffcc064973",
+  "version": "1"
 }

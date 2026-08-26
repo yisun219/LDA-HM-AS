@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from lda.models import WorldState, new_id, stable_hash, utc_now
+from lda.models import Candidate, WorldState, new_id, stable_hash, utc_now
 from lda.security.redaction import redact
 
 
@@ -64,7 +64,27 @@ class EventStore:
             return WorldState.load(json.load(fh))
 
     def recover(self) -> WorldState:
-        return self.load_world()
+        world = self.load_world()
+        # Candidate artifacts are persisted before a mission sandbox is
+        # destroyed. Replaying these events closes the crash window between
+        # the append-only record and the next atomic world snapshot.
+        for event in self.events():
+            if event.get("event_type") != "CANDIDATE_ARTIFACTS":
+                continue
+            payload = event.get("payload", {})
+            raw = payload.get("candidate")
+            if not isinstance(raw, dict) or not raw.get("candidate_id") or not raw.get("mission_id"):
+                continue
+            replayed = Candidate(**raw)
+            candidate = next((item for item in world.candidates
+                              if item.candidate_id == raw["candidate_id"]), None)
+            if candidate is None:
+                world.candidates.append(replayed)
+            else:
+                for name in candidate.__dataclass_fields__:
+                    if name not in {"candidate_id", "mission_id"}:
+                        setattr(candidate, name, getattr(replayed, name))
+        return world
 
     def events(self) -> list[dict[str, Any]]:
         if not self.events_path.exists():

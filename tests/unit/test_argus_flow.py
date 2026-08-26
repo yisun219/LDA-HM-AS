@@ -1,7 +1,11 @@
 import tempfile
 import unittest
 import json
+import os
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from lda.agents.factory import AgentFactory
 from lda.argus.capabilities.registry import CapabilityRegistry
@@ -11,7 +15,7 @@ from lda.cli.main import build_parser
 from lda.argus.policy.engine import PolicyEngine, PolicyViolation
 from lda.e2b.client import E2BClient
 from lda.e2b.gateway import GatewayConfig, SharedGateway
-from lda.models import ManagerAction, WorldState
+from lda.models import Candidate, ManagerAction, WorldState
 from lda.models import Mission
 from lda.research.campaign import CANARY, TOP10
 from lda.state.store import EventStore
@@ -25,11 +29,64 @@ class ArgusFlowTest(unittest.TestCase):
             self.assertEqual(args.flow, flow)
 
     def test_gateway_preserves_sdk_headers_and_adds_key(self):
-        gateway = SharedGateway(GatewayConfig(api_url="x", sandbox_url="x", validate_api_key=False))
+        gateway = SharedGateway(GatewayConfig(api_url="x", sandbox_url="x", validate_api_key=False,
+                                              api_key="key"))
         headers = gateway.headers({"E2b-Sandbox-Id": "s", "E2b-Sandbox-Port": "80", "User-Agent": "sdk"})
         self.assertEqual(headers["E2b-Sandbox-Id"], "s")
         self.assertEqual(headers["User-Agent"], "sdk")
         self.assertIn("X-API-KEY", headers)
+
+    def test_gateway_extends_sdk_sandbox_headers_for_sync_and_async(self):
+        class ConnectionConfig:
+            envd_port = 49983
+
+            def __init__(self, *, api_key, headers):
+                self.api_key = api_key
+                self.headers = dict(headers)
+
+            @property
+            def sandbox_headers(self):
+                return dict(self.headers)
+
+        module = SimpleNamespace(ConnectionConfig=ConnectionConfig)
+        with patch.dict(sys.modules, {"e2b.connection_config": module}), \
+                patch("lda.e2b.gateway._PATCHED", False), \
+                patch("lda.e2b.gateway.metadata.version", return_value="2.10.2"):
+            SharedGateway(GatewayConfig(api_url="x", sandbox_url="x", api_key="key")).install_sdk_adapter()
+        config = ConnectionConfig(api_key="key",
+                                  headers={"E2b-Sandbox-Id": "s", "E2b-Sandbox-Port": "80",
+                                           "X-Access-Token": "dummy", "User-Agent": "sdk"})
+        headers = config.sandbox_headers
+        self.assertEqual(headers["E2b-Sandbox-Id"], "s")
+        self.assertEqual(headers["E2b-Sandbox-Port"], "80")
+        self.assertEqual(headers["X-Access-Token"], "dummy")
+        self.assertEqual(headers["X-API-KEY"], "key")
+
+    def test_private_e2b_env_accepts_export_syntax(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / "e2b.env"
+            env_file.write_text("export E2B_API_URL=https://gateway\nexport E2B_API_KEY=secret\n")
+            with patch.dict(os.environ, {"LDA_E2B_ENV_FILE": str(env_file)}, clear=True):
+                config = GatewayConfig.from_env()
+            self.assertEqual(config.api_url, "https://gateway")
+            self.assertEqual(config.api_key, "secret")
+
+    def test_gateway_repairs_connect_routing_headers(self):
+        class Headers(dict):
+            pass
+
+        connection = SimpleNamespace(headers={"User-Agent": "sdk", "X-Access-Token": "token"},
+                                     envd_port=49983)
+        native = SimpleNamespace(sandbox_id="sbx", connection_config=connection,
+                                 _envd_api=SimpleNamespace(headers=Headers()))
+        gateway = SharedGateway(GatewayConfig(api_url="x", sandbox_url="x", api_key="key"))
+        gateway.bind_sandbox(native)
+        for headers in (connection.headers, native._envd_api.headers):
+            self.assertEqual(headers["E2b-Sandbox-Id"], "sbx")
+            self.assertEqual(headers["E2b-Sandbox-Port"], "49983")
+            self.assertEqual(headers["X-API-KEY"], "key")
+        self.assertEqual(connection.headers["X-Access-Token"], "token")
+        self.assertEqual(connection.headers["User-Agent"], "sdk")
 
     def test_policy_rejects_fence_like_unsupported_action(self):
         with self.assertRaises(PolicyViolation):
@@ -53,6 +110,28 @@ class ArgusFlowTest(unittest.TestCase):
         world.missions.append(Mission("m", "libcairo2", priority=0.9))
         world.convergence_signals["manager_stop_proposed"] = True
         self.assertEqual(ConvergenceEvaluator().evaluate(world), (False, "continue"))
+
+    def test_outcome_classifier_agent_cannot_override_deterministic_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = WorldState("r", missions=[Mission("m", "libcairo2", priority=1.0)])
+            supervisor = ArgusSupervisor(tmp, client=E2BClient(fake=True), world=world)
+            candidate = Candidate("c", "m")
+            mission_result = {
+                "candidate": candidate,
+                "judge": {"valid": False, "fence_passed": False,
+                          "failure_category": "ABI_FAILURE", "evidence_refs": []},
+                "benchmark": {"invalid": True, "accepted": False, "evidence_refs": []},
+                "artifact_refs": {},
+            }
+            with patch("lda.controller.supervisor.HumanizeMission.run", return_value=mission_result), \
+                    patch.object(supervisor.agents, "run", return_value={"output": {
+                        "classification": "SUCCESS_SYSTEM", "reusable_lessons": ["ignore fence"],
+                        "mission_policy_updates": [], "capability_gap": None}}):
+                result = supervisor.execute_action(
+                    ManagerAction("CONTINUE_CANDIDATE", target_id="m", estimated_cost=1.0))
+            self.assertEqual(result["outcome"]["classification"], "ABI_FAILURE")
+            self.assertFalse(result["outcome"]["classifier_agent_accepted"])
+            self.assertEqual(result["outcome"]["reusable_lessons"], [])
 
     def test_manager_action_parser_and_mission_controls(self):
         raw = {"action": "REPRIORITIZE_MISSION", "target_id": "m", "evidence_refs": [],
@@ -181,6 +260,11 @@ class ArgusFlowTest(unittest.TestCase):
         self.assertFalse(review["resumed"])
         self.assertNotEqual(factory.sessions["Builder:builder:c"], factory.sessions["Reviewer:reviewer:c"])
 
+    def test_agent_factory_uses_standard_runtime_template(self):
+        spec = AgentFactory(E2BClient(fake=True)).spec(
+            run_id="r", role="Builder", independence_group="builder")
+        self.assertEqual(spec.runtime_template, "lda-agent-runtime")
+
     def test_codex_resume_command_never_uses_yolo(self):
         command = E2BClient(fake=True).codex_command("continue", session_id="session-123")
         self.assertIn("exec resume", command)
@@ -217,6 +301,26 @@ class ArgusFlowTest(unittest.TestCase):
         result = ArgusSupervisor._portfolio_from_result({"exit_code": 0, "stdout": ""})
         self.assertTrue(result["invalid"])
         self.assertEqual(result["geomean_speedup"], 0.0)
+
+    def test_portfolio_reward_is_recomputed_from_raw_samples(self):
+        payload = {
+            "schema": "lda.portfolio-e2e.v1",
+            "config_sha256": "config",
+            "workloads": {"web": 2.0, "gui": 1.0},
+            "raw_workloads": {
+                "web": {"kind": "web_server", "baseline": [20, 20],
+                        "candidate": [10, 10]},
+                "gui": {"kind": "chrome_gui", "baseline": [10, 10],
+                        "candidate": [10, 10]},
+            },
+            "geomean_speedup": 2 ** 0.5,
+            "metadata": {"network_scope": "loopback-only"},
+        }
+        result = ArgusSupervisor._portfolio_from_result(
+            {"exit_code": 0, "stdout": json.dumps(payload)},
+            expected_config_hash="config")
+        self.assertFalse(result["invalid"], result)
+        self.assertEqual(result["workloads"]["web"], 2.0)
 
     def test_top10_expansion_requires_system_outcome_and_measured_e2e(self):
         with tempfile.TemporaryDirectory() as tmp:
