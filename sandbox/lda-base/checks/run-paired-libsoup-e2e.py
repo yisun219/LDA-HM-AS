@@ -69,6 +69,7 @@ def main() -> None:
         "warmups": 10,
         "seed": 2604,
         "randomized_order": order,
+        "scenario_ids": ["workload=local-http-4k;mode=synchronous"] * 30,
         "cpu_affinity": affinity,
         "numa_policy": "local",
         "environment": {

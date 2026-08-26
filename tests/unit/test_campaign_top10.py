@@ -78,3 +78,11 @@ def test_canaries_complete_before_remaining_top10() -> None:
     assert canaries == ["libcairo2", "libsoup-3.0-0"]
     assert set(canaries + remaining) == set(TOP_10)
     assert not set(canaries) & set(remaining)
+
+
+def test_canary_micro_probes_consume_scenario_inputs() -> None:
+    definitions = _definitions()
+    for package in ("libcairo2", "libsoup-3.0-0"):
+        body = definitions[package].probe_body
+        assert "input_size" in body
+        assert "distribution" in body or package == "libcairo2"

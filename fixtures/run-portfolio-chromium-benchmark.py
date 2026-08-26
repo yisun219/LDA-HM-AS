@@ -101,6 +101,7 @@ document.getElementById('result').textContent='LDA_RENDER_COMPLETE';
         "warmups": 10,
         "seed": 2604,
         "randomized_order": order,
+        "scenario_ids": ["workload=chromium-canvas-1600x900x120"] * 30,
         "cpu_affinity": affinity,
         "numa_policy": "local",
         "environment": {

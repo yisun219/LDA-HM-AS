@@ -61,6 +61,12 @@ class FakeCommands:
             layer = "e2e" if "--layer e2e" in command else "micro"
             baseline = [1.0 + (index % 2) * 0.0001 for index in range(30)]
             candidate = [value / 1.05 for value in baseline]
+            scenarios = [
+                "input=16;distribution=sequential;cache=hot;concurrency=1",
+                "input=64;distribution=random;cache=cold;concurrency=2",
+                "input=16;distribution=random;cache=hot;concurrency=2",
+                "input=64;distribution=sequential;cache=cold;concurrency=1",
+            ]
             return FakeResult(
                 0,
                 json.dumps(
@@ -72,6 +78,11 @@ class FakeCommands:
                         "warmups": 10,
                         "seed": 2604,
                         "randomized_order": ["baseline"] * 30,
+                        "scenario_ids": (
+                            [scenarios[index % len(scenarios)] for index in range(30)]
+                            if layer == "micro"
+                            else ["workload=fake-e2e"] * 30
+                        ),
                         "cpu_affinity": "0",
                         "numa_policy": "local",
                         "environment": {"cpu": "fixture"},

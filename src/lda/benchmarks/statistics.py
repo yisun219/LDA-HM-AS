@@ -25,6 +25,7 @@ class BenchmarkSeries(BaseModel):
     warmups: int = Field(ge=10)
     seed: int
     randomized_order: list[str]
+    scenario_ids: list[str]
     cpu_affinity: str
     numa_policy: str
     environment: dict[str, str]
@@ -35,6 +36,28 @@ class BenchmarkSeries(BaseModel):
             raise ValueError("benchmark series must be paired")
         if len(self.randomized_order) != len(self.baseline):
             raise ValueError("benchmark order count does not match samples")
+        if len(self.scenario_ids) != len(self.baseline):
+            raise ValueError("benchmark scenario count does not match samples")
+        if not all(scenario.strip() for scenario in self.scenario_ids):
+            raise ValueError("benchmark scenario IDs must be nonempty")
+        if self.layer == "micro":
+            scenarios = set(self.scenario_ids)
+            if len(scenarios) < 4:
+                raise ValueError("micro benchmark must cover at least four scenarios")
+            required_axes = ("input=", "distribution=", "cache=", "concurrency=")
+            if any(not all(axis in scenario for axis in required_axes) for scenario in scenarios):
+                raise ValueError("micro benchmark scenarios must identify every required axis")
+            for axis in required_axes:
+                values = {
+                    part
+                    for scenario in scenarios
+                    for part in scenario.split(";")
+                    if part.startswith(axis)
+                }
+                if len(values) < 2:
+                    raise ValueError(
+                        f"micro benchmark must vary {axis.removesuffix('=')}"
+                    )
         if any(value <= 0 or not math.isfinite(value) for value in (*self.baseline, *self.candidate)):
             raise ValueError("benchmark samples must be positive finite durations")
         return self
@@ -49,6 +72,7 @@ class BenchmarkComparison(BaseModel):
     ci_upper: float
     baseline_cv: float
     candidate_cv: float
+    scenario_ratios: dict[str, float]
     decision: BenchmarkDecision
     reason: str
 
@@ -68,9 +92,20 @@ def compare_paired(series: BenchmarkSeries, config: BenchmarkConfig, *, bootstra
     baseline_cv = _cv(series.baseline)
     candidate_cv = _cv(series.candidate)
     rng = random.Random(series.seed)
+    scenario_samples: dict[str, list[float]] = {}
+    for scenario, sample_ratio in zip(series.scenario_ids, ratios, strict=True):
+        scenario_samples.setdefault(scenario, []).append(sample_ratio)
+    scenario_ratios = {
+        scenario: _geomean(samples)
+        for scenario, samples in sorted(scenario_samples.items())
+    }
     estimates: list[float] = []
     for _ in range(bootstrap_samples):
-        sample = [ratios[rng.randrange(len(ratios))] for _ in ratios]
+        sample = [
+            value
+            for samples in scenario_samples.values()
+            for value in (samples[rng.randrange(len(samples))] for _ in samples)
+        ]
         estimates.append(_geomean(sample))
     estimates.sort()
     ci_lower = estimates[int(bootstrap_samples * 0.025)]
@@ -91,6 +126,7 @@ def compare_paired(series: BenchmarkSeries, config: BenchmarkConfig, *, bootstra
         ci_upper=ci_upper,
         baseline_cv=baseline_cv,
         candidate_cv=candidate_cv,
+        scenario_ratios=scenario_ratios,
         decision=decision,
         reason=reason,
     )

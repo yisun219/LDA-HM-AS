@@ -4,7 +4,7 @@ source_version: 1.18.4-3
 binary_packages: [libcairo2, libcairo2-dev]
 runtime_packages: [libcairo2, libcairo2-dev]
 public_header: cairo/cairo.h
-probe_body: "static cairo_surface_t *s; static cairo_t *cr; if (!cr) { s=cairo_image_surface_create(CAIRO_FORMAT_ARGB32,64,64); cr=cairo_create(s); } cairo_set_source_rgba(cr,(double)(i&255)/255.0,0.25,0.75,1.0); cairo_rectangle(cr,(double)(i&31),(double)((i>>5)&31),16.0,16.0); cairo_fill(cr); cairo_paint(cr); sink ^= (uintptr_t)cairo_status(cr);"
+probe_body: "static cairo_surface_t *s; static cairo_t *cr; if (!cr) { s=cairo_image_surface_create(CAIRO_FORMAT_ARGB32,(int)input_size,(int)input_size); cr=cairo_create(s); } double span=(double)(input_size<8?8:input_size); cairo_set_source_rgba(cr,(double)(i&255)/255.0,0.25,0.75,1.0); cairo_rectangle(cr,(double)(i%input_size),(double)((i/input_size)%input_size),span/4.0,span/4.0); cairo_fill(cr); cairo_paint(cr); sink ^= (uintptr_t)cairo_status(cr);"
 link_libraries: "-lcairo"
 pkg_config_modules: [cairo]
 layout_body: "printf(\"%zu %zu\\n\",sizeof(cairo_matrix_t),_Alignof(cairo_matrix_t));"
