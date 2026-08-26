@@ -14,6 +14,7 @@ from lda.judge.canary import CleanCanaryJudge, SPECS as JUDGE_SPECS
 from lda.judge.clean import CleanJudge
 from lda.missions.contract import MissionContract
 from lda.models import Candidate, Mission, WorldState, new_id
+from lda.packages.source_build import DebianSourceBuilder
 
 
 class HumanizeMission:
@@ -141,8 +142,31 @@ class HumanizeMission:
                          "stdout": "", "stderr": build_evidence.get("reason", "")}
             local_verify = self.agents.client.command(work, "test -n '" + (candidate_root or "") + "'", background=False, timeout=60)
         else:
-            configure = self.agents.client.command(work, "./configure && cmake --build build", background=False)
-            local_verify = self.agents.client.command(work, "ctest --test-dir build", background=False)
+            build_evidence = DebianSourceBuilder(
+                self.agents.client, self.world.qualification).build(
+                    work, self.mission.package, cflags=cflags, cxxflags=cxxflags)
+            artifact = build_evidence.get("runtime_artifact")
+            if build_evidence.get("passed") and artifact:
+                candidate_root = "/workspace/candidate-root"
+                extract = self.agents.client.command(
+                    work,
+                    f"rm -rf {candidate_root} && mkdir -p {candidate_root} && "
+                    f"dpkg-deb -x {artifact} {candidate_root}",
+                    timeout=300,
+                )
+                build_evidence["extract_exit_code"] = extract.get("exit_code")
+                build_evidence["candidate_root"] = candidate_root
+                if extract.get("exit_code") != 0:
+                    build_evidence["passed"] = False
+                    build_evidence["reason"] = "candidate_runtime_deb_extract_failed"
+            configure = {"exit_code": 0 if build_evidence.get("passed") else 1,
+                         "stdout": "", "stderr": build_evidence.get("reason", "")}
+            local_verify = self.agents.client.command(
+                work,
+                f"test -n {json.dumps(artifact or '')} && dpkg-deb --info {json.dumps(artifact or '')} >/dev/null",
+                background=False,
+                timeout=120,
+            )
         reviewer = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
                                     mission_id=self.mission.mission_id, candidate_id=candidate.candidate_id,
                                     role="Reviewer", independence_group="reviewer", timeout_seconds=180)
