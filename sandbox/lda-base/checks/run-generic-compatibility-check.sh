@@ -12,6 +12,7 @@ pkg_args_for() {
   IFS=, read -ra modules <<<"$LDA_PKG_CONFIG_MODULES"
   while IFS= read -r directory; do dirs+=("$directory"); done < <(find "$root/usr/lib" "$root/usr/share" -type d -name pkgconfig -print 2>/dev/null | sort -u)
   PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$(IFS=:; printf '%s' "${dirs[*]}")" \
+    PKG_CONFIG_SYSROOT_DIR="$root" \
     pkg-config --cflags --libs "${modules[@]}"
 }
 mapfile -t baseline_libraries </opt/lda/baseline/libraries.list
