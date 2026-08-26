@@ -45,20 +45,61 @@ ABI、API 和 FFI 兼容是 LDA 最核心、最硬的边界条件。优化 `libp
 
 ## 总体 Flow
 
-```text
-Argus 外层 Life Loop
-  Observe -> Summarize -> Manager Decision -> Policy Validate
-  -> Execute -> Outcome Learning -> Capability Check -> Convergence
-                              |
-                              v
-固定 LDA Package Mission
-  Official Baseline -> Manifest -> Profile -> Hypothesis -> Plan
-  -> Candidate Build -> Local Verify -> Independent Review -> Trace Audit
-                              |
-                              v
-独立确定性 Clean Judge
-  Package/ABI/API/FFI -> Anti-cheat -> Benchmark Evidence
-  -> Install -> Replacement -> Rollback
+```mermaid
+flowchart TD
+    BOOT[启动 Run] --> PREFLIGHT[E2B Preflight 与 Template 校验]
+    PREFLIGHT --> OBSERVE
+
+    subgraph OUTER[Argus 外层 Life Loop]
+        OBSERVE[加载 World State 并观察世界] --> SUMMARIZE[全新 World State Summarizer]
+        SUMMARIZE --> MANAGER[全新 Argus Manager<br/>输出一个结构化 Action]
+        MANAGER --> POLICY{确定性 Policy Engine}
+        POLICY -- 非法或越权 --> REJECT_ACTION[拒绝 Action 并记录 Event]
+        POLICY -- 合法 --> EXECUTE[执行 Action]
+        REJECT_ACTION --> MEMORY[更新 Outcome Ledger 与长期 Memory]
+        EXECUTE -- Research / Queue / Control --> MEMORY
+    end
+
+    EXECUTE -- Package 优化 --> CONTRACT[冻结 Mission Contract]
+
+    subgraph MISSION[固定 LDA Package Mission]
+        CONTRACT --> BASELINE[Official Baseline]
+        BASELINE --> MANIFEST[ABI / API / FFI Manifest]
+        MANIFEST --> BENCHMAP[Microbench Generation 与 E2E Mapping]
+        BENCHMAP --> PROFILE[Profile]
+        PROFILE --> HYPOTHESIS[Hypothesis]
+        HYPOTHESIS --> PLAN[Plan]
+        PLAN --> FORK[从同一干净 Snapshot Fork Candidates]
+        FORK --> BUILD[Builder 构建 Candidate .deb]
+        BUILD --> VERIFY[Local Verify]
+        VERIFY --> REVIEW[全新独立 Reviewer]
+        REVIEW --> TRACE[Trace Audit]
+    end
+
+    TRACE --> CLEAN_JUDGE
+
+    subgraph JUDGE[独立确定性 Clean Judge]
+        CLEAN_JUDGE[功能与 Package 检查] --> FENCE{ABI / API / FFI 硬 Fence}
+        FENCE -- 失败 --> REJECTED[直接 Reject]
+        FENCE -- 通过 --> ANTICHEAT{Anti-cheat 与环境一致性}
+        ANTICHEAT -- 失败 --> REJECTED
+        ANTICHEAT -- 通过 --> MEASURE[Micro 与 E2E Evidence]
+        MEASURE --> REPLACE[安装 / 原位替换 / Rollback]
+        REPLACE --> RESULT[确定性 Judge Result]
+    end
+
+    REJECTED --> CLASSIFY[全新 Outcome Classifier]
+    RESULT --> CLASSIFY
+    CLASSIFY --> MEMORY
+    MEMORY --> CAPABILITY{存在 Capability Gap?}
+    CAPABILITY -- 是 --> CAPMISSION[创建并隔离验证 Capability Mission]
+    CAPMISSION --> MEMORY
+    CAPABILITY -- 否 --> PORTFOLIO{需要 Portfolio E2E?}
+    PORTFOLIO -- 是 --> E2E[干净 E2E Sandbox 测量系统级 Reward]
+    PORTFOLIO -- 否 --> CONVERGE{Convergence Evaluator}
+    E2E --> CONVERGE
+    CONVERGE -- 继续 --> OBSERVE
+    CONVERGE -- 达到确定性停止条件 --> REPORT[冻结 Report 与 Artifacts]
 ```
 
 外层 Argus 每个 Life Cycle 都从持久化 World State 重新观察全局，可以创建、重排、暂停、恢复或终止 Mission，也可以提出 Research Snapshot、Capability Mission 和 Portfolio E2E。每个具体 package 仍必须进入固定 LDA Mission，不能从 Manager 建议直接跳到接受 Candidate。
@@ -144,21 +185,28 @@ Qualification 验证 binary metadata、source mapping、dependency metadata、�
 
 每个 Candidate 都绑定不可变 Mission Contract，并按固定顺序执行：
 
-```text
-OFFICIAL_BASELINE
--> ABI/API/FFI_MANIFEST
--> MICROBENCH_GENERATION
--> E2E_MAPPING
--> PROFILE
--> HYPOTHESIS
--> PLAN
--> FORK_CANDIDATES
--> BUILD
--> LOCAL_VERIFY
--> ADVERSARIAL_REVIEW
--> TRACE_AUDIT
--> CLEAN_JUDGE
--> OUTCOME
+```mermaid
+flowchart LR
+    BASE[Official<br/>Baseline] --> ABI[ABI / API / FFI<br/>Manifest]
+    ABI --> MB[Microbench<br/>Generation]
+    MB --> MAP[E2E<br/>Mapping]
+    MAP --> PROF[Profile]
+    PROF --> HYP[Hypothesis]
+    HYP --> PLAN[Plan]
+    PLAN --> SNAP[Immutable Baseline<br/>Snapshot]
+
+    SNAP --> C1[Candidate 1]
+    SNAP --> C2[Candidate 2]
+    SNAP --> C3[Candidate 3]
+
+    C1 --> BUILD[Build .deb]
+    C2 --> BUILD
+    C3 --> BUILD
+    BUILD --> LOCAL[Local Verify]
+    LOCAL --> REVIEW[Fresh Adversarial<br/>Reviewer]
+    REVIEW --> TRACE[Trace Audit]
+    TRACE --> JUDGE[Clean Judge]
+    JUDGE --> OUTCOME[Outcome]
 ```
 
 Builder 可以选择 Policy 允许的安全优化参数。默认允许集合包括 `-O2`、`-O3`、`-fno-plt`、function/data sections 和 `-flto=auto`；`-march=native`、`-Ofast` 和 fast-math 被直接拒绝。所有 Candidate 从同一固定 source/version 产生，构建在 disposable `lda-base` E2B Workspace 中完成。
@@ -197,6 +245,22 @@ Anti-cheat 会拒绝 test/benchmark 修改、workload 缩小、hardcode 输出�
 
 ## Benchmark 与 Reward
 
+```mermaid
+flowchart TD
+    CHANGE[Candidate 优化] --> MICRO[Micro Benchmark<br/>多输入 / 多尺寸 / 固定 Seed]
+    MICRO --> RAW[Warmup、原始样本与置信区间]
+    RAW --> LOCAL{达到 Micro 阈值?}
+    LOCAL -- 否 --> RETRY[重试、换假设或结束 Candidate]
+    LOCAL -- 是 --> LOCALWIN[LOCAL_WIN<br/>仅用于 Candidate 排序]
+    LOCALWIN --> MISSIONE2E[Mission E2E Guardrail]
+    MISSIONE2E -- 回归 --> REJECT[REJECTED / E2E_REGRESSION]
+    MISSIONE2E -- 无回归 --> PORTFOLIO[Portfolio E2E<br/>Chrome / GUI / Web Server]
+    PORTFOLIO --> SYSTEM{Geomean、改进 Workload<br/>和 Coverage 达标?}
+    SYSTEM -- 否 --> DILUTION[E2E_DILUTION<br/>不进入 Release]
+    SYSTEM -- 是 --> SYSTEMWIN[SYSTEM_WIN]
+    SYSTEMWIN --> RELEASE[Release Gate<br/>可安装与可回滚 .deb]
+```
+
 Benchmark 分为 Micro 与 End-to-End 两层。Micro Benchmark 面向具体 library/function，生成多 input、多尺寸和固定 seed 的 workload，使用固定 warmup、30 个原始样本和置信区间；它是 Builder 的局部 Reward，用于排序 Candidate。Candidate 必须同时满足配置中的 Micro speedup 与 CI 下界，并通过硬件和反作弊检查。
 
 End-to-End Benchmark 使用 Chrome 页面渲染、GUI、Web server 和其他真实应用路径，验证一个或多个 library 的局部优化是否真正折射成系统 speedup。它是 Mission guardrail；Portfolio E2E 是 Argus 外层的主要长期 Reward。LDA 不会把多个 Micro speedup 相加，`LOCAL_WIN` 也不等于 Release。系统放行必须同时满足无功能/ABI 回归、有效 Portfolio geomean、足够数量的改进 workload、关键依赖覆盖和实际成本约束。
@@ -226,14 +290,55 @@ Builder 与 Capability Builder thread 可以按 Candidate/Capability 恢复。Ma
 
 Capability 可以是 Profiler Adapter、Build Adapter、Benchmark Generator、Dependency Test、FFI Checker、E2E Workload 或 CPU dispatch helper。每个 Capability 都有 version、content hash 和 scope。
 
-```text
-PROPOSED -> POLICY_APPROVED -> BUILDING -> ISOLATED_TEST
--> ADVERSARIAL_REVIEW -> CAPABILITY_JUDGE -> ACTIVE
+```mermaid
+flowchart LR
+    PROPOSED[PROPOSED] --> POLICY[POLICY_APPROVED]
+    POLICY --> BUILDING[BUILDING]
+    BUILDING --> TEST[ISOLATED_TEST]
+    TEST --> REVIEW[ADVERSARIAL_REVIEW]
+    REVIEW --> JUDGE{CAPABILITY_JUDGE}
+    JUDGE -- 通过 --> ACTIVE[ACTIVE]
+    JUDGE -- 失败 --> REJECTED[REJECTED]
 ```
 
 状态不能跳过。只有 isolated test 明确通过后才能进入 Review，只有 Capability Judge 明确通过后才能进入 `ACTIVE`。`ACTIVE` 与 `REJECTED` 都是终态。
 
 ## E2B 隔离与 Secret
+
+```mermaid
+flowchart TB
+    OPERATOR[Bootstrap / Operator] -- E2B 控制凭据 --> CONTROLLER[Controller Sandbox]
+
+    subgraph E2B[E2B 隔离执行平面]
+        CONTROLLER --> MANAGER[Manager Agent Runtime]
+        CONTROLLER --> PLANNER[Planner Agent Runtime]
+        CONTROLLER --> BUILDER[Builder Agent Runtime]
+        CONTROLLER --> REVIEWER[Reviewer Agent Runtime]
+        CONTROLLER --> CAPAGENT[Capability Agent Runtime]
+
+        MANAGER --> GATEWAY[Scoped Tool Gateway]
+        PLANNER --> GATEWAY
+        BUILDER --> GATEWAY
+        REVIEWER --> GATEWAY
+        CAPAGENT --> GATEWAY
+
+        GATEWAY --> WORK[Candidate Work Sandbox]
+        GATEWAY --> CAPWORK[Capability Work Sandbox]
+        CONTROLLER --> JUDGE[Judge Sandbox<br/>无 LLM / 无 Secret / 默认无网络]
+        CONTROLLER --> E2EBOX[E2E Sandbox<br/>Chrome / GUI / Web Server]
+    end
+
+    MODEL[模型服务凭据] -. 仅注入 Codex 进程 .-> MANAGER
+    MODEL -.-> PLANNER
+    MODEL -.-> BUILDER
+    MODEL -.-> REVIEWER
+    MODEL -.-> CAPAGENT
+
+    WORK -- Candidate .deb 与 Evidence --> JUDGE
+    JUDGE -- 脱敏结果 --> CONTROLLER
+    WORK -- 已通过 Candidate --> E2EBOX
+    E2EBOX -- 原始样本与环境指纹 --> CONTROLLER
+```
 
 执行端全部 E2B 化。Controller Sandbox 管理独立的 Agent Runtime、Candidate Work、Capability Work、Judge 和 E2E Sandbox；build、profile、self test、dependency test、Benchmark、环境恢复、fork/snapshot 和 Agent session 都通过 Sandbox API 完成，不依赖裸机 runner。每个 Sandbox 都带 project、run、cycle、mission、candidate、role 和唯一 lease metadata。
 
