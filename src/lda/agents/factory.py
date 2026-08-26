@@ -4,6 +4,7 @@ import json
 import os
 
 from lda.e2b.client import E2BClient, Sandbox
+from lda.agents.outputs import ROLE_SCHEMAS, schema_for
 from lda.models import AgentSpec, new_id
 
 
@@ -39,7 +40,8 @@ class AgentFactory:
                           reasoning_effort=kwargs.get("reasoning_effort", "high"),
                           prompt_version=kwargs.get("prompt_version", "lda-v1"),
                           context_refs=kwargs.get("context_refs", []), allowed_tools=kwargs.get("allowed_tools", []),
-                          workspace_id=kwargs.get("workspace_id"), output_schema=kwargs.get("output_schema", "manager_action"),
+                          workspace_id=kwargs.get("workspace_id"),
+                          output_schema=kwargs.get("output_schema", ROLE_SCHEMAS.get(role, "world_summary")),
                           timeout_seconds=kwargs.get("timeout_seconds", 1800), token_budget=kwargs.get("token_budget", 10000),
                           independence_group=kwargs.get("independence_group", role), run_id=kwargs["run_id"],
                           life_cycle_id=kwargs.get("life_cycle_id"), mission_id=kwargs.get("mission_id"),
@@ -96,6 +98,25 @@ class AgentFactory:
                 return nested["id"]
         return None
 
+    @staticmethod
+    def _final_output(stdout: str) -> dict | None:
+        messages: list[str] = []
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            item = event.get("item") if isinstance(event, dict) else None
+            if isinstance(item, dict) and item.get("type") == "agent_message" and isinstance(item.get("text"), str):
+                messages.append(item["text"])
+        if not messages:
+            return None
+        try:
+            value = json.loads(messages[-1])
+            return value if isinstance(value, dict) else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+
     def run(self, spec: AgentSpec, prompt: str) -> dict:
         """Run Codex inside the scoped runtime sandbox, never on the controller host."""
         key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"
@@ -104,8 +125,12 @@ class AgentFactory:
             _, sandbox = self.create(spec)
         persistent = spec.session_policy in {"candidate_persistent", "capability_persistent"}
         prior_session = self.sessions.get(key) if persistent else None
+        schema_path = f"/workspace/lda/schemas/{spec.output_schema}.json"
+        self.client.filesystem_write(sandbox, schema_path,
+                                     json.dumps(schema_for(spec.output_schema), sort_keys=True))
         command = self.client.codex_command(prompt, session_id=prior_session,
-                                            model=spec.model, reasoning_effort=spec.reasoning_effort)
+                                            model=spec.model, reasoning_effort=spec.reasoning_effort,
+                                            output_schema_path=schema_path)
         try:
             # The gateway's default command deadline is short.  AgentSpec is
             # the authoritative bounded lifetime for a Codex session; without
@@ -124,7 +149,8 @@ class AgentFactory:
             if persistent:
                 self.session_state.setdefault(key, {})["session_id"] = observed_session
         return {"session_id": self.sessions.get(key), "resumed": bool(prior_session),
-                "role": spec.role, "result": result}
+                "role": spec.role, "output": self._final_output(result.get("stdout", "")),
+                "result": result}
 
     def release(self, spec: AgentSpec) -> None:
         key = f"{spec.role}:{spec.independence_group}:{spec.candidate_id or spec.life_cycle_id or spec.run_id}"

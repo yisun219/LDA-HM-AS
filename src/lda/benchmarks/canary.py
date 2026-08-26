@@ -35,6 +35,19 @@ TARGET_CPU_FINGERPRINT = {
     "required_flags": frozenset({"avx2", "avx512f", "avx512dq", "avx512bw", "avx512vl",
                                  "avx512_vnni", "amx_tile", "amx_int8", "amx_bf16"}),
 }
+ALLOWED_OPTIMIZATION_FLAGS = frozenset({
+    "-O2", "-O3", "-fno-plt", "-ffunction-sections", "-fdata-sections", "-flto=auto",
+})
+
+
+def validate_optimization_flags(flags: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    values = tuple(dict.fromkeys(flags or ("-O3", "-fno-plt")))
+    rejected = sorted(value for value in values if value not in ALLOWED_OPTIMIZATION_FLAGS)
+    if rejected:
+        raise ValueError("unsupported or ABI-risking optimization flags: " + ", ".join(rejected))
+    if not any(value in {"-O2", "-O3"} for value in values):
+        raise ValueError("an explicit safe optimization level is required")
+    return values
 
 
 def architecture_compatibility(profile: dict[str, Any]) -> dict[str, Any]:
@@ -280,7 +293,9 @@ class CanaryBenchmarkRunner:
         return " ".join(shlex.quote(x) for x in args)
 
     def build_command(self, package: str, source_root: str = "/workspace/source-snapshot/20260825T000000Z",
-                      build_root: str = "/workspace/candidate-build") -> str:
+                      build_root: str = "/workspace/candidate-build", *,
+                      cflags: list[str] | tuple[str, ...] | None = None,
+                      cxxflags: list[str] | tuple[str, ...] | None = None) -> str:
         """Return a bounded source-build command for a pinned canary bundle.
 
         The command produces a separate staging tree and package artifacts. It
@@ -308,6 +323,8 @@ class CanaryBenchmarkRunner:
         source_name = spec.source_package
         source_version = "1.18.4-3" if package == "libcairo2" else "3.6.6-1"
         source_prefix = "cairo" if package == "libcairo2" else "libsoup3"
+        safe_cflags = " ".join(validate_optimization_flags(cflags))
+        safe_cxxflags = " ".join(validate_optimization_flags(cxxflags or cflags))
         return " && ".join((
             f"printf '%s\\n' {shlex.quote(source_lines)} > /etc/apt/sources.list.d/lda-build-deps.list",
             "DEBIAN_FRONTEND=noninteractive apt-get update > /workspace/candidate-build-apt-update.log 2>&1",
@@ -321,14 +338,16 @@ class CanaryBenchmarkRunner:
             f"rm -rf {shlex.quote(build_root)}",
             f"mkdir -p {shlex.quote(build_root)}",
             f"dpkg-source -x {shlex.quote(dsc)} {shlex.quote(build_root + '/src')}",
-            f"cd {shlex.quote(build_root + '/src')} && DEB_CFLAGS_MAINT_APPEND='-O3 -fno-plt' DEB_CXXFLAGS_MAINT_APPEND='-O3 -fno-plt' dpkg-buildpackage -us -uc -b -d > /workspace/candidate-build.log 2>&1",
+            f"cd {shlex.quote(build_root + '/src')} && DEB_CFLAGS_MAINT_APPEND={shlex.quote(safe_cflags)} DEB_CXXFLAGS_MAINT_APPEND={shlex.quote(safe_cxxflags)} dpkg-buildpackage -us -uc -b -d > /workspace/candidate-build.log 2>&1",
             f"tail -n 120 /workspace/candidate-build.log; find {shlex.quote(build_root)} -maxdepth 1 -type f -name '*.deb' -print",
         ))
 
     def build_candidate(self, sandbox: Sandbox, package: str, *, source_root: str = "/workspace/source-snapshot/20260825T000000Z",
-                        build_root: str = "/workspace/candidate-build") -> dict[str, Any]:
+                        build_root: str = "/workspace/candidate-build",
+                        cflags: list[str] | tuple[str, ...] | None = None,
+                        cxxflags: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
         """Build a canary candidate and return only observed artifact evidence."""
-        command = self.build_command(package, source_root, build_root)
+        command = self.build_command(package, source_root, build_root, cflags=cflags, cxxflags=cxxflags)
         result = self.client.command(sandbox, command, timeout=1800)
         if result.get("exit_code") != 0:
             return {"passed": False, "command": command, "exit_code": result.get("exit_code"),

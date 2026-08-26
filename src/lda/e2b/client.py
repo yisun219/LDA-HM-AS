@@ -59,7 +59,8 @@ class E2BClient:
         return {key: value for key, value in values.items() if key in {"OPENAI_API_KEY", "OPENAI_BASE_URL"}}
 
     def codex_command(self, prompt: str, *, session_id: str | None = None,
-                      model: str = "gpt-5", reasoning_effort: str = "high") -> str:
+                      model: str = "gpt-5", reasoning_effort: str = "high",
+                      output_schema_path: str | None = None) -> str:
         """Build a Codex CLI invocation using an explicit custom model provider."""
         env = self._agent_env()
         args = ["codex", "exec"]
@@ -72,6 +73,8 @@ class E2BClient:
                 "-c", "model_providers.fact.env_key=\"OPENAI_API_KEY\"",
                 "-c", "model_providers.fact.wire_api=\"responses\"",
                 "-c", "model_reasoning_effort=" + json.dumps(reasoning_effort)])
+        if output_schema_path:
+            args.extend(["--output-schema", output_schema_path])
         if session_id:
             args.append(session_id)
         args.append(prompt)

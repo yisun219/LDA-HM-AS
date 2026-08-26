@@ -27,6 +27,41 @@ class ArgusFlowTest(unittest.TestCase):
         with self.assertRaises(PolicyViolation):
             PolicyEngine().validate(ManagerAction("MODIFY_FENCE"), WorldState("r"))
 
+    def test_dynamic_mission_requires_qualification_evidence_and_budget(self):
+        world = WorldState("r")
+        world.convergence_signals["qualified_packages"] = ["libcairo2"]
+        policy = PolicyEngine()
+        with self.assertRaises(PolicyViolation):
+            policy.validate(ManagerAction("CREATE_MISSION", target_id="unknown",
+                                          evidence_refs=["research"], estimated_cost=1), world)
+        with self.assertRaises(PolicyViolation):
+            policy.validate(ManagerAction("CREATE_MISSION", target_id="libcairo2",
+                                          evidence_refs=["research"], estimated_cost=101), world)
+        policy.validate(ManagerAction("CREATE_MISSION", target_id="libcairo2",
+                                      evidence_refs=["research"], estimated_cost=1), world)
+
+    def test_manager_stop_proposal_cannot_override_convergence(self):
+        world = WorldState("r")
+        world.missions.append(Mission("m", "libcairo2", priority=0.9))
+        world.convergence_signals["manager_stop_proposed"] = True
+        self.assertEqual(ConvergenceEvaluator().evaluate(world), (False, "continue"))
+
+    def test_manager_action_parser_and_mission_controls(self):
+        raw = {"action": "REPRIORITIZE_MISSION", "target_id": "m", "evidence_refs": [],
+               "expected_value": 0.8, "estimated_cost": 0.0, "risk": 0.1,
+               "reason_summary": "measured criticality", "requested_budget": {}, "preconditions": []}
+        action = ArgusSupervisor._action_from_output(raw)
+        self.assertIsNotNone(action)
+        with tempfile.TemporaryDirectory() as tmp:
+            world = WorldState("r", missions=[Mission("m", "libcairo2", priority=0.5)])
+            supervisor = ArgusSupervisor(tmp, client=E2BClient(fake=True), world=world)
+            supervisor.execute_action(action)
+            self.assertEqual(world.missions[0].priority, 0.8)
+            supervisor.execute_action(ManagerAction("PAUSE_MISSION", target_id="m"))
+            self.assertEqual(world.missions[0].status, "PAUSED")
+            supervisor.execute_action(ManagerAction("RESUME_MISSION", target_id="m"))
+            self.assertEqual(world.missions[0].status, "QUEUED")
+
     def test_capability_activation_requires_judge(self):
         world = WorldState("r")
         registry = CapabilityRegistry()
@@ -51,7 +86,11 @@ class ArgusFlowTest(unittest.TestCase):
         class CodexClient(E2BClient):
             def command(self, sandbox, command, **kwargs):
                 thread = "builder-real-thread" if sandbox.metadata.get("role") == "Builder" else "reviewer-real-thread"
-                return {"exit_code": 0, "stdout": '{"type":"thread.started","thread_id":"' + thread + '"}\n', "stderr": ""}
+                payload = '{"hypothesis":"h","cflags":[],"cxxflags":[],"expected_effect":"e","evidence_refs":[]}'
+                stdout = ('{"type":"thread.started","thread_id":"' + thread + '"}\n'
+                          + '{"type":"item.completed","item":{"type":"agent_message","text":'
+                          + __import__("json").dumps(payload) + '}}\n')
+                return {"exit_code": 0, "stdout": stdout, "stderr": ""}
 
         factory = AgentFactory(CodexClient(fake=True))
         builder = factory.spec(run_id="r", life_cycle_id="1", mission_id="m", candidate_id="c", role="Builder", independence_group="builder")
@@ -59,6 +98,7 @@ class ArgusFlowTest(unittest.TestCase):
         first = factory.run(builder, "first")
         second = factory.run(builder, "second")
         self.assertEqual(first["session_id"], "builder-real-thread")
+        self.assertEqual(first["output"]["hypothesis"], "h")
         self.assertTrue(second["resumed"])
         reviewer = factory.spec(run_id="r", life_cycle_id="1", mission_id="m", candidate_id="c", role="Reviewer", independence_group="reviewer")
         factory.create(reviewer)

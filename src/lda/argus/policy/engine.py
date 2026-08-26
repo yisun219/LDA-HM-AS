@@ -23,6 +23,15 @@ class PolicyEngine:
         if action.action in {"PAUSE_MISSION", "RESUME_MISSION", "STOP_MISSION", "CONTINUE_CANDIDATE",
                              "REPRIORITIZE_MISSION"} and not action.target_id:
             raise PolicyViolation("target_id is required for this action")
+        if action.action == "CREATE_MISSION":
+            if not action.target_id or not action.evidence_refs:
+                raise PolicyViolation("dynamic missions require a package target and evidence")
+            allowed = set(world.convergence_signals.get("qualified_packages", []))
+            allowed.update(item.get("package") for item in world.package_inventory if item.get("qualified") is True)
+            if allowed and action.target_id not in allowed:
+                raise PolicyViolation("dynamic mission target is not qualified")
+            if any(m.package == action.target_id and m.status not in {"STOPPED", "REJECTED"} for m in world.missions):
+                raise PolicyViolation("dynamic mission duplicates an existing live mission")
         if action.action == "CREATE_RESEARCH_SNAPSHOT" and not action.evidence_refs:
             raise PolicyViolation("research snapshots require evidence references")
         if action.action == "START_CAPABILITY_MISSION" and not action.target_id:

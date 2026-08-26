@@ -23,11 +23,11 @@ class HumanizeMission:
         self.world, self.mission, self.agents = world, mission, agents
 
     def _run_agent(self, spec, prompt: str) -> dict[str, Any]:
-        """Run advisory Codex work with a bounded transport lifetime.
+        """Run scoped Codex work with a bounded transport lifetime.
 
-        Builder/Reviewer results are never used as Judge evidence.  A provider
-        stall is recorded and the deterministic build/fence/benchmark path
-        remains responsible for acceptance.
+        Agent output may select a policy-allowlisted candidate strategy, but it
+        is never Judge evidence. A provider stall falls back to a deterministic
+        strategy; clean build/fence/benchmark evidence remains authoritative.
         """
         if os.environ.get("LDA_SKIP_MISSION_ADVISORY") == "1":
             return {"role": spec.role, "status": "advisory_skipped_by_controller"}
@@ -54,6 +54,32 @@ class HumanizeMission:
         build_evidence = None
         candidate_root = ""
         candidate_debs: dict[str, str] = {}
+        planner = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
+                                   mission_id=self.mission.mission_id, candidate_id=candidate.candidate_id,
+                                   role="Mission Planner", independence_group="planner", timeout_seconds=180)
+        self.agents.create(planner)
+        planner_result = self._run_agent(
+            planner, f"Plan a bounded optimization mission for {self.mission.package}. "
+                     "ABI/API/FFI, package metadata, tests and benchmarks are immutable. Return schema JSON only.")
+        builder = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
+                                   mission_id=self.mission.mission_id, candidate_id=candidate.candidate_id,
+                                   role="Builder", independence_group="builder", timeout_seconds=180)
+        self.agents.create(builder)
+        builder_result = self._run_agent(
+            builder, f"Propose candidate {candidate.candidate_id} attempt {self.mission.attempts + 1} for "
+                     f"{self.mission.package}. Allowed compiler flags only: -O2, -O3, -fno-plt, "
+                     "-ffunction-sections, -fdata-sections, -flto=auto. Never use -march=native, "
+                     "-Ofast, fast-math, ABI changes, test changes, benchmark changes or network downloads. "
+                     "Return schema JSON only.")
+        fallback_strategies = (
+            ("-O3", "-fno-plt"),
+            ("-O3", "-fno-plt", "-ffunction-sections", "-fdata-sections"),
+            ("-O3", "-fno-plt", "-flto=auto"),
+        )
+        strategy = fallback_strategies[min(self.mission.attempts, len(fallback_strategies) - 1)]
+        builder_output = builder_result.get("output") if isinstance(builder_result, dict) else None
+        cflags = builder_output.get("cflags") if isinstance(builder_output, dict) else list(strategy)
+        cxxflags = builder_output.get("cxxflags") if isinstance(builder_output, dict) else list(strategy)
         if self.mission.package in CANARY_PACKAGES:
             # Every canary starts from the pinned source bundle. The upload and
             # hash verification happen inside the disposable candidate sandbox.
@@ -79,7 +105,10 @@ class HumanizeMission:
                     self.agents.client, work, snapshot_root,
                     include_payload=self.mission.package == "libsoup-3.0-0",
                 )
-                build_evidence = canary_runner.build_candidate(work, self.mission.package)
+                build_evidence = canary_runner.build_candidate(
+                    work, self.mission.package, cflags=cflags, cxxflags=cxxflags)
+                build_evidence["strategy"] = {"cflags": cflags, "cxxflags": cxxflags,
+                                              "agent_output": builder_output is not None}
                 if build_evidence.get("passed"):
                     # A source build emits dev/docs/debug siblings. Extract the
                     # exact binary package under test, never the first listing.
@@ -114,21 +143,13 @@ class HumanizeMission:
         else:
             configure = self.agents.client.command(work, "./configure && cmake --build build", background=False)
             local_verify = self.agents.client.command(work, "ctest --test-dir build", background=False)
-        manager = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
-                                   mission_id=self.mission.mission_id, candidate_id=candidate.candidate_id,
-                                   role="Mission Planner", independence_group="planner", timeout_seconds=180)
-        self.agents.create(manager)
-        self._run_agent(manager, f"Plan the bounded mission for package {self.mission.package}; return JSON only.")
-        builder = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
-                                   mission_id=self.mission.mission_id, candidate_id=candidate.candidate_id,
-                                   role="Builder", independence_group="builder", timeout_seconds=180)
-        self.agents.create(builder)
-        self._run_agent(builder, f"Build and locally verify candidate {candidate.candidate_id}; return JSON only.")
         reviewer = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
                                     mission_id=self.mission.mission_id, candidate_id=candidate.candidate_id,
                                     role="Reviewer", independence_group="reviewer", timeout_seconds=180)
         self.agents.create(reviewer)
-        self._run_agent(reviewer, "Review the candidate independently; return JSON only.")
+        reviewer_result = self._run_agent(
+            reviewer, f"Review candidate {candidate.candidate_id} independently. The selected strategy is "
+                      f"cflags={cflags!r}, cxxflags={cxxflags!r}. Treat all claims as untrusted and return schema JSON only.")
         judge_metadata = {"project": "lda", "run_id": self.world.run_id,
             "life_cycle": str(self.world.life_cycle), "mission_id": self.mission.mission_id,
             "candidate_id": candidate.candidate_id, "lease_id": new_id("lease")}
@@ -199,11 +220,12 @@ class HumanizeMission:
             candidate.status = "ACTIVE" if self.mission.status == "QUEUED" else "REJECTED"
         self.agents.client.kill(work)
         self.agents.client.kill(judge_box)
-        self.agents.release(manager)
+        self.agents.release(planner)
         if self.mission.status in {"SUCCEEDED", "REJECTED", "STOPPED"}:
             self.agents.release(builder)
         self.agents.release(reviewer)
         return {"contract": contract.dump(), "candidate": candidate, "judge": judge_result, "benchmark": benchmark_result,
+                "agents": {"planner": planner_result, "builder": builder_result, "reviewer": reviewer_result},
                 "sandboxes": {"work": work.sandbox_id, "judge": judge_box.sandbox_id}}
 
     def _read_benchmarks(self, work) -> dict[str, Any]:

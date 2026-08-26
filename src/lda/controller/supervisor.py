@@ -134,7 +134,53 @@ class ArgusSupervisor:
             self.world.portfolio_e2e.append(portfolio)
             self.world.convergence_signals.update({"portfolio_geomean_speedup": portfolio["geomean_speedup"], "improved_workloads": portfolio["improved_workloads"]})
             return {"action": action.__dict__, "portfolio": portfolio}
+        if action.action == "REPRIORITIZE_MISSION":
+            self.scheduler.reprioritize(self.world, action.target_id or "", action.expected_value)
+            return {"action": action.__dict__, "status": "reprioritized"}
+        if action.action == "PAUSE_MISSION":
+            self.scheduler.pause(self.world, action.target_id or "")
+            return {"action": action.__dict__, "status": "paused"}
+        if action.action == "RESUME_MISSION":
+            self.scheduler.resume(self.world, action.target_id or "")
+            return {"action": action.__dict__, "status": "resumed"}
+        if action.action == "STOP_MISSION":
+            mission = next((m for m in self.world.missions if m.mission_id == action.target_id), None)
+            if mission is None:
+                raise PolicyViolation("target mission does not exist")
+            mission.status = "STOPPED"
+            return {"action": action.__dict__, "status": "stopped"}
+        if action.action == "CREATE_RESEARCH_SNAPSHOT":
+            snapshot = {"snapshot_id": new_id("research"), "version": len(self.world.research_snapshots) + 1,
+                        "evidence_refs": list(action.evidence_refs), "confidence": max(0.0, 1.0 - action.risk),
+                        "reason_summary": action.reason_summary}
+            self.world.research_snapshots.append(snapshot)
+            return {"action": action.__dict__, "research_snapshot": snapshot}
+        if action.action == "PROPOSE_CAPABILITY":
+            capability = self.propose_capability(action.target_id or "unspecified", [], action.reason_summary)
+            return {"action": action.__dict__, "capability_id": capability.capability_id,
+                    "status": capability.status}
+        if action.action == "START_CAPABILITY_MISSION":
+            capability = next((item for item in self.world.capabilities
+                               if item.capability_id == action.target_id), None)
+            if capability is None:
+                raise PolicyViolation("capability target does not exist")
+            self.capabilities.transition(capability, "POLICY_APPROVED")
+            self.capabilities.transition(capability, "BUILDING")
+            return {"action": action.__dict__, "capability_id": capability.capability_id,
+                    "status": capability.status}
+        if action.action == "PROPOSE_STOP":
+            self.world.convergence_signals["manager_stop_proposed"] = True
+            return {"action": action.__dict__, "status": "stop_proposal_recorded"}
         return {"action": action.__dict__, "status": "accepted"}
+
+    @staticmethod
+    def _action_from_output(output: Any) -> ManagerAction | None:
+        if not isinstance(output, dict):
+            return None
+        try:
+            return ManagerAction(**output)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _portfolio_from_result(command_result: dict[str, Any]) -> dict[str, Any]:
@@ -173,25 +219,49 @@ class ArgusSupervisor:
     def cycle(self) -> dict[str, Any]:
         self.world.life_cycle += 1
         self.store.append(self.world.run_id, str(self.world.life_cycle), "controller", "OBSERVE")
-        manager = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle), role="Argus Manager", independence_group="manager")
-        self.agents.create(manager)
-        try:
-            self.agents.run(manager, "Observe the world and emit one allowed ManagerAction as JSON.")
-        except Exception as exc:
-            # Manager output is advisory.  A provider/network stall must not
-            # prevent the deterministic policy from making a bounded action.
-            self.store.append(self.world.run_id, str(self.world.life_cycle), "argus-manager", "AGENT_FAILURE",
-                              payload={"role": manager.role, "error": str(exc)})
-        summary = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle), role="World State Summarizer", independence_group="summarizer")
+        summary = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
+                                   role="World State Summarizer", independence_group="summarizer",
+                                   timeout_seconds=180)
         self.agents.create(summary)
+        summary_result: dict[str, Any] = {}
+        facts = {"run_id": self.world.run_id, "life_cycle": self.world.life_cycle,
+                 "budget": self.world.budget.__dict__,
+                 "missions": [m.__dict__ for m in self.world.missions],
+                 "recent_outcomes": self.world.outcome_ledger[-5:],
+                 "capabilities": [c.__dict__ for c in self.world.capabilities],
+                 "fence_versions": self.world.fence_versions,
+                 "convergence_signals": self.world.convergence_signals}
         try:
-            self.agents.run(summary, "Summarize structured world facts without hidden reasoning.")
+            summary_result = self.agents.run(
+                summary, "Summarize these structured world facts without hidden reasoning. Return schema JSON only:\n"
+                         + json.dumps(facts, sort_keys=True, default=str))
         except Exception as exc:
             self.store.append(self.world.run_id, str(self.world.life_cycle), "world-summarizer", "AGENT_FAILURE",
                               payload={"role": summary.role, "error": str(exc)})
+        manager = self.agents.spec(run_id=self.world.run_id, life_cycle_id=str(self.world.life_cycle),
+                                   role="Argus Manager", independence_group="manager", timeout_seconds=180)
+        self.agents.create(manager)
+        manager_result: dict[str, Any] = {}
+        try:
+            manager_result = self.agents.run(
+                manager, "Choose exactly one allowed action from the summarized World State. You cannot modify "
+                         "Fence, accept candidates, edit benchmarks, publish packages, or decide convergence. "
+                         "Return schema JSON only. Summary:\n"
+                         + json.dumps(summary_result.get("output") or facts, sort_keys=True, default=str))
+        except Exception as exc:
+            self.store.append(self.world.run_id, str(self.world.life_cycle), "argus-manager", "AGENT_FAILURE",
+                              payload={"role": manager.role, "error": str(exc)})
         self.agents.release(manager)
         self.agents.release(summary)
-        action = self.manager_action()
+        proposed = self._action_from_output(manager_result.get("output"))
+        action = proposed or self.manager_action()
+        if proposed is not None:
+            try:
+                self.policy.validate(proposed, self.world)
+            except PolicyViolation as exc:
+                self.store.append(self.world.run_id, str(self.world.life_cycle), "policy", "POLICY_REJECTED",
+                                  payload={"action": proposed.__dict__, "reason": str(exc)})
+                action = self.manager_action()
         result = self.execute_action(action)
         self._expand_after_canary()
         self.world.convergence_signals["quiet_cycles"] = 0 if result.get("outcome", {}).get("classification") in {"SUCCESS_LOCAL", "SUCCESS_SYSTEM"} else self.world.convergence_signals.get("quiet_cycles", 0) + 1

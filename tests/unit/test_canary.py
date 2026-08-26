@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lda.benchmarks.canary import HARNESS, CanaryBenchmarkRunner, architecture_compatibility, upload_source_snapshot
+from lda.benchmarks.canary import (HARNESS, CanaryBenchmarkRunner, architecture_compatibility,
+                                   upload_source_snapshot, validate_optimization_flags)
 from lda.e2b.client import E2BClient
 
 
@@ -30,6 +31,13 @@ class CanaryHarnessTest(unittest.TestCase):
         command = CanaryBenchmarkRunner(E2BClient(fake=True)).build_command("libcairo2")
         self.assertIn("build-dep cairo", command)
         self.assertIn("dpkg-buildpackage -us -uc -b -d", command)
+
+    def test_candidate_flags_reject_native_and_fast_math(self):
+        with self.assertRaises(ValueError):
+            validate_optimization_flags(["-O3", "-march=native"])
+        with self.assertRaises(ValueError):
+            validate_optimization_flags(["-Ofast"])
+        self.assertEqual(validate_optimization_flags(["-O3", "-fno-plt"]), ("-O3", "-fno-plt"))
 
     def test_virtual_cpuid_is_compatible_but_not_attested(self):
         result = architecture_compatibility({
