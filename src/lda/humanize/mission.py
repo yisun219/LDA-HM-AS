@@ -10,6 +10,7 @@ from lda.benchmarks.canary import CANARY_PACKAGES, CanaryBenchmarkRunner, upload
 from lda.benchmarks.runner import BenchmarkRunner
 from lda.fences.abi import CompatibilityFence, FenceManifest
 from lda.judge.anti_cheat import AntiCheat
+from lda.judge.canary import CleanCanaryJudge, SPECS as JUDGE_SPECS
 from lda.judge.clean import CleanJudge
 from lda.missions.contract import MissionContract
 from lda.models import Candidate, Mission, WorldState, new_id
@@ -47,6 +48,7 @@ class HumanizeMission:
         canary_runner = CanaryBenchmarkRunner(self.agents.client)
         build_evidence = None
         candidate_root = ""
+        candidate_debs: dict[str, str] = {}
         if self.mission.package in CANARY_PACKAGES:
             # Every canary starts from the pinned source bundle. The upload and
             # hash verification happen inside the disposable candidate sandbox.
@@ -78,10 +80,18 @@ class HumanizeMission:
                     # exact binary package under test, never the first listing.
                     artifact = build_evidence.get("target_artifact") or next((item for item in build_evidence["artifacts"]
                                      if Path(item).name.startswith(self.mission.package + "_")), None)
+                    dev_package = JUDGE_SPECS[self.mission.package].dev_package
+                    dev_artifact = next((item for item in build_evidence["artifacts"]
+                                         if Path(item).name.startswith(dev_package + "_")), None)
                     if artifact is None:
                         build_evidence["passed"] = False
                         build_evidence["reason"] = "target_binary_deb_missing"
                         artifact = ""
+                    elif dev_artifact is None:
+                        build_evidence["passed"] = False
+                        build_evidence["reason"] = "target_dev_deb_missing"
+                    else:
+                        candidate_debs = {"runtime": artifact, "dev": dev_artifact}
                     candidate_root = "/workspace/candidate-root" if artifact else ""
                     if artifact:
                         extract = self.agents.client.command(work, f"rm -rf {candidate_root} && mkdir -p {candidate_root} && dpkg-deb -x {artifact} {candidate_root}")
@@ -114,16 +124,28 @@ class HumanizeMission:
                                     role="Reviewer", independence_group="reviewer", timeout_seconds=180)
         self.agents.create(reviewer)
         self._run_agent(reviewer, "Review the candidate independently; return JSON only.")
-        manifest = FenceManifest(self.mission.package, f"lib{self.mission.package}.so.1", ("api_entry",), ("LIB_1.0",), (f"{self.mission.package}.h",), install_paths=(f"/usr/lib/lib{self.mission.package}.so.1",))
-        judge = CleanJudge(CompatibilityFence(manifest))
-        judge_box = self.agents.client.create({"project": "lda", "run_id": self.world.run_id,
+        judge_metadata = {"project": "lda", "run_id": self.world.run_id,
             "life_cycle": str(self.world.life_cycle), "mission_id": self.mission.mission_id,
-            "candidate_id": candidate.candidate_id, "role": "judge", "template": "lda-judge", "lease_id": new_id("lease")})
-        self.agents.client.command(judge_box, "lda-judge --clean", background=False, timeout=300)
-        judge_result = judge.run({"manifest": {"soname": manifest.soname, "symbols": manifest.symbols,
-            "symbol_versions": manifest.symbol_versions, "headers": manifest.headers,
-            "install_paths": manifest.install_paths, "package_install": True, "rollback": True}},
-            anti_cheat=AntiCheat().inspect({}))
+            "candidate_id": candidate.candidate_id, "lease_id": new_id("lease")}
+        if self.mission.package in CANARY_PACKAGES:
+            if not candidate_debs:
+                judge_box = self.agents.client.create({**judge_metadata, "role": "judge", "template": "lda-judge-v4-20260826"})
+                judge_result = {"valid": False, "fence_passed": False, "checks": {},
+                                "failure_category": "JUDGE_EVIDENCE_INVALID",
+                                "reason": "runtime_and_dev_candidate_debs_required",
+                                "evidence_refs": [], "confidence": 1.0}
+            else:
+                judge_result, judge_box = CleanCanaryJudge(self.agents.client).run(
+                    work=work, package=self.mission.package,
+                    candidate_debs=candidate_debs, metadata=judge_metadata)
+        else:
+            # Generic packages remain fail-closed until their package-specific
+            # immutable manifest and clean Judge adapter have been qualified.
+            manifest = FenceManifest(self.mission.package, "")
+            judge = CleanJudge(CompatibilityFence(manifest))
+            judge_box = self.agents.client.create({**judge_metadata, "role": "judge", "template": "lda-judge-v4-20260826"})
+            judge_result = judge.run({}, self_test=False, reverse_dependencies=False,
+                                     anti_cheat=AntiCheat().inspect({}))
         if self.mission.package in CANARY_PACKAGES:
             # The canary harness runs in the candidate E2B sandbox and records
             # measured baseline/candidate samples. A missing candidate root is
@@ -156,8 +178,17 @@ class HumanizeMission:
         candidate.micro_ci_lower = benchmark_result["micro_ci_lower"]
         candidate.e2e_speedup = benchmark_result["e2e_speedup"]
         self.mission.attempts += 1
-        self.mission.last_outcome = "SUCCESS_SYSTEM" if judge_result["valid"] else "ABI_FAILURE"
-        self.mission.status = "SUCCEEDED" if judge_result["valid"] else "REJECTED"
+        accepted = bool(judge_result["valid"] and benchmark_result.get("accepted") is True
+                        and benchmark_result.get("invalid") is not True)
+        if accepted:
+            self.mission.last_outcome = "SUCCESS_SYSTEM"
+            self.mission.status = "SUCCEEDED"
+        elif not judge_result["valid"]:
+            self.mission.last_outcome = judge_result.get("failure_category", "ABI_FAILURE")
+            self.mission.status = "REJECTED"
+        else:
+            self.mission.last_outcome = "BENCHMARK_INVALID" if benchmark_result.get("invalid") else "NO_OPTIMIZATION_SPACE"
+            self.mission.status = "QUEUED" if self.mission.attempts < self.mission.max_attempts else "REJECTED"
         self.agents.client.kill(work)
         self.agents.client.kill(judge_box)
         self.agents.release(manager)

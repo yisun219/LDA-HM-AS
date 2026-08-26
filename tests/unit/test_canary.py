@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lda.benchmarks.canary import HARNESS, CanaryBenchmarkRunner, upload_source_snapshot
+from lda.benchmarks.canary import HARNESS, CanaryBenchmarkRunner, architecture_compatibility, upload_source_snapshot
 from lda.e2b.client import E2BClient
 
 
@@ -21,10 +21,46 @@ class CanaryHarnessTest(unittest.TestCase):
         self.assertIn("--samples 30", command)
         self.assertNotIn("speedup", command)
 
+    def test_e2e_crosses_an_unchanged_process_boundary(self):
+        self.assertIn("rsvg-convert", HARNESS)
+        self.assertIn("soup_session_send_and_read", HARNESS)
+        self.assertIn("precompiled_c_client_local_http_server", HARNESS)
+
     def test_build_command_bootstraps_source_dependencies(self):
         command = CanaryBenchmarkRunner(E2BClient(fake=True)).build_command("libcairo2")
         self.assertIn("build-dep cairo", command)
         self.assertIn("dpkg-buildpackage -us -uc -b -d", command)
+
+    def test_virtual_cpuid_is_compatible_but_not_attested(self):
+        result = architecture_compatibility({
+            "vendor_id": "GenuineIntel", "family": 6, "model": 207, "stepping": 2,
+            "cpu_model": "Intel(R) Xeon(R) Processor", "hypervisor": "kvm",
+            "flags": ["hypervisor", "avx2", "avx512f", "avx512dq", "avx512bw", "avx512vl",
+                      "avx512_vnni", "amx_tile", "amx_int8", "amx_bf16"],
+        })
+        self.assertTrue(result["compatible"])
+        self.assertTrue(result["virtualized"])
+        self.assertFalse(result["identity_attested"])
+
+    def test_local_brand_string_is_not_hardware_attestation(self):
+        result = architecture_compatibility({
+            "vendor_id": "GenuineIntel", "family": 6, "model": 207, "stepping": 2,
+            "cpu_model": "INTEL(R) XEON(R) GOLD 6548Y+", "flags": [
+                "avx2", "avx512f", "avx512dq", "avx512bw", "avx512vl",
+                "avx512_vnni", "amx_tile", "amx_int8", "amx_bf16"],
+        })
+        self.assertTrue(result["compatible"])
+        self.assertFalse(result["identity_attested"])
+
+    def test_virtual_target_cpuid_is_architecturally_eligible(self):
+        result = architecture_compatibility({
+            "vendor_id": "GenuineIntel", "family": 6, "model": 207, "stepping": 2,
+            "cpu_model": "Intel(R) Xeon(R) Processor", "hypervisor": "kvm",
+            "flags": ["hypervisor", "avx2", "avx512f", "avx512dq", "avx512bw", "avx512vl",
+                      "avx512_vnni", "amx_tile", "amx_int8", "amx_bf16"],
+        })
+        self.assertTrue(result["compatible"])
+        self.assertFalse(result["identity_attested"])
 
     def test_snapshot_upload_verifies_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:

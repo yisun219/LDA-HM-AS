@@ -7,7 +7,11 @@
     "reverse dependency",
     "benchmark",
     "anti-cheat",
-    "package install/rollback"
+    "package install/rollback",
+    "runtime and development package parity",
+    "SONAME/exported symbols/symbol versions/NEEDED",
+    "headers/pkg-config",
+    "precompiled dlopen/dlsym and ctypes"
   ],
   "llm": false
 }

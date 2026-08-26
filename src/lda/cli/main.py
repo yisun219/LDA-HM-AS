@@ -47,9 +47,10 @@ def _run(args: argparse.Namespace) -> dict:
         client.kill(controller)
         raise RuntimeError("controller E2B campaign input hash mismatch after upload")
     client.filesystem_write(controller, "/workspace/campaign-input/manifest.json", json.dumps(campaign.dump(), sort_keys=True))
-    qualification = QualificationRunner(client).run(campaign, args.run_id)
     qualification_artifact = root / ".lda" / "artifacts" / "qualification.json"
     qualification_artifact.parent.mkdir(parents=True, exist_ok=True)
+    qualification = QualificationRunner(client).run(campaign, args.run_id,
+                                                      checkpoint_path=qualification_artifact)
     # Qualification may contain incomplete rows for the whole Top 10.  Only
     # the canary rows authorize execution, and every hard gate must carry an
     # explicit evidence reference.

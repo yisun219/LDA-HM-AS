@@ -163,10 +163,24 @@ class E2BClient:
     def filesystem_read(self, sandbox: Sandbox, path: str) -> str:
         self._require_runtime()
         if not self.fake:
-            data = sandbox.native.files.read(path)
-            return data.decode() if isinstance(data, bytes) else data
+            data = sandbox.native.files.read(path, format="bytes", request_timeout=1800)
+            return bytes(data).decode() if isinstance(data, (bytes, bytearray)) else data
         value = self._fake_files.get((sandbox.sandbox_id, path), "")
-        return value.decode() if isinstance(value, bytes) else value
+        return bytes(value).decode() if isinstance(value, (bytes, bytearray)) else value
+
+    def filesystem_read_bytes(self, sandbox: Sandbox, path: str) -> bytes:
+        """Read an artifact without applying text decoding.
+
+        Package artifacts cross the controller only as opaque bytes.  This is
+        intentionally separate from ``filesystem_read`` so binary ``.deb``
+        payloads can never be corrupted by an implicit UTF-8 conversion.
+        """
+        self._require_runtime()
+        if not self.fake:
+            data = sandbox.native.files.read(path, format="bytes", request_timeout=1800)
+            return data.encode() if isinstance(data, str) else bytes(data)
+        value = self._fake_files.get((sandbox.sandbox_id, path), b"")
+        return value.encode() if isinstance(value, str) else bytes(value)
 
     def snapshot(self, sandbox: Sandbox) -> dict[str, Any]:
         self._require_runtime()

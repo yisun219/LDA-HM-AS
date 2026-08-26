@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import hashlib
+import json
 
 from lda.e2b.client import E2BClient, Sandbox
 from lda.research.campaign import CampaignInput
@@ -43,9 +44,10 @@ class QualificationRunner:
             for suite in ("resolute", "resolute-updates", "resolute-security")
         ) + "\n"
         encoded = __import__("base64").b64encode(content.encode()).decode()
-        result = self.client.command(sandbox, f"printf %s {encoded} | base64 -d > {source_file} && apt-get update")
-        release = self.client.command(sandbox, "apt-cache policy libcairo2 libsoup-3.0-0")
-        indexes = self.client.command(sandbox, "apt-get indextargets")
+        result = self.client.command(sandbox, f"printf %s {encoded} | base64 -d > {source_file} && apt-get update",
+                                     timeout=600)
+        release = self.client.command(sandbox, "apt-cache policy libcairo2 libsoup-3.0-0", timeout=120)
+        indexes = self.client.command(sandbox, "apt-get indextargets", timeout=120)
         index_output = indexes.get("stdout") or ""
         has_source_index = "Target-Of: deb-src" in index_output or "Created-By: Sources" in index_output
         release_output = release.get("stdout") or ""
@@ -108,32 +110,35 @@ class QualificationRunner:
             return {"status": "UNAVAILABLE", "source": source_name, "reason": "source dsc not uploaded"}
         safe = source_name.replace("/", "_")
         root = f"/workspace/source-build/{safe}"
-        unpack = self.client.command(sandbox, f"rm -rf {root} && mkdir -p {root} && dpkg-source -x {dsc} {root}/source")
+        unpack = self.client.command(sandbox, f"rm -rf {root} && mkdir -p {root} && dpkg-source -x {dsc} {root}/source",
+                                     timeout=300)
         evidence: dict[str, Any] = {"source": source_name, "dsc": dsc, "unpack": self._command_evidence(unpack)}
         if unpack.get("exit_code") != 0:
             evidence["status"] = "UNPACK_FAILED"
             return evidence
-        check = self.client.command(sandbox, f"cd {root}/source && dpkg-checkbuilddeps")
+        check = self.client.command(sandbox, f"cd {root}/source && dpkg-checkbuilddeps", timeout=300)
         evidence["build_deps"] = self._command_evidence(check)
         if check.get("exit_code") != 0:
             install = self.client.command(sandbox,
                 "apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/lda-snapshot.list "
                 "-o Dir::Etc::sourceparts=- -o APT::Get::Assume-Yes=true "
-                f"build-dep {source_name}")
+                f"build-dep {source_name}", timeout=1800)
             evidence["build_dep_install"] = self._command_evidence(install)
-            check = self.client.command(sandbox, f"cd {root}/source && dpkg-checkbuilddeps")
+            check = self.client.command(sandbox, f"cd {root}/source && dpkg-checkbuilddeps", timeout=300)
             evidence["build_deps_after_install"] = self._command_evidence(check)
             if check.get("exit_code") != 0:
                 evidence["status"] = "BUILD_DEPS_UNAVAILABLE" if install.get("exit_code") == 0 else "BUILD_DEPS_INSTALL_FAILED"
                 return evidence
         build = self.client.command(sandbox, f"cd {root}/source && DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b", timeout=1800)
         evidence["build"] = self._command_evidence(build)
-        artifacts = self.client.command(sandbox, f"find {root} -maxdepth 2 -type f -name '*.deb' -printf '%f %s\\n' | sort")
+        artifacts = self.client.command(sandbox, f"find {root} -maxdepth 2 -type f -name '*.deb' -printf '%f %s\\n' | sort",
+                                        timeout=120)
         evidence["debs"] = self._command_evidence(artifacts)
         evidence["status"] = "BUILT" if build.get("exit_code") == 0 else "BUILD_FAILED"
         return evidence
 
-    def run(self, campaign: CampaignInput, run_id: str) -> dict[str, Any]:
+    def run(self, campaign: CampaignInput, run_id: str,
+            checkpoint_path: str | Path | None = None) -> dict[str, Any]:
         sandbox = self.client.create({"project": "lda", "run_id": run_id, "life_cycle": "qualification",
             "mission_id": "qualification", "candidate_id": "none", "role": "qualification",
             "template": self.base_template, "lease_id": "qualification-" + run_id})
@@ -146,8 +151,22 @@ class QualificationRunner:
                 raise RuntimeError("E2B campaign input hash mismatch after upload")
             source_bundle = self._upload_source_bundle(sandbox, campaign)
             snapshot = self._bootstrap_snapshot(sandbox)
+            checkpoint = Path(checkpoint_path) if checkpoint_path else None
+            prior_results: dict[str, dict[str, Any]] = {}
+            if checkpoint and checkpoint.is_file():
+                try:
+                    prior = json.loads(checkpoint.read_text(encoding="utf-8"))
+                    if prior.get("campaign_sha256") == campaign.sha256:
+                        prior_results = {row["package"]: row for row in prior.get("results", [])
+                                         if isinstance(row, dict) and row.get("package")}
+                except (OSError, ValueError, json.JSONDecodeError):
+                    prior_results = {}
             results = []
             for package in campaign.top10:
+                prior_row = prior_results.get(package)
+                if prior_row and (package not in campaign.canary or prior_row.get("clean_source_rebuild_verified") is True):
+                    results.append(prior_row)
+                    continue
                 commands = {
                     "binary_package": f"apt-cache show {package}",
                     "dependency_metadata": f"apt-cache depends {package}",
@@ -161,10 +180,17 @@ class QualificationRunner:
                         checks[name] = {"exit_code": output.get("exit_code"), "available": output.get("exit_code") == 0,
                                         "stdout_sha256": __import__("hashlib").sha256(stdout.encode()).hexdigest()}
                         if name == "binary_package":
-                            checks["source_mapping"] = {"available": "Source:" in stdout and "Version:" in stdout,
+                            binary_name = next((x.split(":", 1)[1].strip() for x in stdout.splitlines()
+                                                if x.startswith("Package:")), None)
+                            source_name = next((x.split(":", 1)[1].strip() for x in stdout.splitlines()
+                                                if x.startswith("Source:")), None) or binary_name
+                            source_version = next((x.split(":", 1)[1].strip() for x in stdout.splitlines()
+                                                   if x.startswith("Version:")), None)
+                            checks["source_mapping"] = {"available": bool(source_name and source_version),
                                 "derived_from_binary_metadata": True,
-                                "source": next((x.split(":", 1)[1].strip() for x in stdout.splitlines() if x.startswith("Source:")), None),
-                                "source_version": next((x.split(":", 1)[1].strip() for x in stdout.splitlines() if x.startswith("Version:")), None)}
+                                "implicit_same_name": "Source:" not in stdout,
+                                "source": source_name,
+                                "source_version": source_version}
                     except Exception as exc:
                         checks[name] = {"available": False, "error": str(exc)}
                 source_name = checks.get("source_mapping", {}).get("source")
@@ -217,6 +243,15 @@ class QualificationRunner:
                        "e2e_verified": False, "deb_replace_verified": False,
                        "rollback_verified": False, "status": "QUALIFICATION_PENDING"}
                 results.append(row)
+                if checkpoint:
+                    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                    checkpoint.write_text(json.dumps({
+                        "campaign_sha256": campaign.sha256, "e2b_copy_sha256": uploaded_hash,
+                        "e2b_path": campaign.e2b_path, "base_template": self.base_template,
+                        "sources_snapshot": snapshot, "source_bundle": source_bundle,
+                        "results": results, "canary": list(campaign.canary),
+                        "status": "QUALIFICATION_RUNNING",
+                    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             return {"campaign_sha256": campaign.sha256, "e2b_copy_sha256": uploaded_hash, "e2b_path": campaign.e2b_path,
                     "base_template": self.base_template, "sources_snapshot": snapshot,
                     "source_bundle": source_bundle,

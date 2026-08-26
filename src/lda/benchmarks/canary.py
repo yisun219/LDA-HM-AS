@@ -27,24 +27,66 @@ SPECS = {
     "libsoup-3.0-0": CanarySpec("libsoup-3.0-0", "libsoup3", ("libsoup-3.0.so.0",)),
 }
 
+TARGET_CPU_FINGERPRINT = {
+    "vendor_id": "GenuineIntel",
+    "family": 6,
+    "model": 207,
+    "stepping": 2,
+    "required_flags": frozenset({"avx2", "avx512f", "avx512dq", "avx512bw", "avx512vl",
+                                 "avx512_vnni", "amx_tile", "amx_int8", "amx_bf16"}),
+}
+
+
+def architecture_compatibility(profile: dict[str, Any]) -> dict[str, Any]:
+    """Compare architectural capability without claiming physical identity.
+
+    CPUID values in a VM are controlled by the hypervisor. A matching tuple is
+    useful for dispatch/benchmark compatibility, but is not hardware attestation.
+    """
+    flags = set(profile.get("flags", []))
+    missing = sorted(TARGET_CPU_FINGERPRINT["required_flags"] - flags)
+    tuple_matches = (
+        profile.get("vendor_id") == TARGET_CPU_FINGERPRINT["vendor_id"]
+        and profile.get("family") == TARGET_CPU_FINGERPRINT["family"]
+        and profile.get("model") == TARGET_CPU_FINGERPRINT["model"]
+        and profile.get("stepping") == TARGET_CPU_FINGERPRINT["stepping"]
+    )
+    virtualized = bool(profile.get("hypervisor")) or "hypervisor" in flags
+    compatible = tuple_matches and not missing
+    # This local observation cannot attest physical identity, even on bare
+    # metal. Identity must come from a separately verified control-plane or
+    # hardware attestation bound to sandbox_id, lease_id, and a fresh nonce.
+    return {"compatible": compatible, "tuple_matches": tuple_matches,
+            "missing_flags": missing, "virtualized": virtualized,
+            "identity_attested": False}
+
 
 # This program deliberately does not contain a claimed speedup. It measures the
 # installed baseline and candidate libraries in the sandbox and emits raw samples.
 HARNESS = r'''#!/usr/bin/env python3
-import argparse, ctypes, ctypes.util, json, os, platform, subprocess, time
+import argparse, ctypes, ctypes.util, http.server, json, os, platform, subprocess, threading, time
 from pathlib import Path
 
 def _hardware():
     def read(path):
         try: return Path(path).read_text().strip()
         except OSError: return "unknown"
-    cpu = "unknown"
+    fields = {}
     try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.lower().startswith("model name"):
-                cpu = line.split(":", 1)[1].strip(); break
+        for line in Path("/proc/cpuinfo").read_text().split("\n\n", 1)[0].splitlines():
+            if ":" in line:
+                key, value = line.split(":", 1)
+                fields[key.strip()] = value.strip()
     except OSError: pass
-    return {"cpu_model": cpu, "kernel": platform.release(),
+    flags = fields.get("flags", "").split()
+    return {"cpu_model": fields.get("model name", "unknown"),
+            "vendor_id": fields.get("vendor_id", "unknown"),
+            "family": int(fields.get("cpu family", "-1")),
+            "model": int(fields.get("model", "-1")),
+            "stepping": int(fields.get("stepping", "-1")),
+            "microcode": fields.get("microcode", "unknown"),
+            "flags": flags, "hypervisor": "kvm" if "hypervisor" in flags else "",
+            "kernel": platform.release(),
             "governor": read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"),
             "turbo": read("/sys/devices/system/cpu/intel_pstate/no_turbo"),
             "numa": read("/sys/devices/system/node/online"),
@@ -98,6 +140,84 @@ def _measure(package, root, loops, warmups, samples):
     for _ in range(warmups): fn(root, loops)
     return [fn(root, loops) for _ in range(samples)]
 
+def _runtime_env(root):
+    env = os.environ.copy()
+    if root:
+        dirs = sorted({str(path.parent) for name in ("libcairo.so.2", "libsoup-3.0.so.0")
+                       for path in Path(root).rglob(name)})
+        env["LD_LIBRARY_PATH"] = ":".join(dirs + ([env["LD_LIBRARY_PATH"]] if env.get("LD_LIBRARY_PATH") else []))
+    return env
+
+def _external_samples(argv, root, warmups, samples):
+    env = _runtime_env(root)
+    values = []
+    for index in range(warmups + samples):
+        start = time.perf_counter_ns()
+        result = subprocess.run(argv, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        elapsed = time.perf_counter_ns() - start
+        if result.returncode: raise RuntimeError("external workload failed: " + result.stderr.decode(errors="replace")[-500:])
+        if index >= warmups: values.append(elapsed)
+    return values
+
+def _svg(path, shapes, size):
+    body = []
+    for i in range(shapes):
+        x = (i * 37) % size; y = (i * 53) % size; radius = 3 + (i % 17)
+        body.append(f'<circle cx="{x}" cy="{y}" r="{radius}" fill="rgb({i%251},{(i*3)%251},{(i*7)%251})" fill-opacity="0.55"/>')
+    path.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}"><rect width="100%" height="100%" fill="white"/>{"".join(body)}</svg>')
+
+SOUP_CLIENT = r"""#include <libsoup/soup.h>
+#include <stdlib.h>
+int main(int argc, char **argv) {
+  if (argc != 3) return 64;
+  int count = atoi(argv[2]);
+  SoupSession *session = soup_session_new();
+  for (int i = 0; i < count; i++) {
+    GError *error = NULL;
+    SoupMessage *message = soup_message_new("GET", argv[1]);
+    GBytes *body = soup_session_send_and_read(session, message, NULL, &error);
+    if (error || !body || g_bytes_get_size(body) == 0) return 65;
+    g_bytes_unref(body); g_object_unref(message);
+  }
+  g_object_unref(session); return 0;
+}"""
+
+def _soup_client(out):
+    source = out / "soup_e2e_client.c"; binary = out / "soup_e2e_client"
+    source.write_text(SOUP_CLIENT)
+    flags = subprocess.check_output(["pkg-config", "--cflags", "--libs", "libsoup-3.0"], text=True).split()
+    subprocess.run(["cc", "-O2", str(source), "-o", str(binary), *flags], check=True)
+    return binary
+
+class _Handler(http.server.BaseHTTPRequestHandler):
+    payload = (b"lda-e2e-payload-" * 1024)
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Length", str(len(self.payload)))
+        self.end_headers(); self.wfile.write(self.payload)
+    def log_message(self, *_): pass
+
+def _e2e(package, out, baseline_root, candidate_root, warmups, samples):
+    workloads = {}
+    if package == "libcairo2":
+        for name, size, shapes in (("rsvg_medium", 384, 350), ("rsvg_large", 1024, 1400)):
+            source = out / (name + ".svg"); _svg(source, shapes, size)
+            argv = ["rsvg-convert", "-w", str(size), "-h", str(size), str(source), "-o", "/dev/null"]
+            workloads[name] = {"baseline": _external_samples(argv, baseline_root, warmups, samples),
+                               "candidate": _external_samples(argv, candidate_root, warmups, samples)}
+        return workloads, "unchanged_prebuilt_rsvg_convert"
+    binary = _soup_client(out)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/payload"
+        for name, requests in (("http_small", 20), ("http_large", 100)):
+            argv = [str(binary), url, str(requests)]
+            workloads[name] = {"baseline": _external_samples(argv, baseline_root, warmups, samples),
+                               "candidate": _external_samples(argv, candidate_root, warmups, samples)}
+    finally:
+        server.shutdown(); server.server_close(); thread.join(timeout=5)
+    return workloads, "precompiled_c_client_local_http_server"
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--package", required=True, choices=["libcairo2", "libsoup-3.0-0"])
@@ -111,19 +231,16 @@ def main():
     loops = (250 if args.package == "libsoup-3.0-0" else 120)
     baseline = _measure(args.package, "", loops, args.warmups, args.samples)
     candidate = _measure(args.package, args.candidate_root, loops, args.warmups, args.samples)
-    # Two independent end-to-end guardrail workloads with different sizes.
-    e2e = {}
-    for name, size in (("small", max(20, loops // 4)), ("large", loops * 2)):
-        b = _measure(args.package, "", size, max(1, args.warmups // 2), max(5, args.samples // 2))
-        c = _measure(args.package, args.candidate_root, size, max(1, args.warmups // 2), max(5, args.samples // 2))
-        e2e[name] = {"baseline": b, "candidate": c}
+    # End-to-end evidence crosses an unchanged application/process boundary.
+    e2e, e2e_kind = _e2e(args.package, out, "", args.candidate_root,
+                         max(2, args.warmups // 2), max(10, args.samples // 2))
     metadata = _hardware()
     metadata["package"] = args.package; metadata["loops"] = loops
     (out / "micro.json").write_text(json.dumps({"schema": "lda.micro.v1", "package": args.package,
         "baseline": baseline, "candidate": candidate, "warmups": args.warmups,
         "samples": args.samples, "hardware": metadata}, sort_keys=True) + "\n")
     (out / "e2e.json").write_text(json.dumps({"schema": "lda.e2e.v1", "package": args.package,
-        "workloads": e2e, "hardware": metadata}, sort_keys=True) + "\n")
+        "workloads": e2e, "workload_kind": e2e_kind, "hardware": metadata}, sort_keys=True) + "\n")
     print(json.dumps({"package": args.package, "micro": str(out / "micro.json"),
                       "e2e": str(out / "e2e.json"), "hardware": metadata}, sort_keys=True))
 
@@ -237,9 +354,12 @@ class CanaryBenchmarkRunner:
         # The base template intentionally contains toolchains, not target
         # packages. Install the pinned runtime from the sandbox apt snapshot
         # before measuring; failure is reported as invalid evidence.
-        available = self.client.command(sandbox, f"dpkg-query -W -f='${{Status}}' {shlex.quote(package)}")
-        if available.get("exit_code") != 0 or "install ok installed" not in (available.get("stdout") or ""):
-            installed = self.client.command(sandbox, f"apt-get install -y --no-install-recommends {shlex.quote(package)}")
+        benchmark_packages = ([package, "librsvg2-bin"] if package == "libcairo2"
+                              else [package, "libsoup-3.0-dev", "gcc", "pkg-config"])
+        query = " ".join(shlex.quote(item) for item in benchmark_packages)
+        available = self.client.command(sandbox, f"dpkg-query -W -f='${{Status}}\\n' {query}")
+        if available.get("exit_code") != 0 or (available.get("stdout") or "").count("install ok installed") != len(benchmark_packages):
+            installed = self.client.command(sandbox, f"apt-get install -y --no-install-recommends {query}", timeout=600)
             if installed.get("exit_code") != 0:
                 return {"invalid": True, "reason": "canary_runtime_install_failed",
                         "stderr": installed.get("stderr", ""), "micro_speedup": 0.0,
@@ -267,16 +387,30 @@ class CanaryBenchmarkRunner:
                 workloads[name] = item["speedup"]
             portfolio = BenchmarkRunner(self.config).portfolio(workloads)
             hardware = micro.get("hardware", {})
-            target_pattern = os.environ.get("LDA_TARGET_CPU_PATTERN", "6548Y")
-            hardware_valid = target_pattern.lower() in str(hardware.get("cpu_model", "")).lower()
-            blockers = [] if hardware_valid else [f"hardware_cpu_mismatch:{hardware.get('cpu_model', 'unknown')}:{target_pattern}"]
+            compatibility = architecture_compatibility(hardware)
+            # The benchmark fence is architectural: exact CPUID tuple plus the
+            # required dispatch ISA. Physical host identity remains separately
+            # reported as unattested under KVM and must never be inferred from
+            # the generic guest brand or masked microcode.
+            hardware_valid = compatibility["compatible"]
+            blockers = []
+            warnings = []
+            if not compatibility["compatible"]:
+                blockers.append("hardware_architecture_mismatch")
+            if compatibility["virtualized"]:
+                warnings.append("hardware_identity_unattested:kvm_cpuid_is_hypervisor_controlled")
+            elif not compatibility["identity_attested"]:
+                warnings.append("hardware_identity_unattested")
             return {"invalid": False, "accepted": bool(measured.get("accepted") and not portfolio["invalid"] and hardware_valid),
                     "package_metadata": (package_metadata.get("stdout") or "").strip(),
                     "micro_speedup": measured["speedup"], "micro_ci_lower": measured["ci_lower"],
                     "e2e_speedup": portfolio["geomean_speedup"], "improved_workloads": portfolio["improved_workloads"],
                     "micro": measured, "portfolio": portfolio,
-                    "hardware": hardware, "hardware_valid": hardware_valid,
+                    "e2e_workload_kind": e2e_raw.get("workload_kind", "unknown"),
+                    "hardware": hardware, "hardware_compatibility": compatibility,
+                    "hardware_valid": hardware_valid,
                     "acceptance_blockers": blockers,
+                    "acceptance_warnings": warnings,
                     "evidence_refs": ["/workspace/benchmarks/micro.json", "/workspace/benchmarks/e2e.json"]}
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return {"invalid": True, "accepted": False, "reason": f"invalid_canary_evidence: {exc}",
