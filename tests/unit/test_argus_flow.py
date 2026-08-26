@@ -67,10 +67,32 @@ class ArgusFlowTest(unittest.TestCase):
         registry = CapabilityRegistry()
         cap = registry.propose(world, "profiler", "1", ["zlib"], "adapter")
         with self.assertRaises(ValueError):
+            registry.transition(cap, "CAPABILITY_JUDGE")
+        registry.transition(cap, "POLICY_APPROVED")
+        registry.transition(cap, "BUILDING")
+        registry.transition(cap, "ISOLATED_TEST", tests_passed=True)
+        registry.transition(cap, "ADVERSARIAL_REVIEW")
+        registry.transition(cap, "CAPABILITY_JUDGE")
+        with self.assertRaises(ValueError):
             registry.transition(cap, "ACTIVE")
-        registry.transition(cap, "CAPABILITY_JUDGE", judge_passed=True)
         registry.transition(cap, "ACTIVE", judge_passed=True)
         self.assertEqual(cap.status, "ACTIVE")
+        self.assertTrue(cap.tests_passed)
+        self.assertTrue(cap.judge_passed)
+
+    def test_capability_cannot_skip_or_leave_terminal_state(self):
+        world = WorldState("r")
+        registry = CapabilityRegistry()
+        cap = registry.propose(world, "build-adapter", "1", ["cairo"], "adapter")
+        with self.assertRaisesRegex(ValueError, "POLICY_APPROVED"):
+            registry.transition(cap, "BUILDING")
+        registry.transition(cap, "POLICY_APPROVED")
+        registry.transition(cap, "BUILDING")
+        with self.assertRaisesRegex(ValueError, "isolated tests must pass"):
+            registry.transition(cap, "ISOLATED_TEST")
+        registry.transition(cap, "REJECTED")
+        with self.assertRaisesRegex(ValueError, "terminal"):
+            registry.transition(cap, "ACTIVE", judge_passed=True)
 
     def test_event_store_recovers_after_controller_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
