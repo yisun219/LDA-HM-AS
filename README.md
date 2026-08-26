@@ -8,6 +8,129 @@ LDA 的第一原则不是“跑分快”，而是“手术刀式替换”：现�
 现有源代码和头文件使用方式不修改，动态链接和 FFI 调用不改变。只有 ABI、API、
 FFI、功能、Debian 包关系和反作弊检查全部通过后，性能结果才有资格参与验收。
 
+## 核心设计原则
+
+### 1. ABI / API / FFI 是最硬的边界
+
+LDA 面向的是 Ubuntu 官方 package 的原位优化，而不是要求用户迁移到另一套系统。
+以 `libpng`、`libaio` 等 library 为例，Candidate 必须满足：
+
+- 已有 binary 不重新编译即可继续运行；
+- 已有 C/C++ 源码、头文件 include 方式和编译参数不需要修改；
+- 动态链接名称、SONAME、exported symbol 和 symbol version 不改变；
+- public struct/union 的 size、alignment、field offset 和 calling convention 不改变；
+- Python、Rust 和其他语言的 FFI 调用不改变；
+- pkg-config、CMake metadata、安装路径和 Debian package relationship 保持兼容；
+- Candidate 能构建为 `.deb`，直接替换官方包，并能可靠回滚到官方包。
+
+这些条件是硬 Fence，不是 Reviewer 的主观建议。任何一项失败，Candidate 立即被
+确定性 Judge 拒绝；即使 Benchmark 更快，也不会进入性能验收。
+
+### 2. Micro Benchmark 与 End-to-End Benchmark 分层
+
+LDA 不用单一 Benchmark 同时承担局部优化反馈和系统价值证明：
+
+| 层级 | 测量对象 | 作用 | 验收含义 |
+| --- | --- | --- | --- |
+| Micro | 单个 library、function 或 hot path，多种 input size、数据分布、cache 和线程模式 | 给 Builder 提供局部 reward，快速判断一个优化假设是否成立 | 显著提升且兼容 Fence 全通过，才可能成为 `LOCAL_WIN` |
+| Mission E2E | 使用该 package 的真实 consumer，例如页面渲染、HTTP 请求、GUI 启动或媒体 pipeline | 检查局部优化是否影响真实应用，并阻止功能或性能回归 | 无明显回退是 `LOCAL_WIN` 的必要条件；显著贡献才可能成为 `SYSTEM_WIN` |
+| Portfolio E2E | 同时安装多个已通过 Candidate `.deb`，运行 Chrome/Chromium、GUI、Web server 等系统 workload | 验证多个局部优化是否真的形成 generic system-level speedup | 只有这一层通过，默认 Release 才能进入 `RELEASE_READY` |
+
+Micro speedup 不能直接相加，也不能代替真实应用验证。每层都保存原始样本、执行顺序、
+硬件与系统信息，并使用随机化 A/B 顺序、paired ratio 和 bootstrap 95% CI。
+
+### 3. Builder、Reviewer、Trace Auditor 与 Judge 相互独立
+
+LDA 把“实现优化”和“证明优化有效”分开：
+
+- Builder Agent 持续维护一个 Candidate，负责 Profile、修改、构建和有限次数修复；
+- Reviewer Agent 每轮使用全新 Session，只读取冻结 Contract、Patch、测试、Benchmark
+  和 Trace，看不到 Builder 对话，也不能修改源码；
+- Trace Auditor 使用独立 Session，检查越界写入、测试污染、Benchmark 操纵和作弊；
+- Judge 不是 Agent，不使用 LLM，只执行固定的 ABI/API/FFI、功能、package 和统计规则。
+
+因此“一个 Agent 做、另一个 Agent 检查”不仅体现在 Prompt 上，还通过 Session 隔离、
+只读工具权限和全新 Judge Sandbox 强制实现。Reviewer 或 Builder 声称完成都不会改变
+Candidate 状态，只有确定性 Judge 和 `ConvergenceEvaluator` 拥有终止权。
+
+### 4. 先筛选少量高价值 Package
+
+LDA 不会直接遍历 Ubuntu 的全部 package。Research Snapshot、APT dependency graph、
+reverse dependency、真实 Profile、安装/使用证据、构建成本和 ABI 风险共同产生候选，
+再使用以下归一化公式排序：
+
+```text
+priority
+= 0.25 * usage_frequency
++ 0.25 * measured_cpu_share
++ 0.20 * dependency_centrality
++ 0.15 * workload_generality
++ 0.15 * expected_effort_efficiency
+- compatibility_risk
+```
+
+第一阶段只冻结 5 到 10 个 Mission。依赖图排名只是候选证据；每个 package 必须先完成
+Qualification，证明官方版本可重建、存在可复现热点、能够建立 Micro/E2E workload，
+并有机会构建 drop-in `.deb`，才会进入 Builder 阶段。这样优先寻找工作量可控、复用面
+较广、能够产生通用系统收益的中间层和高层组件，而不是围绕单一 workload 无限优化。
+
+### 5. 执行端完全 E2B 化
+
+源码获取、build、Profile、测试、Benchmark、环境恢复、Candidate fork、Agent Session、
+Judge 和 Portfolio E2E 都通过 E2B API 执行。本地 CLI 只负责 bootstrap 和运行管理，
+不会在 E2B 失败时静默改用 Docker 或裸机。
+
+公共依赖、编译器、ABI 工具、Benchmark harness 和固定 Skillset 被预装进版本化 Template，
+再通过 Snapshot/fork 快速创建隔离环境：
+
+| Template | 预装内容与边界 |
+| --- | --- |
+| `lda-controller` | 多 Mission Agent Harness、Scheduler、状态恢复、Artifact、Tool Gateway 和 E2B 生命周期管理 |
+| `lda-agent-runtime` | Codex CLI/SDK、Agent Runner、JSON Schema、只读角色 Prompt 和 Intel Performance Skills |
+| `lda-base` | Ubuntu 26.04 编译环境、Debian package 工具、perf/trace/ABI/FFI 工具、Benchmark/self-test/dependency-test harness 和 Intel Skills |
+| `lda-judge` | 从 `lda-base` 派生的 immutable Fence runner；没有 Codex、模型凭据或 E2B Key |
+| `lda-e2e` | 干净 Ubuntu 26.04、Chromium、Playwright、Web/GUI fixture 与 `.deb` A/B/rollback harness |
+
+Agent Harness 与编译 Workspace 分成不同 Template，是为了避免 Agent 或 Workspace 获得
+Controller 凭据，同时仍让 `lda-base` 预装执行优化所需的全部工具和检查脚本。Controller
+使用 `AsyncSandbox`、全局 Semaphore、lease metadata、Snapshot/fork 和 orphan reaper，
+支持大规模并发、快速重建和中断恢复。
+
+### 6. 针对 Xeon Gold 6548Y+，但保持公共兼容性
+
+当前 E2B 执行节点的目标 CPU 是 Intel Xeon Gold 6548Y+。每次 Benchmark 都通过
+`lscpu`/CPUID 重新确认硬件，并记录 kernel、microcode、governor、turbo、NUMA 和负载。
+
+`lda-base` 和 `lda-agent-runtime` 内置固定 commit 的
+[Intel Performance Skills](https://github.com/intel/intel-performance-skills)，至少包括：
+
+- `linux-perf`：Profile、PMU 和热点定位；
+- `performance-patterns`：SIMD、runtime dispatch、cache、锁和并发优化模式；
+- `phoronix-test-suite`：标准 workload 与性能测试组织方式。
+
+针对 6548Y+ 可以实现 AVX2、AVX-512、IFUNC、function multiversioning 或 CPUID runtime
+dispatch，但公共 drop-in package 禁止全局使用 `-march=native`。非目标 CPU 必须自动
+选择兼容 fallback，否则 ABI Fence 通过也仍会被兼容性策略拒绝。
+
+### 7. Fence 同时覆盖功能、依赖和作弊
+
+Judge 在干净 E2B Sandbox 中从固定 Ubuntu Snapshot 重新获取官方源码和 `.deb`，核对
+SHA-256，从头构建 Candidate package，然后按固定顺序执行：
+
+```text
+Level 0: 官方 upstream self tests
+Level 1: ABI / API / FFI 与 Debian package compatibility
+Level 2: 原有预编译 binary + Candidate library
+Level 3: 直接 reverse dependency 的 build/test
+Level 4: 高优先级应用 install/launch/smoke
+Level 5: Chrome、Web server、GUI 等 End-to-End workload
+```
+
+Self test 保证 library 自身功能没有被破坏；dependency test 验证原有消费者仍能编译、
+链接和运行；E2E 验证系统级行为。与此同时，Trace 记录命令、文件、进程、网络、构建
+参数和全部 Benchmark 样本，检查是否修改测试、缩小 workload、hardcode 输出、隐藏
+失败样本、改变 CPU affinity、让 baseline 变慢或在 `.deb` 之外替换系统 library。
+
 ## 设计目标与默认任务边界
 
 LDA 使用 Ubuntu 26.04 Desktop amd64 ISO manifest 作为候选选择证据，
