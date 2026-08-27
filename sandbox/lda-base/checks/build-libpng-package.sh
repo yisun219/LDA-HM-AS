@@ -28,7 +28,14 @@ if test -f "$output_root/source-commit" &&
   exit 0
 fi
 
-rm -rf "$output_root"
+# Clear build outputs only: /opt/lda/baseline also carries the immutable
+# identity assets (baseline.json, manifest/) that verification and the
+# integrity manifest depend on; they must survive a rebuild.
+rm -rf "$package_root" "$package_dir" \
+  "$output_root/libpng16.path" "$output_root/runtime-deb.path" \
+  "$output_root/dev-deb.path" "$output_root/source-commit" \
+  "$output_root/artifact-schema" "$output_root/runtime-deb.sha256" \
+  "$output_root/upstream-tests-passed"
 mkdir -p "$package_dir" "$package_root"
 find /opt/lda -maxdepth 1 -type f \
   \( -name '*.deb' -o -name '*.ddeb' -o -name '*.changes' -o -name '*.buildinfo' \) \
