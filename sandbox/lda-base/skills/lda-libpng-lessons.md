@@ -10,6 +10,13 @@ was measured under paired in-sandbox benchmarks with holdout.
   byte-exact output, SONAME/symbols/ABI unchanged, no new DT_NEEDED.
   The stock Ubuntu build already enables `PNG_INTEL_SSE` (SSE2 baseline), so
   the win must come from upgrading the Paeth path, not enabling SSE.
+- A COMPLETE VALIDATED PATCH implementing this (plus an SSE2 Up-filter row)
+  is checked in at `/opt/lda/skills/lda-libpng-validated-r0.patch`. It
+  passed the full micro certification (train +6%, hidden holdout, all four
+  inputs including the 1x1 boundary, ABI/FFI/behavior/lifecycle/security
+  fences) in a prior run. Apply it with `git apply` as the starting point
+  instead of re-deriving the mechanism; then spend the round on what it does
+  not yet cover (remaining filter rows, row-output copy, end-to-end gap).
 
 ## Confirmed traps
 
