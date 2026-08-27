@@ -153,6 +153,48 @@ class SupervisorDecisionTest(unittest.TestCase):
         self.assertEqual(decision.source, "rules")
         self.assertEqual(decision.action, "continue")
 
+    def _block(self, reason: str) -> None:
+        self.flow.begin_round("contract")
+        self.flow.finish_builder_round("summary")
+        self.flow.record_blocked_round("benchmark", reason)
+
+    def test_improving_near_miss_earns_one_grace(self) -> None:
+        self._block(
+            "benchmark speedup target not met [train] end_to_end/e2e: "
+            "speedup=-0.700% required=1.000% (noise=1.1%)"
+        )
+        self._block(
+            "benchmark speedup target not met [train] end_to_end/e2e: "
+            "speedup=0.690% required=1.000% (noise=1.1%)"
+        )
+        supervisor = self._supervisor()
+        decision = supervisor.decide(supervisor.pulse(), {})
+        self.assertEqual(decision.action, "grant_grace")
+        self.assertTrue(self.flow.grant_grace(decision.reason))
+        self.assertEqual(self.flow.state.stall_count, 1)
+        # Grace is single-use.
+        self.assertFalse(self.flow.grant_grace("again"))
+
+    def test_regression_block_gets_no_grace(self) -> None:
+        self._block("benchmark regression [train] micro/m:boundary: 2.2% slower")
+        self._block("benchmark regression [train] micro/m:boundary: 4.9% slower")
+        supervisor = self._supervisor()
+        decision = supervisor.decide(supervisor.pulse(), {})
+        self.assertNotEqual(decision.action, "grant_grace")
+
+    def test_far_miss_gets_no_grace(self) -> None:
+        self._block(
+            "benchmark speedup target not met [train] end_to_end/e2e: "
+            "speedup=0.100% required=1.000% (noise=1.1%)"
+        )
+        self._block(
+            "benchmark speedup target not met [train] end_to_end/e2e: "
+            "speedup=0.200% required=1.000% (noise=1.1%)"
+        )
+        supervisor = self._supervisor()
+        decision = supervisor.decide(supervisor.pulse(), {})
+        self.assertNotEqual(decision.action, "grant_grace")
+
     def test_records_decision_artifact(self) -> None:
         supervisor = self._supervisor()
         pulse = supervisor.pulse()

@@ -15,6 +15,7 @@ deterministic decision.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -27,7 +28,17 @@ from .sandbox import Sandbox
 from .types import MainlineVerdict, Phase
 
 
-SUPERVISOR_ACTIONS = ("continue", "retarget", "restart_builder", "abort")
+SUPERVISOR_ACTIONS = (
+    "continue",
+    "retarget",
+    "restart_builder",
+    "abort",
+    "grant_grace",
+)
+
+_SPEEDUP_SHORTFALL = re.compile(
+    r"speedup=(-?[0-9.]+)%\s+required=([0-9.]+)%"
+)
 
 
 @dataclass(frozen=True)
@@ -183,6 +194,7 @@ class Supervisor:
         self.budget_usd = budget_usd
         self.trace_remote_provider = trace_remote_provider
         self.recent_window = recent_window
+        self.circuit_breaker_threshold = flow.config.circuit_breaker_threshold
 
     # ------------------------------------------------------------------ pulse
 
@@ -321,12 +333,16 @@ class Supervisor:
                     self.supervisor_prompt.format(pulse=pulse.render())
                 )
                 decision = parse_supervisor_answer(str(answer))
-                if decision.action == "abort":
-                    # An LLM may recommend but not unilaterally end the run.
+                if decision.action in {"abort", "grant_grace"}:
+                    # An LLM may recommend but not unilaterally end the run,
+                    # and stall forgiveness is a rules-only privilege.
                     return SupervisorDecision(
                         action="retarget",
                         contract=decision.contract or rule.contract,
-                        reason=f"llm recommended abort (demoted to retarget): {decision.reason}",
+                        reason=(
+                            f"llm recommended {decision.action} (demoted to "
+                            f"retarget): {decision.reason}"
+                        ),
                         source="llm",
                     )
                 return decision
@@ -361,6 +377,9 @@ class Supervisor:
                 "abort",
                 reason=f"spend ${pulse.spent_usd:.2f} reached budget ${pulse.budget_usd:.2f}",
             )
+        grace = self._near_miss_grace(pulse)
+        if grace is not None:
+            return grace
         repeated = self._repeated_block_source(pulse.recent_blocks)
         if repeated:
             return SupervisorDecision(
@@ -385,6 +404,48 @@ class Supervisor:
                 reason="last round blocked and the builder trace recorded no turns",
             )
         return SupervisorDecision("continue", contract=self.default_contract, reason="on track")
+
+    def _near_miss_grace(self, pulse: RunPulse) -> Optional[SupervisorDecision]:
+        """An improving speedup near-miss earns one stall forgiveness.
+
+        Conditions, all deterministic: one stall away from the circuit
+        breaker; the latest block is a missed speedup target (not a
+        regression or a fence); the measured speedup covers at least half the
+        requirement; and the previous block was worse (regression, or a
+        larger shortfall), so the trajectory is improving.
+        """
+        if pulse.stall_count + 1 < self.circuit_breaker_threshold:
+            return None
+        if not pulse.recent_blocks:
+            return None
+        latest = _SPEEDUP_SHORTFALL.search(pulse.recent_blocks[-1])
+        if latest is None or "target not met" not in pulse.recent_blocks[-1]:
+            return None
+        speedup, required = float(latest.group(1)), float(latest.group(2))
+        if required <= 0 or speedup < required / 2.0:
+            return None
+        improving = True
+        if len(pulse.recent_blocks) >= 2:
+            previous = _SPEEDUP_SHORTFALL.search(pulse.recent_blocks[-2])
+            if previous is not None and "target not met" in pulse.recent_blocks[-2]:
+                improving = (required - speedup) < (
+                    float(previous.group(2)) - float(previous.group(1))
+                )
+        if not improving:
+            return None
+        return SupervisorDecision(
+            "grant_grace",
+            contract=(
+                f"The last candidate reached {speedup:+.2f}% against a "
+                f"{required:.2f}% target on the same benchmark - close the "
+                f"remaining {required - speedup:.2f}% gap with a further "
+                "mechanism on top of the retained work; do not discard it."
+            ),
+            reason=(
+                f"improving near-miss: {speedup:+.2f}% of {required:.2f}% "
+                "required; one grace round granted"
+            ),
+        )
 
     @staticmethod
     def _repeated_block_source(blocks: tuple[str, ...]) -> str:

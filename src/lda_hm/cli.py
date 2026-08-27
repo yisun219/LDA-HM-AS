@@ -266,6 +266,8 @@ def main(argv: list[str] | None = None) -> int:
                     break
                 if decision.action == "restart_builder":
                     execution.restart_builder()
+                elif decision.action == "grant_grace":
+                    flow.grant_grace(decision.reason)
                 contract = decision.contract or str(control.get("contract") or args.contract)
                 stages.review_round(contract=contract)
             else:

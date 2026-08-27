@@ -259,6 +259,29 @@ class HumanizeFlow:
             self._move(Phase.IMPLEMENTATION)
         return self.state.phase
 
+    def grant_grace(self, reason: str) -> bool:
+        """One-per-run stall forgiveness for an improving near-miss.
+
+        The circuit breaker cannot see trajectories; the Supervisor can. A
+        round that misses a speedup target by a hair while the measured gap
+        is shrinking is progress, not drift. Auditable and usable once.
+        """
+        if not reason.strip():
+            raise ValueError("grace reason is required")
+        if self.state.metadata.get("grace_granted"):
+            return False
+        if self.state.stall_count <= 0:
+            return False
+        self.state.metadata["grace_granted"] = True
+        self.state.stall_count -= 1
+        self.state.drift_recovery_required = False
+        self.store.write_json(
+            "supervisor-grace.json",
+            {"reason": reason, "round": self.state.current_round},
+        )
+        self._save()
+        return True
+
     def supervisor_stop(self, reason: str) -> None:
         """External supervision endpoint: abort a run from any live phase."""
         if not reason.strip():
