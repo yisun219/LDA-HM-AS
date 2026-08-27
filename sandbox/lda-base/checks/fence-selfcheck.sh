@@ -42,8 +42,8 @@ test "$hash_small_a" != "$hash_large" || fail "behavior hash ignores content"
 note "behavior hash is deterministic and content-sensitive"
 
 # Probe 4: the in-sandbox timer must produce plausible, repeatable readings.
-t1="$(lda_bench_consumer micro selfcheck baseline "$fixtures/small.png" 2000 "$consumer" | sed -n 's/^LDA_BENCH //p' | python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
-t2="$(lda_bench_consumer micro selfcheck baseline "$fixtures/small.png" 2000 "$consumer" | sed -n 's/^LDA_BENCH //p' | python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
+t1="$(lda_bench_consumer micro selfcheck baseline "$fixtures/small.png" 2000 "$consumer" | sed -n 's/^LDA_BENCH\[[^]]*\] //p' | python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
+t2="$(lda_bench_consumer micro selfcheck baseline "$fixtures/small.png" 2000 "$consumer" | sed -n 's/^LDA_BENCH\[[^]]*\] //p' | python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
 python3 - "$t1" "$t2" <<'PY'
 import sys
 a, b = float(sys.argv[1]), float(sys.argv[2])

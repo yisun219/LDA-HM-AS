@@ -85,6 +85,13 @@ def main(argv: list[str] | None = None) -> int:
     init = sub.add_parser("init-card", help="validate and install a task card")
     init.add_argument("workspace", type=Path)
     init.add_argument("card", type=Path)
+    init.add_argument(
+        "--allow-unranked",
+        action="store_true",
+        help="accept a package outside the ranked top-30 / pilot list",
+    )
+    listing = sub.add_parser("candidates", help="list ranked optimization candidates")
+    listing.add_argument("--direction", type=int, default=None)
     run = sub.add_parser("run", help="run the full LDA flow in E2B")
     run.add_argument("workspace", type=Path)
     run.add_argument("--run-id", default=None)
@@ -102,8 +109,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "candidates":
+            from .candidates import load_candidates
+
+            for candidate in load_candidates():
+                if args.direction is not None and candidate.direction != args.direction:
+                    continue
+                print(f"{candidate.score:7.2f}  d{candidate.direction}  {candidate.package}")
+            return 0
+
         if args.command == "init-card":
             card = _card(args.card)
+            if not args.allow_unranked:
+                from .candidates import is_sanctioned
+
+                if not is_sanctioned(card.package.package):
+                    raise RuntimeError(
+                        f"package {card.package.package!r} is neither the pilot nor a "
+                        "ranked top-30 candidate; pass --allow-unranked to override"
+                    )
             args.workspace.mkdir(parents=True, exist_ok=True)
             target = args.workspace / ".lda-hm" / "task-card.json"
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -219,7 +243,13 @@ def main(argv: list[str] | None = None) -> int:
             trace_remote_provider=execution.builder_trace_remote,
         )
 
+        sandbox_ttl = int(os.getenv("LDA_SANDBOX_TIMEOUT", "14400"))
         while flow.state.phase.value not in {"complete", "stop", "unexpected"}:
+            # Re-arm the sandbox deadline every round so a long run is never
+            # killed by the connect-time TTL.
+            refresh = getattr(sandbox, "refresh_timeout", None)
+            if callable(refresh):
+                refresh(sandbox_ttl)
             control = _read_control(flow)
             phase = flow.state.phase.value
             if phase in {"implementation", "drift_recovery"}:

@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if test -n "${LDA_ABI_FENCE_COMMAND:-}"; then
-  exec bash -lc "$LDA_ABI_FENCE_COMMAND"
-fi
 . /opt/lda/harness/checks/libpng-common.sh
 /opt/lda/harness/checks/ensure-libpng-candidate.sh
 baseline="$(lda_libpng_library baseline)"
@@ -29,6 +26,24 @@ diff -u "$tmp/baseline.elf" "$tmp/candidate.elf"
 nm -D --defined-only --format=posix "$baseline" | awk '{print $1, $2}' | LC_ALL=C sort >"$tmp/baseline.symbols"
 nm -D --defined-only --format=posix "$candidate" | awk '{print $1, $2}' | LC_ALL=C sort >"$tmp/candidate.symbols"
 diff -u "$tmp/baseline.symbols" "$tmp/candidate.symbols"
+
+# Drop-in means the runtime and packaging dependency surface may not grow: a
+# candidate that links one extra shared library or adds a Depends entry is no
+# longer installable everywhere the baseline was.
+for mode in baseline candidate; do
+  library="${!mode}"
+  readelf -d "$library" | awk '/NEEDED/ {print $5}' | LC_ALL=C sort >"$tmp/$mode.needed"
+done
+diff -u "$tmp/baseline.needed" "$tmp/candidate.needed"
+baseline_deb="$(cat /opt/lda/baseline/runtime-deb.path)"
+candidate_deb="$(cat /opt/lda/candidate/runtime-deb.path)"
+for field in Depends Pre-Depends Provides Breaks Conflicts; do
+  test "$(dpkg-deb -f "$baseline_deb" "$field")" = \
+       "$(dpkg-deb -f "$candidate_deb" "$field")" || {
+    echo "candidate package $field changed" >&2
+    exit 1
+  }
+done
 
 for mode in baseline candidate; do
   root="${mode}_root"

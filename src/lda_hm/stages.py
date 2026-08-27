@@ -107,8 +107,15 @@ class HumanizeStages:
                 f"planning/candidate-{round_number + 1}.md", plan + "\n"
             )
         if not converged:
-            raise RuntimeError(
-                f"plan did not converge within {max_convergence_rounds} rounds"
+            # Autonomy over analyst perfectionism: proceed with the last
+            # candidate, record the outstanding objections durably, and let
+            # the review/drift machinery judge the plan by its results.
+            self.flow.store.write_json(
+                "planning/non-convergence.json",
+                {
+                    "max_convergence_rounds": max_convergence_rounds,
+                    "note": "proceeded with the final candidate plan",
+                },
             )
         self.flow.record_plan(plan, goal_tracker=self._goal_tracker(plan))
         return plan
@@ -173,11 +180,21 @@ class HumanizeStages:
                 },
             )
             if not all(result.passed for result in fence_results):
+                failed = [result for result in fence_results if not result.passed]
+                # Transport death (E2B exit 125) is evidence about the
+                # sandbox, never about the candidate.
+                transport = all(
+                    any(
+                        command.exit_code == 125
+                        for command in result.command_results
+                    )
+                    for result in failed
+                    if result.command_results
+                ) and any(result.command_results for result in failed)
                 return self._blocked(
-                    "fence",
-                    "; ".join(
-                        result.reason for result in fence_results if not result.passed
-                    ),
+                    "sandbox-transport" if transport else "fence",
+                    "; ".join(result.reason for result in failed),
+                    infra=transport,
                 )
         if self.gate_runner is not None:
             if self.gate_context_factory is None:
@@ -243,7 +260,35 @@ class HumanizeStages:
     def _prior_feedback(self) -> str:
         if self.flow.state.current_round == 0:
             return ""
-        prior = self.flow.store.round_dir(self.flow.state.current_round - 1)
+        previous_round = self.flow.state.current_round - 1
+        # A finalize reopen (failed certification) or code-review findings
+        # re-enter implementation from root-level artifacts, not from the
+        # prior round directory; without this the Builder never learns why.
+        for name, render in (
+            (
+                "finalize-blocked.json",
+                lambda value: f"finalize reopened: {value.get('reason', '')}",
+            ),
+            (
+                "code-review.json",
+                lambda value: "code review findings: "
+                + "; ".join(value.get("findings") or ())
+                if value.get("findings")
+                else "",
+            ),
+        ):
+            path = self.flow.store.root / name
+            if not path.is_file():
+                continue
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if value.get("round") == previous_round:
+                rendered = render(value)
+                if rendered:
+                    return rendered
+        prior = self.flow.store.round_dir(previous_round)
         for name in ("blocked.json", "review.json"):
             path = prior / name
             if not path.is_file():

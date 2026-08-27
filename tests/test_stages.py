@@ -75,7 +75,7 @@ class StageTopologyTest(unittest.TestCase):
             self.assertEqual(len(analyst.opened), 2)
             self.assertEqual(len(reviewer.opened), 1)
 
-    def test_plan_must_converge(self) -> None:
+    def test_non_convergence_proceeds_with_durable_record(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             topology = SessionTopology(
@@ -90,9 +90,12 @@ class StageTopologyTest(unittest.TestCase):
             flow.begin("new flow")
             stages = HumanizeStages(flow, topology)
             idea = stages.gen_idea("new flow")
-            with self.assertRaises(RuntimeError):
-                stages.gen_plan(idea, max_convergence_rounds=1)
-            self.assertEqual(flow.state.phase, Phase.PLAN)
+            stages.gen_plan(idea, max_convergence_rounds=1)
+            # Autonomy over analyst perfectionism: the run proceeds with the
+            # last candidate and records the non-convergence durably.
+            self.assertEqual(flow.state.phase, Phase.IMPLEMENTATION)
+            record = flow.store.root / "planning" / "non-convergence.json"
+            self.assertTrue(record.is_file())
 
     def test_complete_review_requires_explicit_unblocked_protocol(self) -> None:
         parsed = HumanizeStages._review_result(

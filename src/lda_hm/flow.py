@@ -225,7 +225,10 @@ class HumanizeFlow:
 
     def record_code_review(self, findings: tuple[str, ...]) -> Phase:
         self._require(Phase.CODE_REVIEW)
-        self.store.write_json("code-review.json", {"findings": list(findings)})
+        self.store.write_json(
+            "code-review.json",
+            {"findings": list(findings), "round": self.state.current_round},
+        )
         if findings:
             self.state.current_round += 1
             self._move(Phase.IMPLEMENTATION)
@@ -244,7 +247,10 @@ class HumanizeFlow:
         self._require(Phase.FINALIZE)
         if not reason.strip():
             raise ValueError("finalize block reason is required")
-        self.store.write_json("finalize-blocked.json", {"reason": reason})
+        self.store.write_json(
+            "finalize-blocked.json",
+            {"reason": reason, "round": self.state.current_round},
+        )
         self.state.current_round += 1
         if self.state.current_round >= self.config.max_iterations:
             self.state.terminal_reason = TerminalReason.MAX_ITER

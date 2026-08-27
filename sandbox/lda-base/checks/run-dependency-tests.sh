@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if test -n "${LDA_DEPENDENCY_TEST_COMMAND:-}"; then
-  exec bash -lc "$LDA_DEPENDENCY_TEST_COMMAND"
-fi
 . /opt/lda/harness/checks/libpng-common.sh
 fixture=/opt/lda/fixtures/libpng/large.png
 libdir="$(lda_libpng_libdir candidate)"

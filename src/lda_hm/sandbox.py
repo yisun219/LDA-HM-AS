@@ -81,7 +81,8 @@ class E2BSandbox:
 
     @staticmethod
     def configure_shared_gateway() -> None:
-        if os.getenv("E2B_API_URL") != os.getenv("E2B_SANDBOX_URL"):
+        api_url = os.getenv("E2B_API_URL")
+        if not api_url or api_url != os.getenv("E2B_SANDBOX_URL"):
             return
         try:
             from e2b.connection_config import ConnectionConfig  # type: ignore
@@ -140,18 +141,10 @@ class E2BSandbox:
                 "LDA_AGENT_BACKEND_REVIEWER",
                 "LDA_AGENT_BACKEND_SUPERVISOR",
                 "LDA_AGENT_THINKING",
-                "LDA_BASELINE_TEST_COMMAND",
-                "LDA_DEPENDENCY_TEST_COMMAND",
-                "LDA_ABI_FENCE_COMMAND",
-                "LDA_FFI_FENCE_COMMAND",
-                "LDA_BEHAVIOR_FENCE_COMMAND",
-                "LDA_PACKAGE_LIFECYCLE_COMMAND",
-                "LDA_SECURITY_FENCE_COMMAND",
-                "LDA_RESULT_EQUIVALENCE_COMMAND",
-                "LDA_MICRO_BASELINE_COMMAND",
-                "LDA_MICRO_BENCHMARK_COMMAND",
-                "LDA_END_TO_END_BASELINE_COMMAND",
-                "LDA_END_TO_END_BENCHMARK_COMMAND",
+                # Fence/benchmark override variables are deliberately NOT
+                # forwarded: one exported host variable must never be able to
+                # silently replace a fence in production or certification
+                # sandboxes.
             )
             if (value := os.getenv(name))
         }
@@ -240,6 +233,32 @@ class E2BSandbox:
         kill = getattr(self.client, "kill", None)
         if callable(kill):
             kill()
+
+    def refresh_timeout(self, timeout_seconds: int) -> bool:
+        """Re-arm the sandbox deadline so a long run outlives the default TTL."""
+        set_timeout = getattr(self.client, "set_timeout", None)
+        if not callable(set_timeout):
+            return False
+        try:
+            set_timeout(timeout_seconds)
+            return True
+        except Exception:
+            return False
+
+    def sibling(self) -> "E2BSandbox":
+        """A second client connection to the same sandbox.
+
+        The BuilderWatchdog polls while the main thread is blocked inside a
+        long agent command; sharing one client would make the watchdog either
+        serialized (blind) or thread-unsafe. Never call close() on a sibling:
+        the sandbox is owned by the primary connection.
+        """
+        try:
+            from e2b import Sandbox as E2BSdkSandbox  # type: ignore
+        except ImportError as error:
+            raise SandboxUnavailable("E2B SDK is not installed") from error
+        client = E2BSdkSandbox.connect(self.sandbox_id)
+        return E2BSandbox(client, sandbox_id=self.sandbox_id, cwd=self.cwd)
 
     def bootstrap_assets(self, root: Path) -> None:
         """Overlay the checked-in harness/skills into the running template.

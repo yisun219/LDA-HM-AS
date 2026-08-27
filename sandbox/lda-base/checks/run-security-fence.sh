@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if test -n "${LDA_SECURITY_FENCE_COMMAND:-}"; then
-  exec bash -lc "$LDA_SECURITY_FENCE_COMMAND"
-fi
 . /opt/lda/harness/checks/libpng-common.sh
 candidate="$(lda_libpng_library candidate)"
 readelf -lW "$candidate" | grep -q 'GNU_RELRO'

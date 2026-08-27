@@ -68,6 +68,72 @@ class BenchmarkAnalysisTest(unittest.TestCase):
         self.assertEqual(samples[0].input, "small")
         self.assertAlmostEqual(samples[0].seconds, 1.25)
 
+    def test_nonce_declaration_rejects_forged_lines(self) -> None:
+        genuine = '{"input":"small","seconds":2.0,"iterations":1,"cpus":2}'
+        forged_bare = '{"input":"small","seconds":0.01,"iterations":1}'
+        forged_tag = '{"input":"small","seconds":0.01,"iterations":1}'
+        stdout = "\n".join(
+            [
+                "LDA_BENCH_NONCE abc123",
+                # A consumer process can print anything, but it cannot know
+                # the nonce, so its lines are ignored.
+                "LDA_BENCH " + forged_bare,
+                "LDA_BENCH[evil] " + forged_tag,
+                "LDA_BENCH_NONCE hijack",
+                "LDA_BENCH[abc123] " + genuine,
+            ]
+        )
+        samples = parse_bench_samples(stdout)
+        self.assertEqual(len(samples), 1)
+        self.assertAlmostEqual(samples[0].seconds, 2.0)
+        self.assertEqual(samples[0].cpus, 2)
+
+    def test_invalid_seconds_are_skipped(self) -> None:
+        stdout = "\n".join(
+            [
+                'LDA_BENCH {"input":"a","seconds":0}',
+                'LDA_BENCH {"input":"b","seconds":-1}',
+                'LDA_BENCH not-json',
+                'LDA_BENCH {"input":"c","seconds":1.5}',
+            ]
+        )
+        samples = parse_bench_samples(stdout)
+        self.assertEqual([sample.input for sample in samples], ["c"])
+
+    def test_steal_fraction_normalizes_by_cpu_count(self) -> None:
+        line = (
+            "LDA_BENCH "
+            + json.dumps(
+                {
+                    "input": "small",
+                    "seconds": 10.0,
+                    "iterations": 1,
+                    "steal_ticks": 400,
+                    "cpus": 8,
+                    "hash": "h",
+                }
+            )
+        )
+        report = BenchmarkReport(
+            "micro",
+            "demo",
+            (
+                BenchmarkObservation(
+                    layer="micro",
+                    name="demo",
+                    repetition=0,
+                    exit_code=0,
+                    duration_seconds=10.0,
+                    sandbox_id="fake",
+                    samples=parse_bench_samples(line),
+                ),
+            ),
+        )
+        spec = BenchmarkSpec("demo", "micro", ("./micro",), repetitions=1)
+        comparison = compare_paired(spec, report, report)
+        # 400 ticks = 4 steal-seconds machine-wide over 10s on 8 vCPUs -> 5%.
+        self.assertAlmostEqual(comparison.max_steal_fraction, 0.05)
+
     def test_verdict_uses_sandbox_samples_not_host_wall_time(self) -> None:
         baseline = _report("-baseline", [{"small": 1.00}, {"small": 1.01}, {"small": 0.99}], "baseline")
         candidate = _report("-candidate", [{"small": 0.94}, {"small": 0.95}, {"small": 0.93}], "candidate")

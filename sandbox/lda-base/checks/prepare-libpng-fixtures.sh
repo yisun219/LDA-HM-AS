@@ -53,6 +53,26 @@ save(
     (512, 512),
     [(rng.randrange(256), rng.randrange(256), rng.randrange(256), 255) for _ in range(512 * 512)],
 )
+
+# End-to-end thumbnail deck: distinct full-size images for the GUI-stack
+# (gdk-pixbuf) workload, so repeated passes decode varied content.
+deck = root / "e2e-deck"
+deck.mkdir(exist_ok=True)
+for index in range(24):
+    image = Image.new("RGBA", (1024, 1024))
+    image.putdata(
+        [
+            (
+                ((x * a) + index * 37) & 255,
+                ((y * b) ^ (index * 11)) & 255,
+                ((x + y + index) * c) & 255,
+                255,
+            )
+            for y in range(1024)
+            for x in range(1024)
+        ]
+    )
+    image.save(deck / f"deck-{index:02d}.png", format="PNG", compress_level=6)
 PY
 
 if test "${LDA_FIXTURE_PNGS_ONLY:-0}" = 1; then
@@ -156,6 +176,7 @@ const { chromium } = require('playwright');
   // Warmup navigation: browser startup, connection setup, JIT. Not measured.
   await page.goto(base + '?r=warmup', {waitUntil: 'networkidle'});
   const renders = [];
+  const hashes = [];
   for (let i = 0; i < rounds; i++) {
     await page.goto('about:blank');
     const t0 = process.hrtime.bigint();
@@ -164,8 +185,29 @@ const { chromium } = require('playwright');
     if (!ready) throw new Error('PNG render incomplete');
     const t1 = process.hrtime.bigint();
     renders.push(Number(t1 - t0) / 1e9);
+    // Content hash of the actually rendered pixels, computed OUTSIDE the
+    // timed window: equivalence must be about what the user saw.
+    const hash = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('img'));
+      let h1 = 0x811c9dc5 >>> 0;
+      let h2 = 0;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', {willReadFrequently: true});
+      for (const img of imgs) {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        for (let i = 0; i < data.length; i += 7) {
+          h1 = Math.imul((h1 ^ data[i]) >>> 0, 0x01000193) >>> 0;
+          h2 = (h2 + data[i]) >>> 0;
+        }
+      }
+      return h1.toString(16) + '-' + h2.toString(16);
+    });
+    hashes.push(hash);
   }
-  console.log(JSON.stringify({renders: renders, images: 24}));
+  console.log(JSON.stringify({renders: renders, hashes: hashes, images: 24}));
   await browser.close();
 })();
 JS

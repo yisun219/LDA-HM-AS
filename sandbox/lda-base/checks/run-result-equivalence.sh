@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if test -n "${LDA_RESULT_EQUIVALENCE_COMMAND:-}"; then
-  exec bash -lc "$LDA_RESULT_EQUIVALENCE_COMMAND"
-fi
 . /opt/lda/harness/checks/libpng-common.sh
 fixture=/opt/lda/fixtures/libpng/incompressible.png
 consumer=/opt/lda/fixtures/libpng/libpng-consumer

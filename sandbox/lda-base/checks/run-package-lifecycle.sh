@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if test -n "${LDA_PACKAGE_LIFECYCLE_COMMAND:-}"; then
-  exec bash -lc "$LDA_PACKAGE_LIFECYCLE_COMMAND"
-fi
 . /opt/lda/harness/checks/libpng-common.sh
 /opt/lda/harness/checks/ensure-libpng-candidate.sh
 baseline_deb="$(cat /opt/lda/baseline/runtime-deb.path)"

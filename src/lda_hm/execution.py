@@ -147,8 +147,20 @@ def paired_with_retry(
     for attempt in range(2):
         baseline, candidate = runner.run_paired(spec, envs=envs)
         if not baseline.successful or not candidate.successful:
+            observations = [
+                observation
+                for report in (baseline, candidate)
+                for observation in report.observations
+            ]
+            exit_codes = {observation.exit_code for observation in observations}
+            if 125 in exit_codes:
+                raise BenchmarkEnvironmentError(
+                    f"sandbox transport died during paired benchmark "
+                    f"{spec.layer}/{spec.name} (exit=125)"
+                )
             raise RuntimeError(
                 f"paired benchmark failed: {spec.layer}/{spec.name}: "
+                f"exits={sorted(exit_codes)}: "
                 + (candidate.observations[-1].stderr_tail if candidate.observations else "")[-500:]
             )
         comparison = compare_paired(spec, baseline, candidate)
@@ -227,12 +239,29 @@ class LDAExecution:
         return f"/opt/lda/agent-state/traces/{self.builder_session_name()}.jsonl"
 
     def builder_guard(self):
-        """Live watchdog over one Builder turn (imported lazily to avoid cycles)."""
+        """Live watchdog over one Builder turn (imported lazily to avoid cycles).
+
+        The watchdog gets its own connection to the sandbox when the adapter
+        supports it: the main thread is blocked inside the agent command for
+        up to an hour, and a shared client would leave the watchdog blind.
+        It also mirrors the live turn trace to the host so the Builder cannot
+        quietly rewrite its own history before checkpoint.
+        """
         from .supervision import BuilderWatchdog
 
+        watch_sandbox = self.sandbox
+        sibling = getattr(self.sandbox, "sibling", None)
+        if callable(sibling):
+            try:
+                watch_sandbox = sibling()
+            except Exception:
+                watch_sandbox = self.sandbox
+        session = self.builder_session_name()
         return BuilderWatchdog(
-            self.sandbox,
+            watch_sandbox,
             stall_seconds=self.flow.config.builder_stall_minutes * 60,
+            mirror_remote=f"/opt/lda/agent-state/traces/{session}.turn.jsonl",
+            mirror_local=self.flow.store.root / "raw-traces" / f"live-{session}.turn.jsonl",
         )
 
     def restart_builder(self) -> str:
@@ -253,9 +282,17 @@ class LDAExecution:
         release = self.sandbox.run(("sh", "-c", ". /etc/os-release && printf %s \"$VERSION_ID\""))
         if not release.ok or release.stdout.strip() != "26.04":
             raise SandboxUnavailable("lda-base must run Ubuntu 26.04")
-        cpu = self.sandbox.run(("sh", "-c", "lscpu | sed -n 's/^Model:[[:space:]]*//p'"))
-        if not cpu.ok or cpu.stdout.strip() != "207":
-            raise SandboxUnavailable("sandbox CPU model is not the Xeon 6548Y+ compatible model 207")
+        # The target CPU (card metadata, e.g. Xeon Gold 6548Y+) is an
+        # optimization TARGET for architecture-specific work, not an
+        # admission gate: benchmarks are self-paired on whatever host the
+        # sandbox landed on, so heterogeneous placement cannot corrupt a
+        # verdict. The actual model is recorded for attribution.
+        cpu = self.sandbox.run(
+            ("sh", "-c", "lscpu | sed -n 's/^Model name:[[:space:]]*//p'; lscpu | sed -n 's/^Model:[[:space:]]*//p'")
+        )
+        self.flow.state.metadata["sandbox_cpu"] = (
+            " ".join(cpu.stdout.split()) if cpu.ok else "unknown"
+        )
         baseline_check = self.sandbox.run(self.card.baseline.verification_command(), timeout_seconds=300)
         if not baseline_check.ok:
             raise SandboxUnavailable(
@@ -755,7 +792,12 @@ class LDAExecution:
                     "min_speedup_percent": spec.holdout_min_speedup_percent,
                 }
             comparisons.append(entry)
-        return {"sandbox_id": sandbox.sandbox_id, "comparisons": comparisons}
+        cpu = sandbox.run(("sh", "-c", "lscpu | sed -n 's/^Model name:[[:space:]]*//p'"))
+        return {
+            "sandbox_id": sandbox.sandbox_id,
+            "cpu": " ".join(cpu.stdout.split()) if cpu.ok else "unknown",
+            "comparisons": comparisons,
+        }
 
     @staticmethod
     def default_gate_context(flow: HumanizeFlow) -> GateContext:

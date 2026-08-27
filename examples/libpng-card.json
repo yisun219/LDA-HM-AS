@@ -97,6 +97,24 @@
   ],
   "end_to_end_benchmarks": [
     {
+      "name": "pixbuf-thumbnail-e2e",
+      "layer": "end_to_end",
+      "command": [
+        "/opt/lda/harness/checks/run-pixbuf-e2e.sh"
+      ],
+      "baseline_command": [
+        "/opt/lda/harness/checks/run-pixbuf-e2e.sh",
+        "baseline"
+      ],
+      "repetitions": 5,
+      "timeout_seconds": 1200,
+      "inputs": [
+        "pixbuf-thumbnail"
+      ],
+      "max_regression_percent": 3.0,
+      "min_speedup_percent": 1.0
+    },
+    {
       "name": "browser-render-e2e",
       "layer": "end_to_end",
       "command": [

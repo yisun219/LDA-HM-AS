@@ -18,6 +18,7 @@ import json
 import threading
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .flow import HumanizeFlow
@@ -204,6 +205,25 @@ class Supervisor:
                     feedback.append(f"round {number} {verdict}: {findings or 'no blocking findings'}")
             except (OSError, json.JSONDecodeError):
                 continue
+        for name, label in (
+            ("finalize-blocked.json", "finalize [certification]"),
+            ("code-review.json", "code review"),
+        ):
+            path = self.flow.store.root / name
+            if not path.is_file():
+                continue
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            round_number = value.get("round")
+            if (
+                isinstance(round_number, int)
+                and round_number >= state.current_round - self.recent_window
+            ):
+                text = value.get("reason") or "; ".join(value.get("findings") or ())
+                if text:
+                    feedback.append(f"round {round_number} {label}: {text}")
         return RunPulse(
             round=state.current_round,
             phase=state.phase.value,
@@ -420,6 +440,8 @@ class BuilderWatchdog:
             "-c",
             "pkill -f 'claude|codex|(^| )pi ' || true",
         ),
+        mirror_remote: str = "",
+        mirror_local: Optional[Path] = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.sandbox = sandbox
@@ -427,6 +449,11 @@ class BuilderWatchdog:
         self.poll_seconds = poll_seconds
         self.size_command = size_command
         self.kill_command = kill_command
+        # Live trace custody: each poll snapshots the growing turn file to
+        # the host, so an agent that later sanitizes its own trace has
+        # already been observed.
+        self.mirror_remote = mirror_remote
+        self.mirror_local = mirror_local
         self.clock = clock
         self.killed = False
         self.last_size = -1
@@ -452,9 +479,18 @@ class BuilderWatchdog:
         except ValueError:
             return -1
 
+    def _mirror(self) -> None:
+        if not self.mirror_remote or self.mirror_local is None:
+            return
+        try:
+            self.sandbox.get(self.mirror_remote, self.mirror_local)
+        except Exception:
+            pass
+
     def _watch(self) -> None:
         last_change = self.clock()
         while not self._stop.wait(self.poll_seconds):
+            self._mirror()
             size = self._activity_size()
             if size < 0:
                 # Blind watchdogs do not shoot.

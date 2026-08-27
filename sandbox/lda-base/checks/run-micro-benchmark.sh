@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 mode="${1:-candidate}"
-if test "$mode" = baseline && test -n "${LDA_MICRO_BASELINE_COMMAND:-}"; then
-  exec bash -lc "$LDA_MICRO_BASELINE_COMMAND"
-fi
-if test "$mode" = candidate && test -n "${LDA_MICRO_BENCHMARK_COMMAND:-}"; then
-  exec bash -lc "$LDA_MICRO_BENCHMARK_COMMAND"
-fi
 case "$mode" in baseline|candidate) ;; *) exit 64 ;; esac
 . /opt/lda/harness/checks/libpng-common.sh
 

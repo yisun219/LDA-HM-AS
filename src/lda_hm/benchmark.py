@@ -13,7 +13,16 @@ from .task_card import BenchmarkSpec
 # Machine-readable sample marker emitted by in-sandbox benchmark scripts.
 # Every verdict is computed from these samples; host wall time (which includes
 # gateway transport) is recorded but never judged.
+#
+# Anti-forgery: candidate library code runs inside the measured consumer
+# process and could print fake marker lines to stdout. Scripts therefore
+# declare a per-invocation nonce first (LDA_BENCH_NONCE <hex>, generated in
+# the script's own shell, invisible to the consumer process) and tag every
+# genuine sample as LDA_BENCH[<hex>]. When a nonce is declared, untagged or
+# wrongly tagged lines are ignored. The bare legacy marker is honored only
+# when no nonce was declared.
 BENCH_MARKER = "LDA_BENCH "
+BENCH_NONCE_MARKER = "LDA_BENCH_NONCE "
 
 
 class BenchmarkEnvironmentError(RuntimeError):
@@ -51,25 +60,47 @@ class BenchSample:
     output_hash: str = ""
     load1: float = 0.0
     steal_ticks: int = 0
+    cpus: int = 1
 
 
 def parse_bench_samples(stdout: str) -> tuple[BenchSample, ...]:
-    samples: list[BenchSample] = []
-    for raw in stdout.splitlines():
+    lines = stdout.splitlines()
+    nonce = ""
+    for raw in lines:
         line = raw.strip()
-        if not line.startswith(BENCH_MARKER):
+        if line.startswith(BENCH_NONCE_MARKER):
+            # First declaration wins; a consumer process cannot pre-empt the
+            # script's own first line of output.
+            nonce = line[len(BENCH_NONCE_MARKER):].strip()
+            break
+    marker = f"LDA_BENCH[{nonce}] " if nonce else BENCH_MARKER
+    samples: list[BenchSample] = []
+    for raw in lines:
+        line = raw.strip()
+        if not line.startswith(marker):
             continue
-        value = json.loads(line[len(BENCH_MARKER):])
-        samples.append(
-            BenchSample(
+        try:
+            value = json.loads(line[len(marker):])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(value, dict):
+            continue
+        try:
+            seconds = float(value["seconds"])
+            sample = BenchSample(
                 input=str(value["input"]),
-                seconds=float(value["seconds"]),
+                seconds=seconds,
                 iterations=int(value.get("iterations", 0)),
                 output_hash=str(value.get("hash", "")),
                 load1=float(value.get("load1", 0.0)),
                 steal_ticks=int(value.get("steal_ticks", 0)),
+                cpus=max(1, int(value.get("cpus", 1))),
             )
-        )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if seconds <= 0:
+            continue
+        samples.append(sample)
     return tuple(samples)
 
 
@@ -163,6 +194,9 @@ class PairedComparison:
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["per_input"] = {name: asdict(entry) for name, entry in self.per_input.items()}
+        for key in ("ratio_ci95_lower", "ratio_ci95_upper", "speedup_ci95_lower_percent"):
+            if not math.isfinite(value[key]):
+                value[key] = None
         return value
 
 
@@ -264,9 +298,11 @@ def compare_paired(
         ratio_ci95_lower=ratio_ci95_lower,
         ratio_ci95_upper=ratio_ci95_upper,
         speedup_ci95_lower_percent=speedup_ci95_lower_percent,
+        # Steal ticks come from the machine-wide /proc/stat aggregate, so the
+        # per-sample fraction normalizes by vCPU count as well as wall time.
         max_steal_fraction=max(
             (
-                (sample.steal_ticks / 100.0) / sample.seconds
+                (sample.steal_ticks / 100.0) / (sample.seconds * sample.cpus)
                 for sample in all_samples
                 if sample.seconds > 0
             ),

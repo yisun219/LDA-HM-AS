@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if test -n "${LDA_FFI_FENCE_COMMAND:-}"; then
-  exec bash -lc "$LDA_FFI_FENCE_COMMAND"
-fi
 . /opt/lda/harness/checks/libpng-common.sh
 fixture=/opt/lda/fixtures/libpng/small.png
 consumer=/opt/lda/fixtures/libpng/libpng-consumer

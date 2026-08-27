@@ -45,8 +45,9 @@ class FlowConfig:
     require_pushed_rounds: bool = False
     large_file_line_limit: int = 2000
     # Live supervision: a Builder turn whose trace stops growing for this many
-    # minutes is killed and judged as a failed round.
-    builder_stall_minutes: int = 15
+    # minutes is killed and judged as a failed round. Generous by default: a
+    # single silent dpkg-buildpackage inside an agent turn can run long.
+    builder_stall_minutes: int = 30
 
     def __post_init__(self) -> None:
         if self.max_iterations < 1:

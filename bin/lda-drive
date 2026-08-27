@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Production driver: keep one `lda run` alive across transient failures.
+#
+# Every retry creates a fresh Sandbox and resumes the same run id from the
+# durable results store (that is the designed recovery path). Consecutive
+# fast failures are capped; a run that survived >10 minutes resets the cap.
+set -uo pipefail
+
+WORKSPACE="${1:?usage: lda-drive WORKSPACE RUN_ID [extra lda run args...]}"
+RUN_ID="${2:?usage: lda-drive WORKSPACE RUN_ID [extra lda run args...]}"
+shift 2
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+RESULTS_ROOT="${LDA_RESULTS_ROOT:-/fact_data/yisun/Linux-Development-Agent-Runs}"
+LOG="$RESULTS_ROOT/driver-$RUN_ID.log"
+export PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONUNBUFFERED=1
+
+attempts=0
+while true; do
+  started=$(date +%s)
+  printf '%s driver: starting attempt %s\n' "$(date -Is)" "$attempts" >>"$LOG"
+  python3 -m lda_hm.cli run "$WORKSPACE" --run-id "$RUN_ID" \
+    --results-root "$RESULTS_ROOT" "$@" >>"$LOG" 2>&1
+  code=$?
+  elapsed=$(( $(date +%s) - started ))
+  if [ "$code" -eq 0 ]; then
+    printf '%s driver: run exited cleanly after %ss\n' "$(date -Is)" "$elapsed" >>"$LOG"
+    break
+  fi
+  [ "$elapsed" -gt 600 ] && attempts=0
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 8 ]; then
+    printf '%s driver: giving up after %s consecutive fast failures\n' \
+      "$(date -Is)" "$attempts" >>"$LOG"
+    exit 1
+  fi
+  printf '%s driver: exit=%s after %ss; retrying in 90s\n' \
+    "$(date -Is)" "$code" "$elapsed" >>"$LOG"
+  sleep 90
+done

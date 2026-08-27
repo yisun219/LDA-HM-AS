@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "lda-hm"
 version = "0.1.0"
 description = "A runtime-neutral Humanize-inspired agent flow"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
