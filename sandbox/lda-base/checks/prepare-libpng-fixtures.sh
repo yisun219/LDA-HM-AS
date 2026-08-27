@@ -80,6 +80,79 @@ if test "${LDA_FIXTURE_PNGS_ONLY:-0}" = 1; then
   exit 0
 fi
 
+# GUI-stack consumer: decodes through the real gdk-pixbuf loader pipeline
+# (the code path GTK applications use), hashes the decoded pixels, and prints
+# one FNV digest. The installed runtime library is bound via dlopen with
+# hand-declared prototypes, so no -dev packages are needed and the pinned
+# inventory is untouched.
+cat >"$root/pixbuf-consumer.c" <<'C'
+#include <dlfcn.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct { uint32_t domain; int code; char *message; } GErrorMin;
+typedef void *(*new_from_file_fn)(const char *, GErrorMin **);
+typedef unsigned char *(*get_pixels_fn)(void *);
+typedef int (*get_int_fn)(void *);
+typedef void (*unref_fn)(void *);
+
+static uint64_t hash_bytes(const unsigned char *data, size_t size) {
+  uint64_t hash = UINT64_C(1469598103934665603);
+  for (size_t i = 0; i < size; ++i) {
+    hash ^= data[i];
+    hash *= UINT64_C(1099511628211);
+  }
+  return hash;
+}
+
+int main(int argc, char **argv) {
+  if (argc < 3) return 64;
+  void *pixbuf_so = dlopen("libgdk_pixbuf-2.0.so.0", RTLD_NOW | RTLD_GLOBAL);
+  if (pixbuf_so == NULL) pixbuf_so = dlopen("libgdk-pixbuf-2.0.so.0", RTLD_NOW | RTLD_GLOBAL);
+  void *gobject_so = dlopen("libgobject-2.0.so.0", RTLD_NOW | RTLD_GLOBAL);
+  if (pixbuf_so == NULL || gobject_so == NULL) {
+    fprintf(stderr, "dlopen failed: %s\n", dlerror());
+    return 69;
+  }
+  new_from_file_fn new_from_file =
+      (new_from_file_fn)dlsym(pixbuf_so, "gdk_pixbuf_new_from_file");
+  get_pixels_fn get_pixels = (get_pixels_fn)dlsym(pixbuf_so, "gdk_pixbuf_get_pixels");
+  get_int_fn get_width = (get_int_fn)dlsym(pixbuf_so, "gdk_pixbuf_get_width");
+  get_int_fn get_height = (get_int_fn)dlsym(pixbuf_so, "gdk_pixbuf_get_height");
+  get_int_fn get_rowstride = (get_int_fn)dlsym(pixbuf_so, "gdk_pixbuf_get_rowstride");
+  unref_fn unref = (unref_fn)dlsym(gobject_so, "g_object_unref");
+  if (!new_from_file || !get_pixels || !get_width || !get_height || !get_rowstride || !unref) {
+    fprintf(stderr, "dlsym failed: %s\n", dlerror());
+    return 69;
+  }
+  const int iterations = atoi(argv[argc - 1]);
+  // Order-sensitive chain: XOR aggregation of a repeated identical value
+  // self-cancels on even repetition counts, silently blinding equivalence.
+  uint64_t aggregate = UINT64_C(1469598103934665603);
+  for (int iteration = 0; iteration < iterations; ++iteration) {
+    for (int index = 1; index < argc - 1; ++index) {
+      GErrorMin *error = NULL;
+      void *pixbuf = new_from_file(argv[index], &error);
+      if (pixbuf == NULL) {
+        fprintf(stderr, "decode failed: %s\n", error ? error->message : "?");
+        return 2;
+      }
+      const size_t size = (size_t)get_height(pixbuf) * (size_t)get_rowstride(pixbuf);
+      aggregate = aggregate * UINT64_C(1099511628211) ^
+                  (hash_bytes(get_pixels(pixbuf), size) +
+                   (uint64_t)get_width(pixbuf) * 131u + (uint64_t)get_height(pixbuf));
+      unref(pixbuf);
+    }
+  }
+  printf("%016llx\n", (unsigned long long)aggregate);
+  return 0;
+}
+C
+cc -O2 -Wall -Werror "$root/pixbuf-consumer.c" -o "$root/pixbuf-consumer" -ldl
+"$root/pixbuf-consumer" "$root/small.png" 1 >"$root/pixbuf-selftest.txt"
+
 cat >"$root/libpng-consumer.c" <<'C'
 #include <png.h>
 #include <stdint.h>
@@ -98,7 +171,9 @@ static uint64_t hash_bytes(const unsigned char *data, size_t size) {
 int main(int argc, char **argv) {
   if (argc != 3) return 64;
   const int iterations = atoi(argv[2]);
-  uint64_t aggregate = 0;
+  // Order-sensitive chain: XOR aggregation of a repeated identical value
+  // self-cancels on even repetition counts, silently blinding equivalence.
+  uint64_t aggregate = UINT64_C(1469598103934665603);
   for (int iteration = 0; iteration < iterations; ++iteration) {
     png_image image;
     image.version = PNG_IMAGE_VERSION;
@@ -112,7 +187,8 @@ int main(int argc, char **argv) {
       free(buffer);
       return 4;
     }
-    aggregate ^= hash_bytes(buffer, size) + (uint64_t)image.width * 131u + image.height;
+    aggregate = aggregate * UINT64_C(1099511628211) ^
+                (hash_bytes(buffer, size) + (uint64_t)image.width * 131u + image.height);
     free(buffer);
     png_image_free(&image);
   }

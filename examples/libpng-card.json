@@ -106,7 +106,7 @@
         "/opt/lda/harness/checks/run-pixbuf-e2e.sh",
         "baseline"
       ],
-      "repetitions": 5,
+      "repetitions": 7,
       "timeout_seconds": 1200,
       "inputs": [
         "pixbuf-decode"
