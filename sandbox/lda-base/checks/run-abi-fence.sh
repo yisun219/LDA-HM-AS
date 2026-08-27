@@ -72,12 +72,16 @@ command -v abidiff >/dev/null || { echo "abidiff is not installed" >&2; exit 69;
 test -d "$baseline_root/usr/lib/debug" || { echo "baseline debug info missing" >&2; exit 65; }
 test -d "$candidate_root/usr/lib/debug" || { echo "candidate debug info missing" >&2; exit 65; }
 set +e
-abidiff \
+timeout 600 abidiff \
   --d1 "$baseline_root/usr/lib/debug" --d2 "$candidate_root/usr/lib/debug" \
   --headers-dir1 "$baseline_root/usr/include" --headers-dir2 "$candidate_root/usr/include" \
   "$baseline" "$candidate" >"$tmp/abidiff.out" 2>&1
 abidiff_rc=$?
 set -e
+if test "$abidiff_rc" -eq 124; then
+  echo "abidiff exceeded its time budget; ABI equality is unproven" >&2
+  exit 1
+fi
 if test "$abidiff_rc" -ne 0; then
   cat "$tmp/abidiff.out" >&2
   echo "abidiff reported ABI differences (exit $abidiff_rc)" >&2

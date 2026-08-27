@@ -293,7 +293,7 @@ class LDAExecution:
         self.flow.state.metadata["sandbox_cpu"] = (
             " ".join(cpu.stdout.split()) if cpu.ok else "unknown"
         )
-        baseline_check = self.sandbox.run(self.card.baseline.verification_command(), timeout_seconds=300)
+        baseline_check = self.sandbox.run(self.card.baseline.verification_command(), timeout_seconds=600)
         if not baseline_check.ok:
             raise SandboxUnavailable(
                 "baseline identity verification failed: " + baseline_check.stderr[-1200:]
@@ -307,7 +307,7 @@ class LDAExecution:
             if not result.ok:
                 raise RuntimeError(f"source setup failed: {command}: {result.stderr[-1000:]}")
         selfcheck = self.sandbox.run(
-            ("/opt/lda/harness/checks/fence-selfcheck.sh",), timeout_seconds=600
+            ("/opt/lda/harness/checks/fence-selfcheck.sh",), timeout_seconds=1800
         )
         self.flow.store.write_json(
             "fence-selfcheck.json",

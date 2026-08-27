@@ -23,15 +23,25 @@ if /opt/lda/harness/checks/abi-fence.sh "$baseline_lib" "$other_lib" >/dev/null 
 fi
 note "abi comparator flags a wrong library"
 
-# Probe 2: abidiff must flag the same wrong pair.
-if command -v abidiff >/dev/null; then
-  if abidiff "$baseline_lib" "$other_lib" >/dev/null 2>&1; then
-    fail "abidiff accepted a completely different library"
-  fi
-  note "abidiff flags a wrong library"
-else
-  fail "abidiff is not installed"
+# Probe 2: abidiff must not accept the wrong pair. On unrelated libraries
+# abidiff can hang, so the probe is time-bounded: a refusal or a timeout both
+# mean "did not accept"; only exit 0 is the fatal rubber stamp.
+command -v abidiff >/dev/null || fail "abidiff is not installed"
+if timeout 60 abidiff "$baseline_lib" "$other_lib" >/dev/null 2>&1; then
+  fail "abidiff accepted a completely different library"
 fi
+note "abidiff does not accept a wrong library"
+
+# Probe 2b: the fence's real invocation shape (debug dirs + header dirs) must
+# complete a self-comparison in bounded time, or the ABI fence cannot work.
+baseline_root=/opt/lda/baseline/root
+if ! timeout 240 abidiff \
+    --d1 "$baseline_root/usr/lib/debug" --d2 "$baseline_root/usr/lib/debug" \
+    --headers-dir1 "$baseline_root/usr/include" --headers-dir2 "$baseline_root/usr/include" \
+    "$baseline_lib" "$baseline_lib" >/dev/null 2>&1; then
+  fail "abidiff cannot complete a debug-informed self-comparison"
+fi
+note "abidiff self-comparison completes with debug info"
 
 # Probe 3: the behavior hash must be content-sensitive and deterministic.
 hash_small_a="$(lda_run_with_libpng baseline "$consumer" "$fixtures/small.png" 3)"
