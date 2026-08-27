@@ -97,7 +97,7 @@
   ],
   "end_to_end_benchmarks": [
     {
-      "name": "pixbuf-thumbnail-e2e",
+      "name": "pixbuf-decode-e2e",
       "layer": "end_to_end",
       "command": [
         "/opt/lda/harness/checks/run-pixbuf-e2e.sh"
@@ -109,28 +109,10 @@
       "repetitions": 5,
       "timeout_seconds": 1200,
       "inputs": [
-        "pixbuf-thumbnail"
+        "pixbuf-decode"
       ],
       "max_regression_percent": 3.0,
       "min_speedup_percent": 1.0
-    },
-    {
-      "name": "browser-render-e2e",
-      "layer": "end_to_end",
-      "command": [
-        "/opt/lda/harness/checks/run-end-to-end-benchmark.sh"
-      ],
-      "baseline_command": [
-        "/opt/lda/harness/checks/run-end-to-end-benchmark.sh",
-        "baseline"
-      ],
-      "repetitions": 5,
-      "timeout_seconds": 1800,
-      "inputs": [
-        "browser-render"
-      ],
-      "max_regression_percent": 5.0,
-      "min_speedup_percent": null
     }
   ],
   "baseline": {

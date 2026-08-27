@@ -132,12 +132,17 @@ class TaskCard:
     baseline: BaselineSpec = field(default_factory=BaselineSpec)
     compatibility: CompatibilityBoundary = field(default_factory=CompatibilityBoundary)
     lane: Lane = Lane.MAINLINE
-    # Directories whose content is digest-pinned after setup; any change to
-    # them between rounds invalidates every fence and benchmark verdict.
+    # Paths whose content is digest-pinned after setup; any change to them
+    # between rounds invalidates every fence and benchmark verdict. Pinned
+    # paths must be byte-reproducible across a fresh-sandbox rebuild (resume
+    # re-verifies them), so volatile build outputs like .changes/.buildinfo
+    # under baseline/packages are deliberately not pinned.
     integrity_paths: tuple[str, ...] = (
         "/opt/lda/harness",
-        "/opt/lda/baseline",
         "/opt/lda/fixtures",
+        "/opt/lda/baseline/root",
+        "/opt/lda/baseline/baseline.json",
+        "/opt/lda/baseline/manifest",
     )
     metadata: dict[str, Any] = field(default_factory=dict)
 

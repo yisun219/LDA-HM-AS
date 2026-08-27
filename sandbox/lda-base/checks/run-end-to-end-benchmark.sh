@@ -9,7 +9,22 @@ root=/opt/lda/fixtures/libpng
 rounds="${LDA_E2E_ROUNDS:-3}"
 port=$((18000 + RANDOM % 20000))
 
-env LD_LIBRARY_PATH="$libdir" LD_DEBUG=libs \
+# Attribution probe: PIL (the server's encoder) must bind the selected
+# library in this environment. Run separately so LD_DEBUG's very verbose
+# linker logging never slows the actual server.
+probe_log="/tmp/lda-e2e-probe-$mode.log"
+env LD_LIBRARY_PATH="$libdir" LD_DEBUG=libs python3 - >/dev/null 2>"$probe_log" <<'PY'
+import io
+from PIL import Image
+buffer = io.BytesIO()
+Image.new("RGBA", (8, 8)).save(buffer, format="PNG")
+PY
+grep -F "$libdir/libpng16.so.16" "$probe_log" >/dev/null || {
+  echo "PIL did not load $libdir/libpng16.so.16; e2e would not measure the candidate" >&2
+  exit 65
+}
+
+env LD_LIBRARY_PATH="$libdir" \
   python3 "$root/png-server.py" "$port" >"/tmp/lda-png-server-$mode.log" 2>&1 &
 server_pid=$!
 trap 'kill "$server_pid" >/dev/null 2>&1 || true; wait "$server_pid" 2>/dev/null || true' EXIT
@@ -28,16 +43,6 @@ steal_before="$(awk '/^cpu /{print $9}' /proc/stat)"
 result_json="$(env LD_LIBRARY_PATH="$libdir" NODE_PATH="$(npm root -g)" \
   node "$root/browser-render.js" "http://127.0.0.1:$port/" "$rounds")"
 steal_after="$(awk '/^cpu /{print $9}' /proc/stat)"
-
-# Attribution: the timed path must actually have executed the selected
-# library. The bundled Chromium statically links its own libpng, so the
-# browser side is honest render/network overhead; the candidate library runs
-# in the server's PIL encode path (loaded on first image request), and that
-# linkage is asserted after the run, not assumed.
-grep -F "$libdir/libpng16.so.16" "/tmp/lda-png-server-$mode.log" >/dev/null || {
-  echo "png-server did not load $libdir/libpng16.so.16; e2e did not measure the candidate" >&2
-  exit 65
-}
 
 lda_bench_nonce_declare
 python3 - "$mode" "$result_json" "$load1" "$((steal_after - steal_before))" "$cpus" "$_LDA_BENCH_NONCE" <<'PY'

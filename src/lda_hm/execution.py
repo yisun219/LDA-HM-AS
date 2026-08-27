@@ -493,7 +493,14 @@ class LDAExecution:
         reports.extend(runner.run_baseline(spec) for spec in self.card.end_to_end_benchmarks)
         for report in reports:
             if not report.successful:
-                raise RuntimeError(f"baseline benchmark failed: {report.layer}/{report.name}")
+                detail = (
+                    report.observations[-1].stderr_tail[-500:]
+                    if report.observations
+                    else "no observations"
+                )
+                raise RuntimeError(
+                    f"baseline benchmark failed: {report.layer}/{report.name}: {detail}"
+                )
             if not report.instrumented:
                 raise RuntimeError(
                     f"baseline benchmark is not instrumented: {report.layer}/{report.name} "
