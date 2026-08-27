@@ -25,7 +25,7 @@ class CommandSession:
             local.write_text(prompt, encoding="utf-8")
             self.sandbox.put(local, name)
             command = self.command + ("--prompt-file", name, "--role", self.role, "--session", self.session_id)
-            result = self.sandbox.run(command)
+            result = self.sandbox.run(command, timeout_seconds=3600)
             if not result.ok:
                 raise RuntimeError(f"{self.role} agent failed with exit {result.exit_code}: {result.stderr[-1000:]}")
             return result.stdout.strip()

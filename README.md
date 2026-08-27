@@ -14,7 +14,18 @@ can specialize for autoresearch:
 - a deterministic 15-gate boundary before semantic review;
 - regular review, full alignment, drift recovery, code review, finalize, and
   methodology-analysis phases;
-- runtime-neutral protocols for plugging in a concrete agent backend later.
+- a dynamic Supervisor command layer: a live Builder-turn watchdog plus a
+  per-round decision node (continue / retarget / restart builder / abort)
+  driven by human control, deterministic rules, and optional LLM counsel,
+  recorded as `rounds/<n>/supervision.json` (see docs/FLOW.md);
+- statistically judged paired benchmarks (Student-t interval on log ratios,
+  CPU-steal environment gate, infra-vs-candidate evidence split) and
+  fresh-sandbox A/B/A' certification at finalize;
+- integrity pinning of harness/baseline/fixtures with a host-side digest
+  manifest re-checked before every fence and benchmark;
+- runtime-neutral protocols for plugging in a concrete agent backend later
+  (see docs/HUMANIZE-MIGRATION.md for the planned switch to the humanize2
+  engine).
 
 No agent loop starts automatically. The package only provides orchestration
 and state primitives until `lda run` is invoked with an E2B template and an
@@ -70,9 +81,21 @@ then Pi. It can also be pinned with `LDA_AGENT_BACKEND=claude|codex|pi`.
 The validated Claude default is `claude-opus-4-8`; override it with
 `LDA_AGENT_MODEL` when another gateway exposes a different model set. A role
 can be pinned independently with `LDA_AGENT_MODEL_DRAFTER`, `_PLANNER`,
-`_ANALYST`, `_BUILDER`, or `_REVIEWER`.
-Claude, Codex, and Pi sessions all run inside E2B; private credentials are
-injected only when the Sandbox starts.
+`_ANALYST`, `_BUILDER`, `_REVIEWER`, or `_SUPERVISOR`, and a role's backend
+with `LDA_AGENT_BACKEND_<ROLE>` (cross-vendor review: Claude builds, Codex
+reviews). Claude, Codex, and Pi sessions all run inside E2B; private
+credentials are injected only when the Sandbox starts.
+
+Run-control knobs: `LDA_SUPERVISOR_LLM=0` disables LLM counsel (rules still
+run), `LDA_BUDGET_USD` sets a hard spend ceiling, `LDA_CERT_REPLICATIONS`
+sets fresh-sandbox certification replications (default 2, `0` disables), and
+`<results-root>/runs/<run-id>/control.json` is the human command channel
+(`{"action": "abort"}`, `{"contract": "..."}`, `{"action":
+"restart_builder"}`), read at every round boundary.
+
+Ranked optimization candidates for Ubuntu 26.04 live in
+`data/candidates-ubuntu-2604.json` (top-30 by dependency-graph score, two
+directions); libpng is the pipeline pilot.
 
 The libpng card uses the production `iso_snapshot` contract anchored to Ubuntu
 26.04 Desktop build `20260423.1`, Snapshot source version `1.6.57-1`, and an

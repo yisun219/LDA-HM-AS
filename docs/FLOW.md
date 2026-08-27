@@ -115,6 +115,71 @@ Core artifacts are:
 - `methodology-report.md`
 - `state.json`
 
+## Supervision layer
+
+Supervision exists at three timescales, with fixed authority: human control >
+deterministic rules > LLM counsel.
+
+1. Live (during a Builder turn): `BuilderWatchdog` polls the size of
+   `/opt/lda/agent-state` inside E2B. A turn whose activity stops growing for
+   `builder_stall_minutes` is double-confirmed and then killed, so a hung
+   agent surfaces as a judged failed round instead of a silent hour. A
+   watchdog that cannot observe never kills. A failed Builder turn does not
+   crash the flow: the fences and gates rule on whatever state the turn left.
+2. Between rounds: the `Supervisor` node assembles a `RunPulse` from the
+   run's own evidence (round verdicts, blocked reasons, benchmark trend,
+   Builder trace statistics with cost, sandbox load and disk, cumulative
+   spend) plus the human `control.json`, and emits one auditable
+   `SupervisorDecision` per round, stored at `rounds/<n>/supervision.json`.
+   Actions: continue, retarget (rewrites the next round contract),
+   restart_builder (fresh Builder session for a dead/poisoned one), abort.
+   Deterministic rules cover budget exhaustion, repeated same-fence failures,
+   and dead Builder sessions; an LLM supervisor session is consulted only
+   when the run is off-track, its answer is parsed under a strict
+   ACTION/CONTRACT/REASON protocol, a malformed answer degrades to the rule
+   decision, and an LLM abort is demoted to retarget - only humans and hard
+   rules may end a run.
+3. Evidence split (Argus-style): infrastructure failures (unstable benchmark
+   host, dead reviewer backend) never count against the candidate's idea -
+   they bypass the stall/drift counters and have their own
+   consecutive-failure circuit breaker instead.
+
+## Benchmark verdict policy
+
+All timing comes from in-sandbox `LDA_BENCH` samples; host wall time is never
+judged. A paired run alternates baseline/candidate order per repetition in one
+sandbox, then:
+
+- CPU steal above 10% of any sample invalidates the run itself (one retry,
+  then an infrastructure block - the candidate is not blamed).
+- A regression beyond the per-input limit is a veto.
+- A speedup certifies only if it clears the declared minimum, exceeds the
+  half-range noise, and its 95% Student-t interval on per-repetition log
+  ratios excludes 1.0. Fewer than three repetitions never certify.
+- The hidden holdout (fixtures from a host-held secret seed the Builder has
+  never seen) must independently clear its own minimum.
+
+## Fresh-sandbox certification (A/B/A')
+
+Finalize replays the whole result in `LDA_CERT_REPLICATIONS` fresh sandboxes
+built from the immutable template: verify baseline identity, run setup from
+the pinned snapshot, apply the durable `candidate.patch`, run every fence
+(trace fence not applicable - no Builder ran there), and re-run all paired
+benchmarks plus a fresh-seed holdout. This is the hard guarantee against both
+benchmark placement noise (each sandbox lands on its own host) and Builder
+sandbox tampering (nothing from the Builder environment survives except the
+git patch). Results land in `benchmarks/certification/` and
+`certification-summary.json`.
+
+## Integrity pinning
+
+After setup, the harness, baseline, and fixture directories are root-sealed
+and digest-pinned into `integrity-manifest.sha256` (host side). Every
+benchmark run and every fence pass first re-sweeps those directories with a
+host-composed command and refuses to judge anything if pinned content
+changed. The Builder has sandbox sudo, so sealing is a speed bump and the
+manifest is a tripwire; fresh-sandbox certification is the actual guarantee.
+
 ## Gate boundary
 
 The gate order is fixed. A semantic reviewer runs only after all applicable

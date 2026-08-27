@@ -19,6 +19,20 @@ class FenceResult:
     command_results: tuple[SandboxResult, ...] = ()
 
 
+def integrity_manifest_command(paths: tuple[str, ...]) -> tuple[str, ...]:
+    """Host-composed digest sweep over the pinned check/fixture directories.
+
+    The command text comes from the host, not from a script file inside the
+    sandbox, so replacing a checker script cannot also replace its auditor.
+    """
+    quoted = " ".join(paths)
+    return (
+        "sh",
+        "-c",
+        f"find {quoted} -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum",
+    )
+
+
 class FenceSuite:
     """Deterministic boundary checks run before semantic Reviewer access."""
 
@@ -29,14 +43,29 @@ class FenceSuite:
         *,
         trace_file: Path | None = None,
         trace_remote: str | None = None,
+        trace_remote_provider=None,
+        integrity_manifest: str | None = None,
+        trace_required: bool = True,
     ) -> None:
         self.sandbox = sandbox
         self.card = card
         self.trace_file = trace_file
         self.trace_remote = trace_remote
+        # Resolved at run time so a restarted Builder session moves the fence
+        # to the trace that is actually being written.
+        self.trace_remote_provider = trace_remote_provider
+        self.integrity_manifest = integrity_manifest
+        # Certification sandboxes run no Builder; only there is the trace
+        # fence legitimately inapplicable.
+        self.trace_required = trace_required
 
     def run(self) -> tuple[FenceResult, ...]:
         checks: list[FenceResult] = []
+        integrity = self._integrity_fence()
+        if integrity is not None:
+            checks.append(integrity)
+            if not integrity.passed:
+                return tuple(checks)
         checks.extend(self._commands("baseline_tests", self.card.baseline_tests))
         checks.extend(self._commands("dependency_tests", self.card.dependency_tests))
         checks.extend(self._commands("abi_checks", self.card.abi_checks))
@@ -65,10 +94,37 @@ class FenceSuite:
     def _command_reason(result: SandboxResult) -> str:
         return "passed" if result.ok else f"exit={result.exit_code}: {result.stderr[-500:]}"
 
+    def _integrity_fence(self) -> FenceResult | None:
+        if self.integrity_manifest is None:
+            return None
+        result = self.sandbox.run(
+            integrity_manifest_command(self.card.integrity_paths)
+        )
+        if not result.ok:
+            return FenceResult(
+                "integrity",
+                False,
+                f"integrity sweep failed: {result.stderr[-500:]}",
+                (result,),
+            )
+        if result.stdout.strip() != self.integrity_manifest.strip():
+            return FenceResult(
+                "integrity",
+                False,
+                "pinned harness/baseline/fixture content changed since setup",
+                (result,),
+            )
+        return FenceResult("integrity", True, "pinned directories unchanged", (result,))
+
     def _trace_fence(self) -> FenceResult:
-        if self.trace_remote is not None:
+        trace_remote = (
+            self.trace_remote_provider()
+            if self.trace_remote_provider is not None
+            else self.trace_remote
+        )
+        if trace_remote is not None:
             result = self.sandbox.run(
-                ("python3", "/opt/lda/harness/audit_trace.py", self.trace_remote)
+                ("python3", "/opt/lda/harness/audit_trace.py", trace_remote)
             )
             return FenceResult(
                 "builder_trace",
@@ -77,6 +133,10 @@ class FenceSuite:
                 (result,),
             )
         if self.trace_file is None:
+            if not self.trace_required:
+                return FenceResult(
+                    "builder_trace", True, "not applicable: no builder ran here"
+                )
             return FenceResult("builder_trace", False, "builder trace is required")
         if not self.trace_file.is_file():
             return FenceResult("builder_trace", False, "builder trace is missing")
@@ -84,9 +144,20 @@ class FenceSuite:
             events = [json.loads(line) for line in self.trace_file.read_text(encoding="utf-8").splitlines() if line.strip()]
         except (OSError, json.JSONDecodeError) as error:
             return FenceResult("builder_trace", False, f"invalid trace: {error}")
-        allowed = {"prompt", "tool_call", "tool_result", "checkpoint", "stop", "review_request"}
+        allowed = {
+            "prompt",
+            "tool_call",
+            "tool_result",
+            "checkpoint",
+            "stop",
+            "review_request",
+            "turn_start",
+            "turn_end",
+        }
         for event in events:
-            if not isinstance(event, dict) or event.get("kind") not in allowed:
+            if not isinstance(event, dict):
+                return FenceResult("builder_trace", False, "trace contains an unknown event")
+            if event.get("kind") not in allowed and not isinstance(event.get("type"), str):
                 return FenceResult("builder_trace", False, "trace contains an unknown event")
             if event.get("role") == "reviewer":
                 return FenceResult("builder_trace", False, "builder trace impersonates reviewer")

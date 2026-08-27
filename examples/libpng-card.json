@@ -10,42 +10,109 @@
   "goal": "Optimize Ubuntu 26.04 libpng for the target CPU while preserving surgical replacement compatibility",
   "source_reference": "ubuntu:resolute/libpng1.6=1.6.57-1@20260423T120000Z",
   "setup_commands": [
-    ["/opt/lda/harness/checks/prepare-ubuntu-source.sh", "libpng1.6", "1.6.57-1"],
-    ["/opt/lda/harness/checks/build-libpng-package.sh", "baseline"],
-    ["/opt/lda/harness/checks/prepare-libpng-fixtures.sh"]
+    [
+      "/opt/lda/harness/checks/prepare-ubuntu-source.sh",
+      "libpng1.6",
+      "1.6.57-1"
+    ],
+    [
+      "/opt/lda/harness/checks/build-libpng-package.sh",
+      "baseline"
+    ],
+    [
+      "/opt/lda/harness/checks/prepare-libpng-fixtures.sh"
+    ]
   ],
-  "baseline_tests": [["/opt/lda/harness/checks/run-baseline-tests.sh"]],
-  "dependency_tests": [["/opt/lda/harness/checks/run-dependency-tests.sh"]],
-  "abi_checks": [["/opt/lda/harness/checks/run-abi-fence.sh"]],
-  "ffi_checks": [["/opt/lda/harness/checks/run-ffi-fence.sh"]],
-  "behavior_checks": [["/opt/lda/harness/checks/run-behavior-fence.sh"]],
-  "package_lifecycle_checks": [["/opt/lda/harness/checks/run-package-lifecycle.sh"]],
-  "security_checks": [["/opt/lda/harness/checks/run-security-fence.sh"]],
-  "result_equivalence_checks": [["/opt/lda/harness/checks/run-result-equivalence.sh"]],
+  "baseline_tests": [
+    [
+      "/opt/lda/harness/checks/run-baseline-tests.sh"
+    ]
+  ],
+  "dependency_tests": [
+    [
+      "/opt/lda/harness/checks/run-dependency-tests.sh"
+    ]
+  ],
+  "abi_checks": [
+    [
+      "/opt/lda/harness/checks/run-abi-fence.sh"
+    ]
+  ],
+  "ffi_checks": [
+    [
+      "/opt/lda/harness/checks/run-ffi-fence.sh"
+    ]
+  ],
+  "behavior_checks": [
+    [
+      "/opt/lda/harness/checks/run-behavior-fence.sh"
+    ]
+  ],
+  "package_lifecycle_checks": [
+    [
+      "/opt/lda/harness/checks/run-package-lifecycle.sh"
+    ]
+  ],
+  "security_checks": [
+    [
+      "/opt/lda/harness/checks/run-security-fence.sh"
+    ]
+  ],
+  "result_equivalence_checks": [
+    [
+      "/opt/lda/harness/checks/run-result-equivalence.sh"
+    ]
+  ],
   "micro_benchmarks": [
     {
       "name": "libpng-micro",
       "layer": "micro",
-      "command": ["/opt/lda/harness/checks/run-micro-benchmark.sh"],
-      "baseline_command": ["/opt/lda/harness/checks/run-micro-benchmark.sh", "baseline"],
-      "repetitions": 5,
+      "command": [
+        "/opt/lda/harness/checks/run-micro-benchmark.sh"
+      ],
+      "baseline_command": [
+        "/opt/lda/harness/checks/run-micro-benchmark.sh",
+        "baseline"
+      ],
+      "repetitions": 7,
       "timeout_seconds": 900,
-      "inputs": ["small", "large", "boundary", "incompressible"]
-      ,"max_regression_percent": 2.0
-      ,"min_speedup_percent": 2.0
+      "inputs": [
+        "small",
+        "large",
+        "boundary",
+        "incompressible"
+      ],
+      "max_regression_percent": 2.0,
+      "min_speedup_percent": 2.0,
+      "holdout_min_speedup_percent": 1.0,
+      "holdout_env": "LDA_MICRO_FIXTURE_DIR",
+      "holdout_setup": [
+        "env",
+        "LDA_FIXTURE_DIR={dir}",
+        "LDA_FIXTURE_SEED={seed}",
+        "LDA_FIXTURE_PNGS_ONLY=1",
+        "/opt/lda/harness/checks/prepare-libpng-fixtures.sh"
+      ]
     }
   ],
   "end_to_end_benchmarks": [
     {
       "name": "browser-render-e2e",
       "layer": "end_to_end",
-      "command": ["/opt/lda/harness/checks/run-end-to-end-benchmark.sh"],
-      "baseline_command": ["/opt/lda/harness/checks/run-end-to-end-benchmark.sh", "baseline"],
-      "repetitions": 3,
+      "command": [
+        "/opt/lda/harness/checks/run-end-to-end-benchmark.sh"
+      ],
+      "baseline_command": [
+        "/opt/lda/harness/checks/run-end-to-end-benchmark.sh",
+        "baseline"
+      ],
+      "repetitions": 5,
       "timeout_seconds": 1800,
-      "inputs": ["browser-render", "gui", "web-server"]
-      ,"max_regression_percent": 5.0
-      ,"min_speedup_percent": null
+      "inputs": [
+        "browser-render"
+      ],
+      "max_regression_percent": 5.0,
+      "min_speedup_percent": null
     }
   ],
   "baseline": {

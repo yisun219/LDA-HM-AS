@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "source": "Ubuntu 26.04 desktop amd64 ISO 20260423.1 dependency graph (1814 debs, 12369 edges)",
+  "method": {
+    "filter": "metadata-matched; required in-degree >= 5; required out-degree targets >= 3; not oldlibs; not required/important/standard base library",
+    "score": "0.40*F(required fan-in) + 0.35*L(required out-degree) + 0.25*S(total out-degree & optional share), log-normalized, times priority factor (required 0.60 / important 0.80 / standard 0.90 / optional-extra 1.00)",
+    "note": "Scores rank candidate priority only; they do not assert code quality or known defects. libc6/libgcc-s1/libstdc++6 are excluded as base libraries."
+  },
+  "directions": {
+    "1": "mid-layer UI/media infrastructure with high reuse and a wide required-dependency surface (interface stability, plugin split, optional-feature isolation, duplicate dependency convergence)",
+    "2": "high-level desktop/system components with a wide direct dependency surface (module split, startup path, optional dependencies, feature boundaries)",
+    "0": "unassigned"
+  },
+  "candidates": [
+    {"package": "libgtk-4-1", "score": 71.50, "direction": 1},
+    {"package": "libgtk-3-0t64", "score": 69.42, "direction": 1},
+    {"package": "gnome-shell", "score": 64.28, "direction": 2},
+    {"package": "libreoffice-core", "score": 63.34, "direction": 2},
+    {"package": "sssd-common", "score": 60.69, "direction": 2},
+    {"package": "libcairo2", "score": 60.20, "direction": 1},
+    {"package": "gnome-settings-daemon", "score": 59.67, "direction": 2},
+    {"package": "gstreamer1.0-plugins-good", "score": 59.55, "direction": 1},
+    {"package": "ibus", "score": 57.77, "direction": 2},
+    {"package": "libsoup-3.0-0", "score": 54.01, "direction": 0},
+    {"package": "libgstreamer-gl1.0-0", "score": 52.19, "direction": 1},
+    {"package": "polkitd", "score": 51.61, "direction": 2},
+    {"package": "libcurl3t64-gnutls", "score": 50.90, "direction": 0},
+    {"package": "libedataserver-1.2-27t64", "score": 50.44, "direction": 0},
+    {"package": "libgnome-desktop-4-2t64", "score": 50.36, "direction": 0},
+    {"package": "libgstreamer-plugins-base1.0-0", "score": 49.53, "direction": 1},
+    {"package": "grub2-common", "score": 49.24, "direction": 2},
+    {"package": "gstreamer1.0-plugins-base", "score": 48.88, "direction": 1},
+    {"package": "libpango-1.0-0", "score": 48.36, "direction": 1},
+    {"package": "libcupsfilters2t64", "score": 48.28, "direction": 0},
+    {"package": "libgdk-pixbuf-2.0-0", "score": 47.87, "direction": 1},
+    {"package": "libheif1", "score": 47.68, "direction": 1},
+    {"package": "libreoffice-common", "score": 47.56, "direction": 2},
+    {"package": "libadwaita-1-0", "score": 47.10, "direction": 1},
+    {"package": "cups-filters", "score": 46.95, "direction": 2},
+    {"package": "libcups2t64", "score": 46.90, "direction": 0},
+    {"package": "libcurl4t64", "score": 46.90, "direction": 0},
+    {"package": "libtiff6", "score": 46.80, "direction": 1},
+    {"package": "libpulse0", "score": 46.12, "direction": 1},
+    {"package": "perl", "score": 46.15, "direction": 0}
+  ],
+  "pilot": {
+    "package": "libpng1.6",
+    "reason": "not in the top-30 ranking, chosen as the pipeline pilot: small surface, hard ABI contract, measurable micro + browser-render end-to-end path; the flow must certify a real speedup here before fanning out to ranked candidates"
+  }
+}

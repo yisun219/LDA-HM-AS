@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from .benchmark import BenchmarkEnvironmentError
 from .flow import HumanizeFlow
 from .fence import FenceResult, FenceSuite, parse_p_severity
 from .gates import GateContext, GateRunner
@@ -49,6 +50,8 @@ class HumanizeStages:
         gate_runner: GateRunner | None = None,
         gate_context_factory=None,
         pre_review_hook=None,
+        builder_guard=None,
+        certifier=None,
     ) -> None:
         self.flow = flow
         self.topology = topology
@@ -56,6 +59,12 @@ class HumanizeStages:
         self.gate_runner = gate_runner
         self.gate_context_factory = gate_context_factory
         self.pre_review_hook = pre_review_hook
+        # Optional context-manager factory that supervises one Builder turn
+        # (e.g. a live trace watchdog) while the turn is running.
+        self.builder_guard = builder_guard
+        # Optional fresh-environment certification; returns None on success
+        # or a human-readable failure reason.
+        self.certifier = certifier
 
     def gen_idea(self, task: str, *, directions: int = 6) -> str:
         if not 2 <= directions <= 10:
@@ -116,8 +125,21 @@ class HumanizeStages:
             if recovering
             else BUILDER_ROUND.format(contract=effective_contract)
         )
-        builder_answer = self.topology.builder.ask(builder_prompt)
-        builder_text = self._text(builder_answer, "builder returned an empty answer")
+        guard = self.builder_guard() if self.builder_guard is not None else None
+        try:
+            if guard is not None:
+                with guard:
+                    builder_answer = self.topology.builder.ask(builder_prompt)
+            else:
+                builder_answer = self.topology.builder.ask(builder_prompt)
+            builder_text = self._text(builder_answer, "builder returned an empty answer")
+        except (RuntimeError, ValueError) as error:
+            # A dead or killed Builder turn is a judged failure, not a crash:
+            # the fences and gates now rule on whatever state the turn left.
+            detail = ""
+            if guard is not None and getattr(guard, "killed", False):
+                detail = " (watchdog killed a stalled agent process)"
+            builder_text = f"BUILDER_TURN_FAILED{detail}: {error}"
         phase = self.flow.finish_builder_round(builder_text)
         return self._evaluate_review(phase)
 
@@ -130,6 +152,8 @@ class HumanizeStages:
         if self.pre_review_hook is not None:
             try:
                 self.pre_review_hook()
+            except BenchmarkEnvironmentError as error:
+                return self._blocked("benchmark-environment", str(error), infra=True)
             except Exception as error:
                 return self._blocked("benchmark", str(error))
         if self.fence_suite is not None:
@@ -186,14 +210,29 @@ class HumanizeStages:
             prompt = FULL_ALIGNMENT.format(round=self.flow.state.current_round)
         else:
             prompt = REGULAR_REVIEW.format(round=self.flow.state.current_round)
-        review_answer = self.topology.fresh_reviewer().ask(prompt)
-        result = self._review_result(review_answer)
+        result = None
+        last_error: Exception | None = None
+        for _ in range(2):
+            # A malformed verdict earns one fresh re-review (humanize's
+            # missing-verdict rerun); persistent malformation is an
+            # infrastructure block, not a candidate judgement.
+            try:
+                review_answer = self.topology.fresh_reviewer().ask(prompt)
+                result = self._review_result(review_answer)
+                break
+            except (RuntimeError, ValueError) as error:
+                last_error = error
+        if result is None:
+            return self._blocked(
+                "reviewer-infra", f"reviewer produced no valid verdict: {last_error}",
+                infra=True,
+            )
         self.flow.record_review(result)
         return result
 
-    def _blocked(self, source: str, reason: str) -> ReviewResult:
-        feedback = f"DETERMINISTIC_{source.upper()}_BLOCK: {reason}"
-        self.flow.record_blocked_round(source, reason)
+    def _blocked(self, source: str, reason: str, *, infra: bool = False) -> ReviewResult:
+        feedback = f"DETERMINISTIC_{source.upper().replace('-', '_')}_BLOCK: {reason}"
+        self.flow.record_blocked_round(source, reason, infra=infra)
         return ReviewResult(
             verdict=MainlineVerdict.REGRESSED,
             complete=False,
@@ -231,6 +270,14 @@ class HumanizeStages:
             reason = "; ".join(failures)
             self.flow.reopen_from_finalize(reason)
             return reason
+        certification_note = "certification: not configured"
+        if self.certifier is not None:
+            reason = self.certifier()
+            if reason:
+                reason = f"fresh-sandbox certification failed: {reason}"
+                self.flow.reopen_from_finalize(reason)
+                return reason
+            certification_note = "certification: passed in fresh sandboxes"
         sandbox = self.fence_suite.sandbox
         commit = sandbox.run(("git", "-C", "/opt/lda/work", "rev-parse", "HEAD"))
         package = sandbox.run(("cat", "/opt/lda/candidate/runtime-deb.sha256"))
@@ -240,6 +287,7 @@ class HumanizeStages:
             return reason
         summary = (
             "Final deterministic fences passed.\n\n"
+            f"{certification_note}\n\n"
             f"Git commit: {commit.stdout.strip()}\n\n"
             f"Candidate package: {package.stdout.strip()}"
         )

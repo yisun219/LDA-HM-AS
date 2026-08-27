@@ -1,40 +1,64 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root=/opt/lda/fixtures/libpng
+# Fixture generator.
+#
+# LDA_FIXTURE_DIR   target directory (default: the train set).
+# LDA_FIXTURE_SEED  integer seed; varies pixel CONTENT only. Canonical class
+#                   geometry (1x1 / 64x64 / 1024x1024 / 512x512) is fixed so
+#                   iteration counts stay comparable between fixture sets.
+# LDA_FIXTURE_PNGS_ONLY=1  generate only the PNG inputs (used for holdout
+#                   sets; the consumer binary and servers are shared).
+
+root="${LDA_FIXTURE_DIR:-/opt/lda/fixtures/libpng}"
+seed="${LDA_FIXTURE_SEED:-2604}"
 mkdir -p "$root"
 
-python3 - "$root" <<'PY'
+python3 - "$root" "$seed" <<'PY'
 import random
 import sys
 from pathlib import Path
 from PIL import Image
 
 root = Path(sys.argv[1])
+seed = int(sys.argv[2])
+rng = random.Random(seed)
+
+# Content parameters derived from the seed. Multipliers are forced odd so
+# every fixture set exercises non-trivial pixel variation.
+def odd(low, high):
+    return rng.randrange(low, high) * 2 + 1
+
+a, b, c = odd(1, 16), odd(1, 16), odd(1, 16)
+boundary_pixel = (rng.randrange(256), rng.randrange(256), rng.randrange(256), rng.randrange(256))
 
 def save(name, size, pixels):
     image = Image.new("RGBA", size)
     image.putdata(pixels)
     image.save(root / name, format="PNG", compress_level=6)
 
-save("boundary.png", (1, 1), [(0, 0, 0, 0)])
+save("boundary.png", (1, 1), [boundary_pixel])
 save(
     "small.png",
     (64, 64),
-    [((x * 3) & 255, (y * 5) & 255, (x ^ y) & 255, 255) for y in range(64) for x in range(64)],
+    [((x * a) & 255, (y * b) & 255, ((x ^ y) * c) & 255, 255) for y in range(64) for x in range(64)],
 )
 save(
     "large.png",
     (1024, 1024),
-    [((x * 7) & 255, (y * 11) & 255, ((x + y) * 13) & 255, 255) for y in range(1024) for x in range(1024)],
+    [((x * a) & 255, (y * b) & 255, ((x + y) * c) & 255, 255) for y in range(1024) for x in range(1024)],
 )
-rng = random.Random(2604)
 save(
     "incompressible.png",
     (512, 512),
     [(rng.randrange(256), rng.randrange(256), rng.randrange(256), 255) for _ in range(512 * 512)],
 )
 PY
+
+if test "${LDA_FIXTURE_PNGS_ONLY:-0}" = 1; then
+  printf 'fixtures (pngs only) prepared in %s seed=%s\n' "$root" "$seed"
+  exit 0
+fi
 
 cat >"$root/libpng-consumer.c" <<'C'
 #include <png.h>
@@ -90,11 +114,12 @@ from PIL import Image
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
         if parsed.path == "/health":
             payload = b"ok"
             kind = "text/plain"
         elif parsed.path == "/image.png":
-            index = int(parse_qs(parsed.query).get("id", ["0"])[0])
+            index = int(query.get("id", ["0"])[0])
             image = Image.new("RGBA", (512, 512))
             image.putdata([((x + index) & 255, (y * 3) & 255, (x ^ y ^ index) & 255, 255)
                            for y in range(512) for x in range(512)])
@@ -103,8 +128,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = stream.getvalue()
             kind = "image/png"
         else:
+            # The round tag propagates into every image URL so a fresh
+            # navigation cannot be satisfied from the browser cache.
+            tag = query.get("r", ["0"])[0]
             payload = ("<!doctype html><body>" + "".join(
-                f'<img src="/image.png?id={i}" width="256" height="256">' for i in range(24)
+                f'<img src="/image.png?id={i}&r={tag}" width="256" height="256">' for i in range(24)
             ) + "</body>").encode()
             kind = "text/html"
         self.send_response(200)
@@ -121,14 +149,25 @@ PY
 cat >"$root/browser-render.js" <<'JS'
 const { chromium } = require('playwright');
 (async () => {
+  const base = process.argv[2];
+  const rounds = parseInt(process.argv[3] || '3', 10);
   const browser = await chromium.launch({headless: true});
   const page = await browser.newPage();
-  for (let i = 0; i < 3; i++) {
-    await page.goto(process.argv[2], {waitUntil: 'networkidle'});
+  // Warmup navigation: browser startup, connection setup, JIT. Not measured.
+  await page.goto(base + '?r=warmup', {waitUntil: 'networkidle'});
+  const renders = [];
+  for (let i = 0; i < rounds; i++) {
+    await page.goto('about:blank');
+    const t0 = process.hrtime.bigint();
+    await page.goto(base + '?r=' + i, {waitUntil: 'networkidle'});
     const ready = await page.locator('img').evaluateAll(xs => xs.length === 24 && xs.every(x => x.complete && x.naturalWidth > 0));
     if (!ready) throw new Error('PNG render incomplete');
+    const t1 = process.hrtime.bigint();
+    renders.push(Number(t1 - t0) / 1e9);
   }
-  console.log(await page.locator('img').count());
+  console.log(JSON.stringify({renders: renders, images: 24}));
   await browser.close();
 })();
 JS
+
+printf 'fixtures prepared in %s seed=%s\n' "$root" "$seed"

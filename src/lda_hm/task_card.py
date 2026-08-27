@@ -83,6 +83,13 @@ class BenchmarkSpec:
     inputs: tuple[str, ...] = ()
     max_regression_percent: float = 0.0
     min_speedup_percent: float | None = None
+    # Hidden-holdout anti-overfitting policy. The Builder only ever sees the
+    # train fixtures; at review time the flow generates a second fixture set
+    # from a host-held secret seed, points the benchmark at it through
+    # holdout_env, and requires holdout_min_speedup_percent on it.
+    holdout_min_speedup_percent: float | None = None
+    holdout_env: str = ""
+    holdout_setup: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.layer not in {"micro", "end_to_end"}:
@@ -97,6 +104,13 @@ class BenchmarkSpec:
             raise ValueError("max_regression_percent must not be negative")
         if self.min_speedup_percent is not None and self.min_speedup_percent < 0:
             raise ValueError("min_speedup_percent must not be negative")
+        if self.holdout_min_speedup_percent is not None:
+            if self.holdout_min_speedup_percent < 0:
+                raise ValueError("holdout_min_speedup_percent must not be negative")
+            if not self.holdout_env or not self.holdout_setup:
+                raise ValueError("holdout policy requires holdout_env and holdout_setup")
+        if self.holdout_setup and any(not part for part in self.holdout_setup):
+            raise ValueError("holdout_setup contains an empty argument")
 
 
 @dataclass
@@ -118,6 +132,13 @@ class TaskCard:
     baseline: BaselineSpec = field(default_factory=BaselineSpec)
     compatibility: CompatibilityBoundary = field(default_factory=CompatibilityBoundary)
     lane: Lane = Lane.MAINLINE
+    # Directories whose content is digest-pinned after setup; any change to
+    # them between rounds invalidates every fence and benchmark verdict.
+    integrity_paths: tuple[str, ...] = (
+        "/opt/lda/harness",
+        "/opt/lda/baseline",
+        "/opt/lda/fixtures",
+    )
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

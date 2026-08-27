@@ -30,11 +30,24 @@ class SandboxResult:
 class Sandbox(Protocol):
     sandbox_id: str
 
-    def run(self, command: tuple[str, ...], *, timeout_seconds: int = 900) -> SandboxResult: ...
+    def run(
+        self,
+        command: tuple[str, ...],
+        *,
+        timeout_seconds: int = 900,
+        envs: Optional[dict] = None,
+    ) -> SandboxResult: ...
 
     def put(self, local: Path, remote: str) -> None: ...
 
     def get(self, remote: str, local: Path) -> None: ...
+
+
+def _with_envs(command: tuple[str, ...], envs: Optional[dict]) -> tuple[str, ...]:
+    if not envs:
+        return tuple(command)
+    prefix = tuple(f"{key}={value}" for key, value in sorted(envs.items()))
+    return ("env",) + prefix + tuple(command)
 
 
 class E2BSandbox:
@@ -119,6 +132,13 @@ class E2BSandbox:
                 "LDA_AGENT_MODEL_ANALYST",
                 "LDA_AGENT_MODEL_BUILDER",
                 "LDA_AGENT_MODEL_REVIEWER",
+                "LDA_AGENT_MODEL_SUPERVISOR",
+                "LDA_AGENT_BACKEND_DRAFTER",
+                "LDA_AGENT_BACKEND_PLANNER",
+                "LDA_AGENT_BACKEND_ANALYST",
+                "LDA_AGENT_BACKEND_BUILDER",
+                "LDA_AGENT_BACKEND_REVIEWER",
+                "LDA_AGENT_BACKEND_SUPERVISOR",
                 "LDA_AGENT_THINKING",
                 "LDA_BASELINE_TEST_COMMAND",
                 "LDA_DEPENDENCY_TEST_COMMAND",
@@ -173,9 +193,16 @@ class E2BSandbox:
                 f"could not create E2B workdir {self.cwd}: {getattr(result, 'stderr', '')}"
             )
 
-    def run(self, command: tuple[str, ...], *, timeout_seconds: int = 900) -> SandboxResult:
+    def run(
+        self,
+        command: tuple[str, ...],
+        *,
+        timeout_seconds: int = 900,
+        envs: Optional[dict] = None,
+    ) -> SandboxResult:
         if not command:
             raise ValueError("sandbox command must not be empty")
+        command = _with_envs(command, envs)
         rendered = " ".join(shlex.quote(part) for part in command)
         started = time.monotonic()
         try:
@@ -208,6 +235,12 @@ class E2BSandbox:
             return
         raise SandboxUnavailable("connected E2B client has no file download API")
 
+    def close(self) -> None:
+        """Release the E2B sandbox (used by fresh certification sandboxes)."""
+        kill = getattr(self.client, "kill", None)
+        if callable(kill):
+            kill()
+
     def bootstrap_assets(self, root: Path) -> None:
         """Overlay the checked-in harness/skills into the running template.
 
@@ -236,44 +269,57 @@ class E2BSandbox:
         self.run(("find", "/opt/lda/harness/checks", "-type", "f", "-name", "*.sh", "-exec", "chmod", "+x", "{}", ";"))
 
     def bootstrap_credentials(self) -> None:
-        """Inject existing user-scoped Agent logins without copying them to Git."""
-        backend = os.getenv("LDA_AGENT_BACKEND", "").strip()
+        """Inject existing user-scoped Agent logins without copying them to Git.
+
+        Per-role backends (e.g. a Claude Builder with a Codex Reviewer for
+        cross-vendor review) may require more than one credential; every
+        referenced backend must end up usable or the sandbox is refused.
+        """
         codex_login = Path.home() / ".codex" / "auth.json"
-        if not backend:
+        backends = {os.getenv("LDA_AGENT_BACKEND", "").strip()}
+        for role in ("DRAFTER", "PLANNER", "ANALYST", "BUILDER", "REVIEWER", "SUPERVISOR"):
+            backends.add(os.getenv(f"LDA_AGENT_BACKEND_{role}", "").strip())
+        backends.discard("")
+        if not backends:
             if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
-                backend = "claude"
+                backends = {"claude"}
             elif codex_login.is_file() and codex_login.stat().st_size > 2:
-                backend = "codex"
+                backends = {"codex"}
             else:
-                backend = "pi"
+                backends = {"pi"}
         mappings_by_backend = {
             "pi": ((Path.home() / ".pi" / "agent" / "auth.json", "/home/user/.pi/agent/auth.json"),),
             "claude": ((Path.home() / ".claude" / ".credentials.json", "/home/user/.claude/.credentials.json"),),
             "codex": ((codex_login, "/home/user/.codex/auth.json"),),
         }
-        if backend not in mappings_by_backend:
-            raise SandboxUnavailable(f"unsupported Agent backend: {backend}")
-        environment_login = (
-            backend == "claude"
-            and bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
-        ) or (backend == "codex" and bool(os.getenv("OPENAI_API_KEY")))
-        mappings = () if environment_login else mappings_by_backend[backend]
-        installed = 0
-        for local, remote in mappings:
-            if not local.is_file() or local.stat().st_size <= 2:
+        unsupported = backends - set(mappings_by_backend)
+        if unsupported:
+            raise SandboxUnavailable(f"unsupported Agent backend: {sorted(unsupported)}")
+        for backend in sorted(backends):
+            environment_login = (
+                backend == "claude"
+                and bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
+            ) or (backend == "codex" and bool(os.getenv("OPENAI_API_KEY")))
+            if environment_login:
                 continue
-            if local.stat().st_mode & 0o077:
-                raise SandboxUnavailable(f"Agent credential must be private (0600): {local}")
-            self.run(("mkdir", "-p", str(Path(remote).parent)))
-            self.put(local, remote)
-            result = self.run(("chmod", "0600", remote))
-            if not result.ok:
-                raise SandboxUnavailable(f"could not protect Agent credential {remote}")
-            installed += 1
-        if installed == 0 and not environment_login:
-            raise SandboxUnavailable(
-                "no Claude, Codex, or Pi login is available for E2B Agent execution"
-            )
+            installed = 0
+            for local, remote in mappings_by_backend[backend]:
+                if not local.is_file() or local.stat().st_size <= 2:
+                    continue
+                if local.stat().st_mode & 0o077:
+                    raise SandboxUnavailable(
+                        f"Agent credential must be private (0600): {local}"
+                    )
+                self.run(("mkdir", "-p", str(Path(remote).parent)))
+                self.put(local, remote)
+                result = self.run(("chmod", "0600", remote))
+                if not result.ok:
+                    raise SandboxUnavailable(f"could not protect Agent credential {remote}")
+                installed += 1
+            if installed == 0:
+                raise SandboxUnavailable(
+                    f"no login is available for the requested {backend} backend"
+                )
 
 
 class FakeSandbox:
@@ -284,7 +330,14 @@ class FakeSandbox:
         self.results = results or {}
         self.commands: list[tuple[str, ...]] = []
 
-    def run(self, command: tuple[str, ...], *, timeout_seconds: int = 900) -> SandboxResult:
+    def run(
+        self,
+        command: tuple[str, ...],
+        *,
+        timeout_seconds: int = 900,
+        envs: Optional[dict] = None,
+    ) -> SandboxResult:
+        command = _with_envs(tuple(command), envs)
         self.commands.append(command)
         return self.results.get(
             command,
@@ -298,6 +351,9 @@ class FakeSandbox:
     def get(self, remote: str, local: Path) -> None:
         local.parent.mkdir(parents=True, exist_ok=True)
         local.write_text("", encoding="utf-8")
+
+    def close(self) -> None:
+        pass
 
 
 def sandbox_manifest(template: str = "lda-base", sandbox_id: str = "") -> str:

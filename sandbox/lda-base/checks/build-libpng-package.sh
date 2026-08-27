@@ -8,7 +8,7 @@ source_root=/opt/lda/work
 output_root="/opt/lda/$mode"
 package_root="$output_root/root"
 package_dir="$output_root/packages"
-artifact_schema=2
+artifact_schema=3
 
 cd "$source_root"
 test "$(dpkg-parsechangelog -S Source)" = libpng1.6
@@ -52,6 +52,19 @@ test -n "$runtime_deb"
 test -n "$dev_deb"
 dpkg-deb -x "$runtime_deb" "$package_root"
 dpkg-deb -x "$dev_deb" "$package_root"
+
+# Debug symbols are required so the ABI fence can run abidiff at type level,
+# not just compare exported symbol names.
+dbgsym_deb=""
+for ddeb in "$package_dir"/*.ddeb; do
+  test -e "$ddeb" || continue
+  case "$(dpkg-deb -f "$ddeb" Package)" in
+    libpng16-16t64-dbgsym) dbgsym_deb="$ddeb" ;;
+  esac
+done
+test -n "$dbgsym_deb" || { echo "libpng16-16t64-dbgsym ddeb is missing" >&2; exit 66; }
+dpkg-deb -x "$dbgsym_deb" "$package_root"
+test -d "$package_root/usr/lib/debug"
 
 library="$(find "$package_root/usr/lib" -type f -name 'libpng16.so.16.*' | head -1)"
 test -n "$library"

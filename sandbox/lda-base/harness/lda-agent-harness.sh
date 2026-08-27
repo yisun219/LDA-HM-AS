@@ -22,7 +22,10 @@ session_dir=/opt/lda/agent-state/sessions
 trace_dir=/opt/lda/agent-state/traces
 mkdir -p "$session_dir" "$trace_dir"
 
-backend="${LDA_AGENT_BACKEND:-}"
+# A role may pin its own backend (cross-vendor review: Claude builds, Codex
+# reviews). Role override first, then the global default, then autodetection.
+role_backend_var="LDA_AGENT_BACKEND_${role^^}"
+backend="${!role_backend_var:-${LDA_AGENT_BACKEND:-}}"
 if test -z "$backend"; then
   if test -n "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}"; then
     backend=claude
@@ -37,11 +40,15 @@ if test "$backend" = claude; then
   command -v claude >/dev/null || { echo "claude agent CLI is not installed" >&2; exit 69; }
   thread_file="$session_dir/$session.thread"
   raw_trace="$trace_dir/$session.jsonl"
+  turn_file="$trace_dir/$session.turn.jsonl"
   last_message="$session_dir/$session.last.txt"
   model_args=(--model "${selected_model:-claude-opus-4-8}")
   effort_args=(--effort "${LDA_AGENT_THINKING:-high}")
+  # stream-json records every event (tool calls included), not just the final
+  # result; the per-turn file is appended to the cumulative session trace so
+  # no turn overwrites history.
   common_args=(
-    --print --bare --output-format json
+    --print --bare --verbose --output-format stream-json
     --add-dir /opt/lda/control /opt/lda/skills
     "${model_args[@]}" "${effort_args[@]}"
   )
@@ -49,7 +56,7 @@ if test "$backend" = claude; then
     analyst|drafter|planner)
       role_args=(--tools Read,Grep,Glob --allowed-tools Read,Grep,Glob --permission-mode dontAsk)
       ;;
-    reviewer)
+    reviewer|supervisor)
       common_args+=(--add-dir /opt/lda/review)
       role_args=(--tools Read,Grep,Glob --allowed-tools Read,Grep,Glob --permission-mode dontAsk)
       ;;
@@ -64,14 +71,19 @@ if test "$backend" = claude; then
   esac
   if test -s "$thread_file"; then
     claude "${common_args[@]}" "${role_args[@]}" \
-      --resume "$(cat "$thread_file")" "$(cat "$prompt_file")" >"$raw_trace"
+      --resume "$(cat "$thread_file")" "$(cat "$prompt_file")" >"$turn_file"
   else
     claude "${common_args[@]}" "${role_args[@]}" \
-      "$(cat "$prompt_file")" >"$raw_trace"
-    thread_id="$(jq -er '.session_id' "$raw_trace")"
+      "$(cat "$prompt_file")" >"$turn_file"
+    thread_id="$(jq -r 'select(.type == "system" and .subtype == "init") | .session_id' "$turn_file" | head -1)"
+    test -n "$thread_id" && test "$thread_id" != null
     printf '%s\n' "$thread_id" >"$thread_file"
   fi
-  jq -er '.result' "$raw_trace" >"$last_message"
+  printf '{"kind":"turn_start","role":"%s","session":"%s","epoch":%s}\n' \
+    "$role" "$session" "$(date +%s)" >>"$raw_trace"
+  cat "$turn_file" >>"$raw_trace"
+  rm -f "$turn_file"
+  jq -rs '[.[] | select(.type == "result")] | last | .result // empty' "$raw_trace" >"$last_message"
   test -s "$last_message"
   cat "$last_message"
   exit 0
@@ -81,6 +93,7 @@ if test "$backend" = codex; then
   command -v codex >/dev/null || { echo "codex agent CLI is not installed" >&2; exit 69; }
   thread_file="$session_dir/$session.thread"
   raw_trace="$trace_dir/$session.jsonl"
+  turn_file="$trace_dir/$session.turn.jsonl"
   last_message="$session_dir/$session.last.txt"
   model_args=()
   test -z "$selected_model" || model_args=(--model "$selected_model")
@@ -88,18 +101,22 @@ if test "$backend" = codex; then
     thread_id="$(cat "$thread_file")"
     codex exec resume --json "${model_args[@]}" \
       --output-last-message "$last_message" \
-      "$thread_id" "$(cat "$prompt_file")" >"$raw_trace"
+      "$thread_id" "$(cat "$prompt_file")" >"$turn_file"
   else
     sandbox_mode=read-only
     test "$role" = builder && sandbox_mode=workspace-write
     codex exec --json --sandbox "$sandbox_mode" --cd /opt/lda/work \
       --skip-git-repo-check "${model_args[@]}" \
       --output-last-message "$last_message" \
-      "$(cat "$prompt_file")" >"$raw_trace"
-    thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' "$raw_trace" | head -1)"
+      "$(cat "$prompt_file")" >"$turn_file"
+    thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' "$turn_file" | head -1)"
     test -n "$thread_id" && test "$thread_id" != null
     printf '%s\n' "$thread_id" >"$thread_file"
   fi
+  printf '{"kind":"turn_start","role":"%s","session":"%s","epoch":%s}\n' \
+    "$role" "$session" "$(date +%s)" >>"$raw_trace"
+  cat "$turn_file" >>"$raw_trace"
+  rm -f "$turn_file"
   test -s "$last_message"
   cat "$last_message"
   exit 0
@@ -116,7 +133,7 @@ test -z "$selected_model" || model_args=(--model "$selected_model")
 
 tool_args=()
 case "$role" in
-  analyst|reviewer) tool_args=(--tools read,grep,find,ls) ;;
+  analyst|reviewer|supervisor) tool_args=(--tools read,grep,find,ls) ;;
   drafter|planner) tool_args=(--tools read,grep,find,ls) ;;
   builder) tool_args=() ;;
   *) echo "unknown role: $role" >&2; exit 64 ;;

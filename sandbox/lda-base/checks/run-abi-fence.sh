@@ -50,4 +50,23 @@ sed 's#  usr/#  #g' "$tmp/baseline.pkgconfig" >"$tmp/baseline.pkgconfig.normaliz
 sed 's#  usr/#  #g' "$tmp/candidate.pkgconfig" >"$tmp/candidate.pkgconfig.normalized"
 diff -u "$tmp/baseline.pkgconfig.normalized" "$tmp/candidate.pkgconfig.normalized"
 
-printf '%s\n' "ELF, SONAME, symbol-version, public-header, and pkg-config ABI contract passed"
+# Type-level ABI comparison. Symbol-name diffs above cannot see struct layout
+# or function-signature changes; abidiff with dbgsym debug info can. Missing
+# debug info is a failure ("nobody looked" is not "no difference").
+command -v abidiff >/dev/null || { echo "abidiff is not installed" >&2; exit 69; }
+test -d "$baseline_root/usr/lib/debug" || { echo "baseline debug info missing" >&2; exit 65; }
+test -d "$candidate_root/usr/lib/debug" || { echo "candidate debug info missing" >&2; exit 65; }
+set +e
+abidiff \
+  --d1 "$baseline_root/usr/lib/debug" --d2 "$candidate_root/usr/lib/debug" \
+  --headers-dir1 "$baseline_root/usr/include" --headers-dir2 "$candidate_root/usr/include" \
+  "$baseline" "$candidate" >"$tmp/abidiff.out" 2>&1
+abidiff_rc=$?
+set -e
+if test "$abidiff_rc" -ne 0; then
+  cat "$tmp/abidiff.out" >&2
+  echo "abidiff reported ABI differences (exit $abidiff_rc)" >&2
+  exit 1
+fi
+
+printf '%s\n' "ELF, SONAME, symbol-version, public-header, pkg-config, and abidiff type-level ABI contract passed"

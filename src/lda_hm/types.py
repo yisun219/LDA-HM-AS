@@ -44,6 +44,9 @@ class FlowConfig:
     require_clean_worktree: bool = True
     require_pushed_rounds: bool = False
     large_file_line_limit: int = 2000
+    # Live supervision: a Builder turn whose trace stops growing for this many
+    # minutes is killed and judged as a failed round.
+    builder_stall_minutes: int = 15
 
     def __post_init__(self) -> None:
         if self.max_iterations < 1:
@@ -54,6 +57,8 @@ class FlowConfig:
             raise ValueError("drift_recovery_threshold must be positive")
         if self.circuit_breaker_threshold <= self.drift_recovery_threshold:
             raise ValueError("circuit breaker must follow drift recovery")
+        if self.builder_stall_minutes < 1:
+            raise ValueError("builder_stall_minutes must be positive")
 
 
 @dataclass(frozen=True)

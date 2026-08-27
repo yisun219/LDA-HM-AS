@@ -34,12 +34,15 @@ class SessionTopology:
     """Documents and enforces writer/reader session ownership."""
 
     def __init__(self, *, drafter: Agent, planner: Agent, analyst: Agent,
-                 builder: Agent, reviewer: Agent, cwd: Path) -> None:
+                 builder: Agent, reviewer: Agent, cwd: Path,
+                 supervisor: Agent | None = None) -> None:
         self.drafter = drafter.new_session(cwd)
         self.planner = planner.new_session(cwd)
         self.builder = builder.new_session(cwd)
+        self._builder_agent = builder
         self._analyst = analyst
         self._reviewer = reviewer
+        self._supervisor = supervisor
         self._cwd = cwd
 
     def fresh_analyst(self) -> Session:
@@ -47,3 +50,20 @@ class SessionTopology:
 
     def fresh_reviewer(self) -> Session:
         return self._reviewer.new_session(self._cwd)
+
+    def fresh_supervisor(self) -> Session:
+        if self._supervisor is None:
+            raise ValueError("no supervisor agent is configured")
+        return self._supervisor.new_session(self._cwd)
+
+    @property
+    def has_supervisor(self) -> bool:
+        return self._supervisor is not None
+
+    def builder_session_id(self) -> str:
+        return str(getattr(self.builder, "session_id", "builder-1"))
+
+    def restart_builder(self) -> str:
+        """Open a fresh Builder session (poisoned/dead session recovery)."""
+        self.builder = self._builder_agent.new_session(self._cwd)
+        return self.builder_session_id()

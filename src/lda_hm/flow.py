@@ -145,6 +145,7 @@ class HumanizeFlow:
             },
         )
         self.state.last_verdict = result.verdict
+        self.state.metadata["consecutive_infra_blocks"] = 0
         if result.verdict is MainlineVerdict.ADVANCED:
             self.state.stall_count = 0
             self.state.drift_recovery_required = False
@@ -178,28 +179,44 @@ class HumanizeFlow:
             self._move(Phase.IMPLEMENTATION)
         return self.state.phase
 
-    def record_blocked_round(self, source: str, reason: str) -> Phase:
-        """Advance after a deterministic block without granting Reviewer access."""
+    def record_blocked_round(self, source: str, reason: str, *, infra: bool = False) -> Phase:
+        """Advance after a deterministic block without granting Reviewer access.
+
+        Infrastructure blocks (unstable benchmark host, dead reviewer backend)
+        follow the Argus evidence split: they can never count against the
+        candidate's idea, so they do not feed the stall/drift counters -- but
+        they have their own consecutive-failure circuit breaker so a broken
+        environment cannot spin forever.
+        """
         self._require(Phase.REGULAR_REVIEW, Phase.FULL_ALIGNMENT)
         if not source.strip() or not reason.strip():
             raise ValueError("blocked round source and reason are required")
         round_dir = self.store.round_dir(self.state.current_round)
         self.store.write_json(
             round_dir.relative_to(self.store.root) / "blocked.json",
-            {"source": source, "reason": reason},
+            {"source": source, "reason": reason, "infra": infra},
         )
         self.state.last_verdict = MainlineVerdict.REGRESSED
-        self.state.stall_count += 1
-        if self.state.stall_count >= self.config.circuit_breaker_threshold:
-            self.state.terminal_reason = TerminalReason.STOP
-            self._move(Phase.STOP)
-            return self.state.phase
+        if infra:
+            consecutive = int(self.state.metadata.get("consecutive_infra_blocks", 0)) + 1
+            self.state.metadata["consecutive_infra_blocks"] = consecutive
+            if consecutive >= self.config.circuit_breaker_threshold:
+                self.state.terminal_reason = TerminalReason.STOP
+                self._move(Phase.STOP)
+                return self.state.phase
+        else:
+            self.state.metadata["consecutive_infra_blocks"] = 0
+            self.state.stall_count += 1
+            if self.state.stall_count >= self.config.circuit_breaker_threshold:
+                self.state.terminal_reason = TerminalReason.STOP
+                self._move(Phase.STOP)
+                return self.state.phase
         self.state.current_round += 1
         if self.state.current_round >= self.config.max_iterations:
             self.state.terminal_reason = TerminalReason.MAX_ITER
             self._move(Phase.MAX_ITER)
             return self.state.phase
-        if self.state.stall_count >= self.config.drift_recovery_threshold:
+        if not infra and self.state.stall_count >= self.config.drift_recovery_threshold:
             self.state.drift_recovery_required = True
             self._move(Phase.DRIFT_RECOVERY)
         else:
@@ -235,6 +252,16 @@ class HumanizeFlow:
         else:
             self._move(Phase.IMPLEMENTATION)
         return self.state.phase
+
+    def supervisor_stop(self, reason: str) -> None:
+        """External supervision endpoint: abort a run from any live phase."""
+        if not reason.strip():
+            raise ValueError("supervisor stop reason is required")
+        if self.state.phase in {Phase.COMPLETE, Phase.STOP, Phase.UNEXPECTED}:
+            return
+        self.store.write_json("supervisor-stop.json", {"reason": reason})
+        self.state.terminal_reason = TerminalReason.STOP
+        self._move(Phase.STOP)
 
     def record_methodology(self, report: str) -> None:
         self._require(Phase.METHODOLOGY_ANALYSIS, Phase.MAX_ITER)
