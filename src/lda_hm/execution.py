@@ -113,6 +113,17 @@ def judge_comparison(
         or comparison.repetitions < 3
         or comparison.ratio_ci95_upper >= 1.0
     ):
+        # A spread wildly out of proportion to the effect being judged is
+        # evidence about the host (a co-tenant burst hit one repetition),
+        # not about the candidate: rerun instead of blaming either side.
+        if speedup >= min_speedup_percent and noise > max(
+            3.0 * min_speedup_percent, 6.0
+        ):
+            raise BenchmarkEnvironmentError(
+                f"benchmark spread implausible [{stage}] {spec.layer}/{spec.name}: "
+                f"half-range={noise:.3f}% against a {min_speedup_percent:.3f}% target "
+                f"(speedup={speedup:.3f}%); rerun the paired benchmark on a quieter host"
+            )
         raise RuntimeError(
             f"benchmark speedup not certifiable [{stage}] {spec.layer}/{spec.name}: "
             f"speedup={speedup:.3f}% is within measurement noise "

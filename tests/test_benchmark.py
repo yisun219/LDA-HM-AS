@@ -163,6 +163,25 @@ class BenchmarkAnalysisTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "within measurement noise"):
             judge_comparison(SPEC, comparison, SPEC.min_speedup_percent, stage="train")
 
+    def test_pathological_spread_is_an_environment_error(self) -> None:
+        from lda_hm import BenchmarkEnvironmentError
+
+        # Six clean ~6% wins plus one repetition poisoned by a co-tenant
+        # burst: the half-range explodes but the effect direction is clear.
+        baseline = _report(
+            "-baseline",
+            [{"small": 1.00}] * 6 + [{"small": 1.00}],
+            "baseline",
+        )
+        candidate = _report(
+            "-candidate",
+            [{"small": 0.94}] * 6 + [{"small": 1.18}],
+            "candidate",
+        )
+        comparison = compare_paired(SPEC, baseline, candidate)
+        with self.assertRaisesRegex(BenchmarkEnvironmentError, "spread implausible"):
+            judge_comparison(SPEC, comparison, SPEC.min_speedup_percent, stage="holdout")
+
     def test_output_hash_mismatch_fails_closed(self) -> None:
         baseline = _report("-baseline", [{"small": 1.0}], "baseline")
         stdout = _sample_line("small", 0.9, "candidate", output_hash="different")
