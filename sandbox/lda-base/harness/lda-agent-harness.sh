@@ -69,24 +69,40 @@ if test "$backend" = claude; then
       ;;
     *) echo "unknown role: $role" >&2; exit 64 ;;
   esac
-  if test -s "$thread_file"; then
-    claude "${common_args[@]}" "${role_args[@]}" \
-      --resume "$(cat "$thread_file")" "$(cat "$prompt_file")" >"$turn_file"
-  else
-    claude "${common_args[@]}" "${role_args[@]}" \
-      "$(cat "$prompt_file")" >"$turn_file"
-    thread_id="$(jq -r 'select(.type == "system" and .subtype == "init") | .session_id' "$turn_file" | head -1)"
-    test -n "$thread_id" && test "$thread_id" != null
-    printf '%s\n' "$thread_id" >"$thread_file"
-  fi
-  printf '{"kind":"turn_start","role":"%s","session":"%s","epoch":%s}\n' \
-    "$role" "$session" "$(date +%s)" >>"$raw_trace"
-  cat "$turn_file" >>"$raw_trace"
-  rm -f "$turn_file"
-  jq -rs '[.[] | select(.type == "result")] | last | .result // empty' "$raw_trace" >"$last_message"
-  test -s "$last_message"
-  cat "$last_message"
-  exit 0
+  # One transient gateway failure must not kill a whole flow round: the turn
+  # is retried once with diagnostics. The reply is extracted from THIS
+  # turn's stream only -- taking the last result from the cumulative trace
+  # would silently replay a previous turn's answer when this one failed.
+  for attempt in 1 2; do
+    claude_rc=0
+    if test -s "$thread_file"; then
+      claude "${common_args[@]}" "${role_args[@]}" \
+        --resume "$(cat "$thread_file")" "$(cat "$prompt_file")" >"$turn_file" || claude_rc=$?
+    else
+      claude "${common_args[@]}" "${role_args[@]}" \
+        "$(cat "$prompt_file")" >"$turn_file" || claude_rc=$?
+      thread_id="$(jq -r 'select(.type == "system" and .subtype == "init") | .session_id' "$turn_file" 2>/dev/null | head -1 || true)"
+      if test -n "$thread_id" && test "$thread_id" != null; then
+        printf '%s\n' "$thread_id" >"$thread_file"
+      fi
+    fi
+    printf '{"kind":"turn_start","role":"%s","session":"%s","attempt":%s,"epoch":%s}\n' \
+      "$role" "$session" "$attempt" "$(date +%s)" >>"$raw_trace"
+    cat "$turn_file" >>"$raw_trace"
+    jq -rs '[.[] | select(.type == "result")] | last | .result // empty' "$turn_file" >"$last_message" 2>/dev/null || true
+    if test -s "$last_message"; then
+      rm -f "$turn_file"
+      cat "$last_message"
+      exit 0
+    fi
+    echo "harness: claude turn produced no result (rc=$claude_rc, attempt $attempt); stream tail:" >&2
+    tail -c 700 "$turn_file" >&2 || true
+    echo >&2
+    rm -f "$turn_file"
+    test "$attempt" = 1 && sleep 20
+  done
+  echo "harness: claude returned no result after retries" >&2
+  exit 1
 fi
 
 if test "$backend" = codex; then
