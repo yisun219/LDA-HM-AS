@@ -47,7 +47,14 @@ def main() -> int:
         print(f"relay: no live sandbox recorded at {live_file}", file=sys.stderr)
         return 69
 
-    sandbox = E2BSandbox.attach(str(live["sandbox_id"]))
+    broker_path = str(live.get("broker") or "")
+    if broker_path and Path(broker_path).exists():
+        from .broker import BrokerClient
+
+        sandbox = BrokerClient(Path(broker_path))
+    else:
+        # Legacy path for gateways that serve attached clients.
+        sandbox = E2BSandbox.attach(str(live["sandbox_id"]))
     remote_prompt = f"/tmp/lda-{args.role}-{uuid.uuid4().hex[:8]}.prompt"
     local = Path(tempfile.mkstemp(prefix="lda-hmz-prompt-")[1])
     try:

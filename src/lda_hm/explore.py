@@ -46,6 +46,9 @@ Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
 APT="%(apt)s"
 $APT update >/dev/null 2>&1 || $APT update >/dev/null
+/opt/lda/harness/checks/align-to-snapshot.sh
+sudo -n $APT install -y linux-tools-common linux-tools-generic >/dev/null 2>&1 || true
+find /usr/lib -maxdepth 2 -name perf -type f 2>/dev/null | head -1 >/opt/lda/perf-path.txt || true
 """ % {"apt": SNAPSHOT_APT}
 
 
@@ -84,9 +87,9 @@ _spec(ExploreSpec(
     ),
     workload=r"""
 cat >/opt/lda/explore/gtk4-widgets.py <<'PYW'
-import gi, os, time, hashlib
+import gi, os, sys, time, hashlib
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk
 os.environ.setdefault("GDK_BACKEND", "x11")
 app = Gtk.Application(application_id="lda.explore.gtk4")
 result = {}
@@ -108,11 +111,12 @@ def on_activate(app):
     app.quit()
 app.connect("activate", on_activate)
 app.run(None)
+print(f"WIDGET_SECONDS={result['seconds']:.6f}", file=sys.stderr)
 print(result["hash"])
-print(f"WIDGET_SECONDS={result['seconds']:.6f}")
 PYW
-xvfb-run -a python3 /opt/lda/explore/gtk4-widgets.py >/opt/lda/explore/gtk4-widgets.out 2>/opt/lda/explore/gtk4-widgets.err
-lda_bench_run micro gtk4-widget-churn stock 40 sh -c 'xvfb-run -a python3 /opt/lda/explore/gtk4-widgets.py 2>/dev/null | head -1'
+xvfb-run -a python3 /opt/lda/explore/gtk4-widgets.py >/dev/null
+lda_bench_run micro gtk4-widget-churn stock 40 \
+  xvfb-run -a python3 /opt/lda/explore/gtk4-widgets.py
 """,
     profile_command="xvfb-run -a python3 /opt/lda/explore/gtk4-widgets.py",
 ))
@@ -126,7 +130,7 @@ _spec(ExploreSpec(
     ),
     workload=r"""
 cat >/opt/lda/explore/gtk3-widgets.py <<'PYW'
-import gi, os, time, hashlib
+import gi, sys, time, hashlib
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 digest = hashlib.sha256()
@@ -143,11 +147,12 @@ for round_number in range(40):
     digest.update(f"{minimum}:{natural}".encode())
     window.destroy()
 seconds = (time.perf_counter_ns() - start) / 1e9
+print(f"WIDGET_SECONDS={seconds:.6f}", file=sys.stderr)
 print(digest.hexdigest()[:16])
-print(f"WIDGET_SECONDS={seconds:.6f}")
 PYW
-xvfb-run -a python3 /opt/lda/explore/gtk3-widgets.py >/opt/lda/explore/gtk3-widgets.out 2>/opt/lda/explore/gtk3-widgets.err
-lda_bench_run micro gtk3-widget-churn stock 40 sh -c 'xvfb-run -a python3 /opt/lda/explore/gtk3-widgets.py 2>/dev/null | head -1'
+xvfb-run -a python3 /opt/lda/explore/gtk3-widgets.py >/dev/null
+lda_bench_run micro gtk3-widget-churn stock 40 \
+  xvfb-run -a python3 /opt/lda/explore/gtk3-widgets.py
 """,
     profile_command="xvfb-run -a python3 /opt/lda/explore/gtk3-widgets.py",
 ))
@@ -198,11 +203,12 @@ server = HTTPServer(("127.0.0.1", 0), Handler)
 print(server.server_port, flush=True)
 server.serve_forever()
 PYW
-python3 /opt/lda/explore/soup-server.py >/opt/lda/explore/soup-port.txt 2>/dev/null &
+python3 /opt/lda/explore/soup-server.py >/opt/lda/explore/soup-port.txt &
 server_pid=$!
 sleep 1
 port="$(head -1 /opt/lda/explore/soup-port.txt)"
-lda_bench_run micro soup-http-churn stock 600 sh -c "python3 /opt/lda/explore/soup-client.py http://127.0.0.1:$port 2>/dev/null | head -1"
+lda_bench_run micro soup-http-churn stock 600 \
+  python3 /opt/lda/explore/soup-client.py "http://127.0.0.1:$port"
 kill "$server_pid" 2>/dev/null || true
 """,
     profile_command="",
@@ -216,8 +222,8 @@ _spec(ExploreSpec(
     ),
     workload=r"""
 export GST_REGISTRY=/opt/lda/explore/gst-registry.bin
-gst-launch-1.0 -q videotestsrc num-buffers=90 pattern=ball ! video/x-raw,width=640,height=360 ! vp8enc deadline=1 ! matroskamux ! filesink location=/opt/lda/explore/sample.mkv
-gst-launch-1.0 -q audiotestsrc num-buffers=800 ! audio/x-raw,rate=44100,channels=2 ! wavenc ! filesink location=/opt/lda/explore/sample.wav
+gst-launch-1.0 -q videotestsrc num-buffers=420 pattern=ball ! video/x-raw,width=1280,height=720 ! vp8enc deadline=1 ! matroskamux ! filesink location=/opt/lda/explore/sample.mkv
+gst-launch-1.0 -q audiotestsrc num-buffers=4000 ! audio/x-raw,rate=44100,channels=2 ! wavenc ! filesink location=/opt/lda/explore/sample.wav
 gst-launch-1.0 -q filesrc location=/opt/lda/explore/sample.wav ! wavparse ! flacenc ! filesink location=/opt/lda/explore/sample.flac
 decode_all() {
   gst-launch-1.0 -q filesrc location=/opt/lda/explore/sample.mkv ! matroskademux ! vp8dec ! fakesink sync=false
@@ -226,7 +232,7 @@ decode_all() {
   sha256sum /opt/lda/explore/sample.mkv | cut -c1-16
 }
 decode_all >/dev/null 2>&1
-lda_bench_run micro gst-good-decode stock 3 sh -c 'gst-launch-1.0 -q filesrc location=/opt/lda/explore/sample.mkv ! matroskademux ! vp8dec ! fakesink sync=false 2>/dev/null; gst-launch-1.0 -q filesrc location=/opt/lda/explore/sample.flac ! flacparse ! flacdec ! fakesink sync=false 2>/dev/null; sha256sum /opt/lda/explore/sample.mkv | cut -c1-16'
+lda_bench_run micro gst-good-decode stock 6 sh -c 'gst-launch-1.0 -q filesrc location=/opt/lda/explore/sample.mkv ! matroskademux ! vp8dec ! fakesink sync=false 2>/dev/null; gst-launch-1.0 -q filesrc location=/opt/lda/explore/sample.flac ! flacparse ! flacdec ! fakesink sync=false 2>/dev/null; sha256sum /opt/lda/explore/sample.mkv | cut -c1-16'
 """,
     profile_command=(
         "env GST_REGISTRY=/opt/lda/explore/gst-registry.bin gst-launch-1.0 -q "
@@ -335,8 +341,11 @@ mkdir -p /opt/lda/explore
   echo "## flags"; grep -m1 flags /proc/cpuinfo | tr ' ' '\n' | grep -E 'avx|sse4|amx|bmi|adx|vaes|gfni|sha' | sort | tr '\n' ' '; echo
   echo "## model"; grep -m1 "model name" /proc/cpuinfo || true
   echo "## perf_event_paranoid"; cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo unavailable
-  echo "## perf hw"; timeout 20 perf stat -e cycles,instructions -- sleep 0.05 2>&1 | tail -4 || true
-  echo "## perf sw"; timeout 20 perf stat -e task-clock -- sleep 0.05 2>&1 | tail -3 || true
+  perf_binary="$(cat /opt/lda/perf-path.txt 2>/dev/null || true)"
+  test -n "$perf_binary" || perf_binary=perf
+  echo "## perf binary"; echo "$perf_binary"
+  echo "## perf hw"; timeout 20 "$perf_binary" stat -e cycles,instructions -- sleep 0.05 2>&1 | tail -4 || true
+  echo "## perf sw"; timeout 20 "$perf_binary" stat -e task-clock -- sleep 0.05 2>&1 | tail -3 || true
 } >/opt/lda/explore/identity.txt 2>&1
 cat /opt/lda/explore/identity.txt
 """
@@ -402,8 +411,7 @@ def explore(
             return out
         if spec.install:
             install = (
-                f"sudo -n {SNAPSHOT_APT} install -y --allow-downgrades {spec.install} "
-                "2>&1 | tail -5"
+                f"sudo -n {SNAPSHOT_APT} install -y --allow-downgrades {spec.install}"
             )
             if not run_step("install", sandbox, ("bash", "-c", install), 1800):
                 return out
@@ -415,12 +423,14 @@ def explore(
         run_step("workload", sandbox, ("bash", "-c", workload), spec.timeout_seconds)
         if spec.profile_command:
             profile = (
+                'perf_binary="$(cat /opt/lda/perf-path.txt 2>/dev/null)"; '
+                'test -n "$perf_binary" || perf_binary=perf; '
                 "cd /opt/lda/explore && "
-                f"timeout 600 perf record -q --freq 400 -o perf.data -- {spec.profile_command} "
-                ">/dev/null 2>&1; "
-                "perf report -i perf.data --stdio --sort dso --percent-limit 1 2>/dev/null | head -25; "
+                f'timeout 600 "$perf_binary" record -q --freq 400 -o perf.data -- {spec.profile_command} '
+                ">/dev/null; "
+                '"$perf_binary" report -i perf.data --stdio --sort dso --percent-limit 1 2>/dev/null | head -25; '
                 "echo '--- top symbols ---'; "
-                "perf report -i perf.data --stdio --sort dso,symbol --percent-limit 2 2>/dev/null | head -40"
+                '"$perf_binary" report -i perf.data --stdio --sort dso,symbol --percent-limit 2 2>/dev/null | head -40'
             )
             run_step("profile", sandbox, ("bash", "-c", profile), 900)
     finally:

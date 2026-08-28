@@ -227,18 +227,56 @@ class E2BSandbox:
     def put(self, local: Path, remote: str) -> None:
         if not local.is_file():
             raise FileNotFoundError(local)
+        content = local.read_bytes()
         if hasattr(self.client, "files") and hasattr(self.client.files, "write"):
-            self.client.files.write(remote, local.read_bytes())
-            return
-        raise SandboxUnavailable("connected E2B client has no file upload API")
+            try:
+                self.client.files.write(remote, content)
+                return
+            except Exception:
+                # An attached client (Sandbox.connect) may lack the gateway
+                # files route; the command channel always works.
+                pass
+        self._put_via_shell(content, remote)
+
+    def _put_via_shell(self, content: bytes, remote: str) -> None:
+        import base64 as _base64
+
+        encoded = _base64.b64encode(content).decode("ascii")
+        chunk = 120_000
+        first = True
+        for start in range(0, max(len(encoded), 1), chunk):
+            piece = encoded[start : start + chunk]
+            operator = ">" if first else ">>"
+            first = False
+            result = self.run(
+                ("sh", "-c", f"printf %s {piece} {operator} {remote}.b64")
+            )
+            if not result.ok:
+                raise SandboxUnavailable(f"could not stage upload for {remote}")
+        result = self.run(
+            ("sh", "-c", f"base64 -d {remote}.b64 > {remote} && rm -f {remote}.b64")
+        )
+        if not result.ok:
+            raise SandboxUnavailable(f"could not decode upload for {remote}")
 
     def get(self, remote: str, local: Path) -> None:
         if hasattr(self.client, "files") and hasattr(self.client.files, "read"):
-            content = self.client.files.read(remote)
-            local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_bytes(content if isinstance(content, bytes) else str(content).encode())
-            return
-        raise SandboxUnavailable("connected E2B client has no file download API")
+            try:
+                content = self.client.files.read(remote)
+                local.parent.mkdir(parents=True, exist_ok=True)
+                local.write_bytes(
+                    content if isinstance(content, bytes) else str(content).encode()
+                )
+                return
+            except Exception:
+                pass
+        result = self.run(("sh", "-c", f"base64 {remote}"), timeout_seconds=900)
+        if not result.ok:
+            raise SandboxUnavailable(f"could not download {remote}")
+        import base64 as _base64
+
+        local.parent.mkdir(parents=True, exist_ok=True)
+        local.write_bytes(_base64.b64decode("".join(result.stdout.split())))
 
     def close(self) -> None:
         """Release the E2B sandbox (used by fresh certification sandboxes)."""

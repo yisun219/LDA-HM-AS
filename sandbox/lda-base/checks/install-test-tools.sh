@@ -12,8 +12,8 @@ test -s "$sources" || {
 if ! test -f /etc/apt/sources.list.d/lda-snapshot.sources; then
   sudo -n cp "$sources" /etc/apt/sources.list.d/lda-snapshot.sources
   for original in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
-    if test -f "$original" && ! test -f "$original.lda-disabled"; then
-      sudo -n mv "$original" "$original.lda-disabled"
+    if test -f "$original"; then
+      sudo -n mv "$original" "/etc/apt/lda-disabled-$(basename "$original")"
     fi
   done
   sudo -n apt-get -o Acquire::Check-Valid-Until=false update
@@ -21,5 +21,5 @@ fi
 if ! command -v autopkgtest >/dev/null; then
   sudo -n apt-get -o Acquire::Check-Valid-Until=false install -y autopkgtest
 fi
-autopkgtest --help >/dev/null
+test -x "$(command -v autopkgtest)"
 echo "autopkgtest ready; system apt pinned to the recorded snapshot"

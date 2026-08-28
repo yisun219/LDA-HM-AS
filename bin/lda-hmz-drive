@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Keep one hmz-harnessed run alive across transient failures: the flow is
+# resumable, so every retry picks the same run up from its kept state.
+set -uo pipefail
+WORKSPACE="${1:?usage: lda-hmz-drive WORKSPACE RUN_ID [extra lda-hmz run args...]}"
+RUN_ID="${2:?usage: lda-hmz-drive WORKSPACE RUN_ID [extra lda-hmz run args...]}"
+shift 2
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+RESULTS_ROOT="${LDA_RESULTS_ROOT:-$HOME/lda-runs}"
+mkdir -p "$RESULTS_ROOT"
+LOG="$RESULTS_ROOT/driver-$RUN_ID.log"
+export PYTHONUNBUFFERED=1
+attempts=0
+while true; do
+  started=$(date +%s)
+  printf "%s hmz-driver: starting attempt %s\n" "$(date -Is)" "$attempts" >>"$LOG"
+  "$REPO/bin/lda-hmz" run "$WORKSPACE" --run-id "$RUN_ID" "$@" >>"$LOG" 2>&1
+  code=$?
+  elapsed=$(( $(date +%s) - started ))
+  if [ "$code" -eq 0 ]; then
+    printf "%s hmz-driver: run exited cleanly after %ss\n" "$(date -Is)" "$elapsed" >>"$LOG"
+    break
+  fi
+  [ "$elapsed" -gt 600 ] && attempts=0
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 8 ]; then
+    printf "%s hmz-driver: giving up after %s consecutive fast failures\n" "$(date -Is)" "$attempts" >>"$LOG"
+    exit 1
+  fi
+  printf "%s hmz-driver: exit=%s after %ss; retrying in 90s\n" "$(date -Is)" "$code" "$elapsed" >>"$LOG"
+  sleep 90
+done

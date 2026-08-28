@@ -267,7 +267,9 @@ class LDAExecution:
         sibling = getattr(self.sandbox, "sibling", None)
         if callable(sibling):
             try:
-                watch_sandbox = sibling()
+                candidate_watch = sibling()
+                if candidate_watch.run(("true",)).ok:
+                    watch_sandbox = candidate_watch
             except Exception:
                 watch_sandbox = self.sandbox
         session = self.builder_session_name()

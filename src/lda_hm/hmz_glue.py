@@ -82,11 +82,29 @@ def run_card(builder_side: Any, reviewer_side: Any, workspace: Path, state: dict
         Path(os.environ["LDA_RESULTS_ROOT"]) if os.getenv("LDA_RESULTS_ROOT") else None
     )
 
+    brokers = []
+
     def on_sandbox(sandbox) -> None:
+        from .broker import SandboxBroker
+
         live = workspace / ".lda-hm" / "live-sandbox.json"
         live.parent.mkdir(parents=True, exist_ok=True)
+        socket_path = workspace / ".lda-hm" / "broker.sock"
+        for stale in brokers:
+            stale.close()
+        brokers.clear()
+        broker = SandboxBroker(sandbox, socket_path)
+        broker.start()
+        brokers.append(broker)
         live.write_text(
-            json.dumps({"sandbox_id": sandbox.sandbox_id, "epoch": time.time()}) + "\n",
+            json.dumps(
+                {
+                    "sandbox_id": sandbox.sandbox_id,
+                    "broker": str(socket_path),
+                    "epoch": time.time(),
+                }
+            )
+            + "\n",
             encoding="utf-8",
         )
 

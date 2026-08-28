@@ -41,7 +41,7 @@ sample() {
     set -euo pipefail
     . /opt/lda/harness/checks/pkg-common.sh
     lda_bench_run micro selfcheck baseline 24 \
-      sh -c "for i in \$(seq 24); do sha256sum '"$workdir"'/fixture; done | tail -1"
+      sh -c "for i in \$(seq 24); do sha256sum '"$workdir"'/fixture; done | tail -1 | cut -d\" \" -f1"
   '
 }
 
