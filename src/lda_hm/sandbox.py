@@ -209,12 +209,26 @@ class E2BSandbox:
             raise ValueError("sandbox command must not be empty")
         command = _with_envs(command, envs)
         rendered = " ".join(shlex.quote(part) for part in command)
+        if timeout_seconds >= 1200:
+            # The shared gateway drops command streams that stay silent for
+            # long stretches, which leaves the client hanging on an idle
+            # sandbox. Long-running commands therefore tick on stderr; the
+            # ticks are stripped from the captured stream below.
+            rendered = (
+                "( while :; do echo LDA-HEARTBEAT >&2; sleep 20; done ) & "
+                "__lda_hb=$!; " + rendered + "; __lda_rc=$?; "
+                "kill $__lda_hb 2>/dev/null; exit $__lda_rc"
+            )
         started = time.monotonic()
         try:
             result = self.client.commands.run(rendered, cwd=self.cwd, timeout=timeout_seconds)
             exit_code = int(getattr(result, "exit_code", getattr(result, "exit_code", 0)))
             stdout = str(getattr(result, "stdout", ""))
             stderr = str(getattr(result, "stderr", ""))
+            if timeout_seconds >= 1200 and "LDA-HEARTBEAT" in stderr:
+                stderr = "\n".join(
+                    line for line in stderr.splitlines() if line != "LDA-HEARTBEAT"
+                )
         except Exception as error:  # transport errors are surfaced as failed results
             if hasattr(error, "exit_code"):
                 exit_code = int(getattr(error, "exit_code"))
