@@ -227,7 +227,9 @@ class E2BSandbox:
             stderr = str(getattr(result, "stderr", ""))
             if timeout_seconds >= 1200 and "LDA-HEARTBEAT" in stderr:
                 stderr = "\n".join(
-                    line for line in stderr.splitlines() if line != "LDA-HEARTBEAT"
+                    line
+                    for line in stderr.splitlines()
+                    if line.strip() != "LDA-HEARTBEAT"
                 )
         except Exception as error:  # transport errors are surfaced as failed results
             if hasattr(error, "exit_code"):

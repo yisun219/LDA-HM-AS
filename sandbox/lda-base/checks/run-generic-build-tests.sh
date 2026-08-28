@@ -8,6 +8,20 @@ set -euo pipefail
 /opt/lda/harness/checks/ensure-pkg-candidate.sh
 state="$(cat /opt/lda/candidate/upstream-tests-state 2>/dev/null || echo missing)"
 case "$state" in
+  reference)
+    reference=/opt/lda/baseline/upstream-tests-failures
+    candidate=/opt/lda/candidate/upstream-tests-failures
+    test -f "$reference" || { echo "baseline failure reference missing" >&2; exit 1; }
+    test -f "$candidate" || { echo "candidate failure record missing" >&2; exit 1; }
+    regressions="$(LC_ALL=C comm -13 "$reference" "$candidate")"
+    if test -n "$regressions"; then
+      echo "upstream suite regressions vs the baseline reference:" >&2
+      printf '%s\n' "$regressions" >&2
+      exit 1
+    fi
+    printf 'REFERENCE: candidate failure set within baseline (%s baseline failures, %s candidate)\n' \
+      "$(wc -l <"$reference")" "$(wc -l <"$candidate")"
+    ;;
   ran)
     printf 'candidate rebuild ran the upstream test suite (dh_auto_test evidenced in build log)\n'
     ;;

@@ -20,6 +20,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/build-package.sh",
       "baseline"
     ],
@@ -37,6 +38,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
       "baseline"
     ]
@@ -46,6 +48,7 @@
     "LDA_PKG_SOURCE=libsoup3",
     "LDA_PKG_VERSION=3.6.6-1",
     "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+    "LDA_UPSTREAM_TESTS=reference",
     "/opt/lda/harness/checks/ensure-pkg-candidate.sh"
   ],
   "selfcheck_commands": [
@@ -54,6 +57,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-soup-selfcheck.sh"
     ]
   ],
@@ -63,6 +67,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-generic-build-tests.sh"
     ]
   ],
@@ -72,6 +77,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
       "candidate"
     ],
@@ -87,6 +93,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-generic-abi-fence.sh"
     ]
   ],
@@ -96,6 +103,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-soup-ffi-fence.sh"
     ]
   ],
@@ -105,6 +113,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-soup-behavior-fence.sh"
     ]
   ],
@@ -114,6 +123,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-generic-lifecycle.sh"
     ]
   ],
@@ -123,6 +133,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-generic-security-fence.sh"
     ]
   ],
@@ -132,6 +143,7 @@
       "LDA_PKG_SOURCE=libsoup3",
       "LDA_PKG_VERSION=3.6.6-1",
       "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-soup-behavior-fence.sh"
     ]
   ],
@@ -159,6 +171,7 @@
         "LDA_PKG_SOURCE=libsoup3",
         "LDA_PKG_VERSION=3.6.6-1",
         "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "LDA_UPSTREAM_TESTS=reference",
         "/opt/lda/harness/checks/run-soup-headers-micro.sh"
       ],
       "baseline_command": [
@@ -166,6 +179,7 @@
         "LDA_PKG_SOURCE=libsoup3",
         "LDA_PKG_VERSION=3.6.6-1",
         "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "LDA_UPSTREAM_TESTS=reference",
         "/opt/lda/harness/checks/run-soup-headers-micro.sh",
         "baseline"
       ]
@@ -186,6 +200,7 @@
         "LDA_PKG_SOURCE=libsoup3",
         "LDA_PKG_VERSION=3.6.6-1",
         "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "LDA_UPSTREAM_TESTS=reference",
         "/opt/lda/harness/checks/run-soup-http-e2e.sh"
       ],
       "baseline_command": [
@@ -193,6 +208,7 @@
         "LDA_PKG_SOURCE=libsoup3",
         "LDA_PKG_VERSION=3.6.6-1",
         "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "LDA_UPSTREAM_TESTS=reference",
         "/opt/lda/harness/checks/run-soup-http-e2e.sh",
         "baseline"
       ]

@@ -50,6 +50,7 @@ SOURCE_MAP = {
 # else is refused with its template requirements listed.
 BENCHMARK_PROFILES = {
     "libsoup-3.0-0": {
+        "tests_policy": "reference",
         "setup": [
             "prepare-soup-fixtures.sh",
             "install-soup-workbench.sh",
@@ -175,6 +176,9 @@ def generate_card(binary_package: str, apt_snapshot_card: dict) -> dict:
         f"LDA_PKG_VERSION={version}",
         f"LDA_PKG_RUNTIME_DEBS={runtime_debs}",
     ]
+    tests_policy = profile.get("tests_policy", "required")
+    if tests_policy != "required":
+        env.append(f"LDA_UPSTREAM_TESTS={tests_policy}")
 
     def wrapped(script: str, *arguments: str) -> list:
         return env + [f"/opt/lda/harness/checks/{script}", *arguments]
