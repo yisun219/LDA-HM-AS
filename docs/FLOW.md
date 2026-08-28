@@ -227,7 +227,19 @@ deterministic gates pass:
 15. finalize completion
 
 In addition to these control gates, every package card has hard compatibility
-fences and two-layer paired benchmarks. A speedup never compensates for an ABI,
+fences and two-layer paired benchmarks. Three fence families are
+non-negotiable: the package's own acceptance tests (the candidate rebuild
+must prove in its build log that dh_auto_test ran - or that the packaging
+visibly disables it - and the package's autopkgtest suite must not regress
+against the baseline reference recorded at setup), the ABI/FFI
+surgical-replacement suite, and the Builder-trace audit (the harness appends
+every turn to a cumulative stream-json trace inside the sandbox, mirrored
+live to the host by the watchdog, scanned for tampering patterns, and
+required by the trace fence before any verdict). Setup also aligns every
+installed package to the pinned snapshot's version (the template carries
+newer security updates; the apt solver only honors explicit downgrades), so
+build-dependencies and stock installs resolve exactly as an ISO-era system
+would. A speedup never compensates for an ABI,
 FFI, behavior, package lifecycle, security, result-equivalence, or trace audit
 failure. Benchmark regression limits are explicit per workload and account for
 measurement noise; they are guardrails, not proof that an optimization achieved
