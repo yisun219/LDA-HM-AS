@@ -157,8 +157,8 @@ class BenchmarkAnalysisTest(unittest.TestCase):
             judge_comparison(SPEC, comparison, SPEC.min_speedup_percent, stage="train")
 
     def test_speedup_within_noise_is_not_certified(self) -> None:
-        baseline = _report("-baseline", [{"small": 1.00}, {"small": 1.30}, {"small": 0.80}], "baseline")
-        candidate = _report("-candidate", [{"small": 0.97}, {"small": 1.24}, {"small": 0.79}], "candidate")
+        baseline = _report("-baseline", [{"small": 1.00}, {"small": 1.02}, {"small": 0.98}], "baseline")
+        candidate = _report("-candidate", [{"small": 0.95}, {"small": 1.02}, {"small": 0.946}], "candidate")
         comparison = compare_paired(SPEC, baseline, candidate)
         with self.assertRaisesRegex(RuntimeError, "within measurement noise"):
             judge_comparison(SPEC, comparison, SPEC.min_speedup_percent, stage="train")
