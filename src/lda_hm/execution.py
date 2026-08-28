@@ -102,6 +102,17 @@ def judge_comparison(
         return
     speedup = comparison.overall_speedup_percent
     noise = comparison.noise_percent
+    # A pathological window is evidence about the host, never about the
+    # candidate: refusing to judge in a co-tenant storm does not lower the
+    # bar - the target must still be met on a sane window.
+    storm = max(3.0 * min_speedup_percent, 6.0)
+    if noise > storm or comparison.baseline_drift_percent > 2.0 * storm:
+        raise BenchmarkEnvironmentError(
+            f"benchmark window pathological [{stage}] {spec.layer}/{spec.name}: "
+            f"half-range={noise:.3f}% drift={comparison.baseline_drift_percent:.3f}% "
+            f"against a {min_speedup_percent:.3f}% target; rerun the paired "
+            "benchmark on a quieter window instead of judging the candidate"
+        )
     if speedup < min_speedup_percent:
         raise RuntimeError(
             f"benchmark speedup target not met [{stage}] {spec.layer}/{spec.name}: "
