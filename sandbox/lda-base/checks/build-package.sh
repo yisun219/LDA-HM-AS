@@ -78,7 +78,7 @@ done
 
 # Inventory every shared library shipped by the selected runtime debs.
 find "$package_root/usr/lib" "$package_root/lib" -type f -name '*.so*' 2>/dev/null \
-  | grep -v '/usr/lib/debug/' | LC_ALL=C sort >"$output_root/libraries.list"
+  | grep -v '/usr/lib/debug/' | LC_ALL=C sort >"$output_root/libraries.list" || true
 test -s "$output_root/libraries.list" || {
   echo "no shared libraries found in $runtime_debs" >&2
   exit 67

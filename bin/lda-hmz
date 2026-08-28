@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Run the LDA flow under the Humanize 2 harness (hmz runner + E2B backend).
+set -euo pipefail
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+PY="${LDA_HMZ_PYTHON:-$HOME/.venvs/ldahm/bin/python}"
+test -x "$PY" || { echo "lda-hmz: hmz virtualenv python not found at $PY" >&2; exit 69; }
+export PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m lda_hm.hmz_launcher "$@"

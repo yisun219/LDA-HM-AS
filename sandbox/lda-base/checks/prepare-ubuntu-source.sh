@@ -33,6 +33,8 @@ apt_options=(
 
 apt-get "${apt_options[@]}" update
 
+/opt/lda/harness/checks/align-to-snapshot.sh
+
 mkdir -p "$work"
 find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 cd "$work"

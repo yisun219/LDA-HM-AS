@@ -1,0 +1,2 @@
+[console_scripts]
+lda = lda_hm.cli:main

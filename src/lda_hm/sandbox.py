@@ -167,6 +167,18 @@ class E2BSandbox:
         instance._ensure_workdir()
         return instance
 
+    @classmethod
+    def attach(cls, sandbox_id: str, *, cwd: str = "/opt/lda/work") -> "E2BSandbox":
+        """Connect to an already-running sandbox (relay and watchdog side)."""
+        cls.load_private_env()
+        cls.configure_shared_gateway()
+        try:
+            from e2b import Sandbox as E2BSdkSandbox  # type: ignore
+        except ImportError as error:
+            raise SandboxUnavailable("E2B SDK is not installed") from error
+        client = E2BSdkSandbox.connect(sandbox_id)
+        return cls(client, sandbox_id=sandbox_id, cwd=cwd)
+
     def _ensure_workdir(self) -> None:
         """Create the configured cwd even when connecting to an older template."""
         if not hasattr(self.client, "commands"):

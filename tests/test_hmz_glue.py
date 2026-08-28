@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+from lda_hm.hmz_glue import READER_ROLES, WRITER_ROLES, RoleSession, role_agents
+
+
+class FakeHmzSession:
+    def __init__(self, agent, cwd):
+        self.agent = agent
+        self.cwd = cwd
+        self.box_session = f"{agent.name}-abc123"
+        self.prompts = []
+        self.answer = f"answer from {agent.name}"
+        self.raises = None
+
+    def __call__(self, prompt, **kwargs):
+        if self.raises is not None:
+            raise self.raises
+        self.prompts.append(prompt)
+        return self.answer
+
+
+class FakeHmzAgent:
+    def __init__(self, name="base"):
+        self.name = name
+        self.clones = []
+        self.sessions = []
+
+    def clone(self, *, name=None, config=None, skills=None):
+        made = FakeHmzAgent(name or f"{self.name}-clone")
+        self.clones.append(made)
+        return made
+
+    def new(self, cwd=None):
+        session = FakeHmzSession(self, cwd)
+        self.sessions.append(session)
+        return session
+
+
+class RoleAgentsTest(unittest.TestCase):
+    def test_six_roles_cloned_by_side(self) -> None:
+        builder_side, reviewer_side = FakeHmzAgent("b"), FakeHmzAgent("r")
+        agents = role_agents(builder_side, reviewer_side)
+        self.assertEqual(set(agents), set(WRITER_ROLES) | set(READER_ROLES))
+        self.assertEqual([c.name for c in builder_side.clones], list(WRITER_ROLES))
+        self.assertEqual([c.name for c in reviewer_side.clones], list(READER_ROLES))
+
+    def test_sessions_are_fresh_per_new_session(self) -> None:
+        agents = role_agents(FakeHmzAgent("b"), FakeHmzAgent("r"))
+        first = agents["reviewer"].new_session(Path("."))
+        second = agents["reviewer"].new_session(Path("."))
+        self.assertIsNot(first._session, second._session)
+        self.assertTrue(first.session_id.startswith("reviewer-"))
+
+
+class RoleSessionTest(unittest.TestCase):
+    def test_ask_returns_text(self) -> None:
+        session = FakeHmzSession(FakeHmzAgent("builder"), Path("."))
+        adapter = RoleSession(session)
+        self.assertEqual(adapter.ask("do it"), "answer from builder")
+        self.assertEqual(session.prompts, ["do it"])
+
+    def test_failure_translates_to_runtimeerror(self) -> None:
+        import subprocess
+
+        session = FakeHmzSession(FakeHmzAgent("builder"), Path("."))
+        session.raises = subprocess.CalledProcessError(1, ["claude"], stderr="limit reached")
+        adapter = RoleSession(session)
+        with self.assertRaises(RuntimeError):
+            adapter.ask("do it")
+
+    def test_empty_answer_raises(self) -> None:
+        session = FakeHmzSession(FakeHmzAgent("builder"), Path("."))
+        session.answer = "   "
+        adapter = RoleSession(session)
+        with self.assertRaises(RuntimeError):
+            adapter.ask("do it")
+
+
+if __name__ == "__main__":
+    unittest.main()
