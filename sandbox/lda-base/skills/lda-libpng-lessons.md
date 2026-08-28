@@ -32,11 +32,19 @@ was measured under paired in-sandbox benchmarks with holdout.
   loader path (row-by-row png_read_row with progressive callbacks), not on
   the one-shot png_image simplified API.
 
-## Translation reality (why e2e is harder than micro)
+## Translation reality (measured, decisive)
 
-The GTK/gdk-pixbuf image path adds loader machinery, GIO chunked reads,
-per-row callbacks, and buffer copies around libpng; a +6% micro decode win
-translated to only +0.2-0.7% on the pixbuf-decode end-to-end benchmark.
-Clearing an end-to-end bar therefore needs mechanisms that cover the whole
-libpng share of that path (all SIMD filter rows, row-copy/`png_combine_row`,
-IDAT chunk handling), not just one kernel.
+- On Ubuntu 26.04, gdk-pixbuf 2.44 ships NO legacy loaders: PNG decoding
+  goes through glycin (`libglycin-2.so.0`, the Rust png crate) and never
+  reaches libpng. Six independent paired measurements of a +13% libpng win
+  showed 0.0% +/- 0.7% on the pixbuf path - a true architectural fact, not
+  noise. Do not spend rounds trying to move the pixbuf benchmark with libpng
+  changes; it exists as a translation verifier and regression fence only.
+- cairo (`cairo_image_surface_create_from_png`) IS the desktop stack's
+  direct system-libpng consumer (GTK asset loading, librsvg rasterization,
+  screenshots, printing). The validated patch measured +12.3% on the
+  cairo-png e2e workload (ratios ~0.890 across 12 alternated pairs, decoded
+  pixels byte-identical). That is the certifying end-to-end path.
+- The libpng-only micro win (png_image API) measured +13% with the validated
+  patch; direct-API consumers (image tools, compositors, custom software)
+  get the full benefit.

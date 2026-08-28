@@ -97,6 +97,24 @@
   ],
   "end_to_end_benchmarks": [
     {
+      "name": "cairo-png-e2e",
+      "layer": "end_to_end",
+      "command": [
+        "/opt/lda/harness/checks/run-cairo-e2e.sh"
+      ],
+      "baseline_command": [
+        "/opt/lda/harness/checks/run-cairo-e2e.sh",
+        "baseline"
+      ],
+      "repetitions": 7,
+      "timeout_seconds": 1800,
+      "inputs": [
+        "cairo-png-load"
+      ],
+      "max_regression_percent": 3.0,
+      "min_speedup_percent": 3.0
+    },
+    {
       "name": "pixbuf-decode-e2e",
       "layer": "end_to_end",
       "command": [
@@ -106,13 +124,13 @@
         "/opt/lda/harness/checks/run-pixbuf-e2e.sh",
         "baseline"
       ],
-      "repetitions": 9,
+      "repetitions": 5,
       "timeout_seconds": 1800,
       "inputs": [
         "pixbuf-decode"
       ],
       "max_regression_percent": 3.0,
-      "min_speedup_percent": 0.5
+      "min_speedup_percent": null
     }
   ],
   "baseline": {

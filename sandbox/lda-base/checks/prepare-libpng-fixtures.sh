@@ -153,6 +153,69 @@ C
 cc -O2 -Wall -Werror "$root/pixbuf-consumer.c" -o "$root/pixbuf-consumer" -ldl
 "$root/pixbuf-consumer" "$root/small.png" 1 >"$root/pixbuf-selftest.txt"
 
+# Cairo consumer: cairo_image_surface_create_from_png is the desktop stack's
+# direct libpng path (GTK asset loading, librsvg rasterization, screenshots
+# all funnel PNG I/O through cairo). On Ubuntu 26.04 gdk-pixbuf itself
+# decodes PNG via glycin (Rust), so cairo is the system-level consumer that
+# actually exercises libpng.
+cat >"$root/cairo-consumer.c" <<'C'
+#include <dlfcn.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef void *(*from_png_fn)(const char *);
+typedef unsigned char *(*get_data_fn)(void *);
+typedef int (*get_int_fn)(void *);
+typedef void (*destroy_fn)(void *);
+typedef int (*status_fn)(void *);
+
+static uint64_t hash_bytes(const unsigned char *data, size_t size) {
+  uint64_t hash = UINT64_C(1469598103934665603);
+  for (size_t i = 0; i < size; ++i) {
+    hash ^= data[i];
+    hash *= UINT64_C(1099511628211);
+  }
+  return hash;
+}
+
+int main(int argc, char **argv) {
+  if (argc < 3) return 64;
+  void *cairo = dlopen("libcairo.so.2", RTLD_NOW);
+  if (cairo == NULL) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 69; }
+  from_png_fn from_png = (from_png_fn)dlsym(cairo, "cairo_image_surface_create_from_png");
+  get_data_fn get_data = (get_data_fn)dlsym(cairo, "cairo_image_surface_get_data");
+  get_int_fn get_h = (get_int_fn)dlsym(cairo, "cairo_image_surface_get_height");
+  get_int_fn get_stride = (get_int_fn)dlsym(cairo, "cairo_image_surface_get_stride");
+  status_fn status = (status_fn)dlsym(cairo, "cairo_surface_status");
+  destroy_fn destroy = (destroy_fn)dlsym(cairo, "cairo_surface_destroy");
+  if (!from_png || !get_data || !get_h || !get_stride || !status || !destroy) {
+    fprintf(stderr, "dlsym: %s\n", dlerror());
+    return 69;
+  }
+  const int iterations = atoi(argv[argc - 1]);
+  /* Order-sensitive chain (XOR alone self-cancels on even repeats). */
+  uint64_t aggregate = UINT64_C(1469598103934665603);
+  for (int iteration = 0; iteration < iterations; ++iteration) {
+    for (int index = 1; index < argc - 1; ++index) {
+      void *surface = from_png(argv[index]);
+      if (surface == NULL || status(surface) != 0) {
+        fprintf(stderr, "cairo png load failed: %d\n", surface ? status(surface) : -1);
+        return 2;
+      }
+      const size_t size = (size_t)get_h(surface) * (size_t)get_stride(surface);
+      aggregate = aggregate * UINT64_C(1099511628211) ^ hash_bytes(get_data(surface), size);
+      destroy(surface);
+    }
+  }
+  printf("%016llx\n", (unsigned long long)aggregate);
+  return 0;
+}
+C
+cc -O2 -Wall -Werror "$root/cairo-consumer.c" -o "$root/cairo-consumer" -ldl
+"$root/cairo-consumer" "$root/small.png" "$root/small.png" 1 >"$root/cairo-selftest.txt"
+
 cat >"$root/libpng-consumer.c" <<'C'
 #include <png.h>
 #include <stdint.h>
