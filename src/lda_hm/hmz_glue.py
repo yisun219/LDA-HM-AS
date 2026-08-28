@@ -71,11 +71,14 @@ def role_agents(builder_side: Any, reviewer_side: Any) -> dict:
 def run_card(builder_side: Any, reviewer_side: Any, workspace: Path, state: dict) -> None:
     """Drive one card workspace to a terminal phase under the hmz harness."""
     workspace = Path(workspace).resolve()
-    run_id = (
-        str(state.get("run_id") or "")
-        or os.getenv("LDA_RUN_ID", "")
-        or time.strftime("hmz-%Y%m%dT%H%M%S")
-    )
+    requested = os.getenv("LDA_RUN_ID", "")
+    kept = str(state.get("run_id") or "")
+    if requested and kept and requested != kept:
+        # An explicitly different run id is a different run: the kept loop
+        # state belongs to the old one and must not leak into it.
+        state.clear()
+        kept = ""
+    run_id = kept or requested or time.strftime("hmz-%Y%m%dT%H%M%S")
     state["run_id"] = run_id
     state["workspace"] = str(workspace)
     results_root: Optional[Path] = (

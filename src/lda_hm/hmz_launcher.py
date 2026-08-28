@@ -49,6 +49,10 @@ def main(argv=None) -> int:
         return 2
     if args.run_id:
         os.environ["LDA_RUN_ID"] = args.run_id
+    # The hmz cycle (kept state, traces) is keyed by the working directory:
+    # running from the card workspace keeps every card's loop state and
+    # trace lineage separate from every other card's.
+    os.chdir(workspace)
     if args.task:
         os.environ["LDA_TASK"] = args.task
     if args.contract:
