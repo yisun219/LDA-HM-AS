@@ -132,7 +132,11 @@ deterministic rules > LLM counsel.
    spend) plus the human `control.json`, and emits one auditable
    `SupervisorDecision` per round, stored at `rounds/<n>/supervision.json`.
    Actions: continue, retarget (rewrites the next round contract),
-   restart_builder (fresh Builder session for a dead/poisoned one), abort.
+   restart_builder (fresh Builder session for a dead/poisoned one),
+   consult_analyst (adds an agent: a fresh independent Analyst whose
+   diagnosis is appended to the next contract - granted once per stall
+   streak when drift recovery begins), grant_grace (one-per-run stall
+   forgiveness for an improving near-miss; rules-only), abort.
    Deterministic rules cover budget exhaustion, repeated same-fence failures,
    and dead Builder sessions; an LLM supervisor session is consulted only
    when the run is off-track, its answer is parsed under a strict

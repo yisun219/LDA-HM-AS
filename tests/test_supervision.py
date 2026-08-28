@@ -107,7 +107,7 @@ class SupervisorDecisionTest(unittest.TestCase):
         decision = supervisor.decide(supervisor.pulse(), {})
         self.assertEqual(decision.action, "abort")
 
-    def test_repeated_fence_block_retargets(self) -> None:
+    def test_repeated_fence_block_consults_with_targeted_contract(self) -> None:
         self.flow.begin_round("contract")
         self.flow.finish_builder_round("summary")
         self.flow.record_blocked_round("fence", "abi diff failed")
@@ -115,6 +115,15 @@ class SupervisorDecisionTest(unittest.TestCase):
         self.flow.finish_builder_round("summary")
         self.flow.record_blocked_round("fence", "abi diff failed again")
         supervisor = self._supervisor()
+        decision = supervisor.decide(supervisor.pulse(), {})
+        # Entering drift recovery adds an analyst AND carries the targeted
+        # repeated-failure contract.
+        self.assertEqual(decision.action, "consult_analyst")
+        self.assertIn("fence", decision.contract)
+        # With the consult already spent, the plain retarget rule takes over.
+        self.flow.state.metadata["last_analyst_consult_round"] = (
+            self.flow.state.current_round
+        )
         decision = supervisor.decide(supervisor.pulse(), {})
         self.assertEqual(decision.action, "retarget")
         self.assertIn("fence", decision.contract)
@@ -194,6 +203,37 @@ class SupervisorDecisionTest(unittest.TestCase):
         supervisor = self._supervisor()
         decision = supervisor.decide(supervisor.pulse(), {})
         self.assertNotEqual(decision.action, "grant_grace")
+
+    def test_drift_recovery_adds_an_analyst_once(self) -> None:
+        class Session:
+            def ask(self, prompt, *, schema=None):
+                return "Root cause: dispatch in per-image path. Route: one-time init."
+
+        self._block("benchmark regression [train] micro/m:boundary: slow")
+        self._block("benchmark regression [train] micro/m:boundary: slow again")
+        self.assertEqual(self.flow.state.phase.value, "drift_recovery")
+        supervisor = self._supervisor(fresh_analyst=lambda: Session())
+        pulse = supervisor.pulse()
+        decision = supervisor.decide(pulse, {})
+        self.assertEqual(decision.action, "consult_analyst")
+        diagnosis = supervisor.consult_analyst(pulse)
+        self.assertIn("Root cause", diagnosis)
+        path = self.flow.store.rounds / str(self.flow.state.current_round) / "diagnosis.md"
+        self.assertTrue(path.is_file())
+        # Same stall streak: no second consult.
+        decision = supervisor.decide(supervisor.pulse(), {})
+        self.assertNotEqual(decision.action, "consult_analyst")
+
+    def test_analyst_failure_never_blocks(self) -> None:
+        class DeadSession:
+            def ask(self, prompt, *, schema=None):
+                raise RuntimeError("backend down")
+
+        self._block("benchmark regression [train] micro/m:boundary: slow")
+        self._block("benchmark regression [train] micro/m:boundary: slow again")
+        supervisor = self._supervisor(fresh_analyst=lambda: DeadSession())
+        pulse = supervisor.pulse()
+        self.assertEqual(supervisor.consult_analyst(pulse), "")
 
     def test_records_decision_artifact(self) -> None:
         supervisor = self._supervisor()

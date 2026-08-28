@@ -34,6 +34,10 @@ SUPERVISOR_ACTIONS = (
     "restart_builder",
     "abort",
     "grant_grace",
+    # Adds an agent for one turn: a fresh independent Analyst reads the run
+    # evidence and produces a root-cause diagnosis that is appended to the
+    # next Builder contract. Additive and safe, so the LLM may request it too.
+    "consult_analyst",
 )
 
 _SPEEDUP_SHORTFALL = re.compile(
@@ -185,6 +189,7 @@ class Supervisor:
         budget_usd: Optional[float] = None,
         trace_remote_provider: Optional[Callable[[], str]] = None,
         recent_window: int = 3,
+        fresh_analyst: Optional[Callable[[], Session]] = None,
     ) -> None:
         self.flow = flow
         self.sandbox = sandbox
@@ -194,6 +199,7 @@ class Supervisor:
         self.budget_usd = budget_usd
         self.trace_remote_provider = trace_remote_provider
         self.recent_window = recent_window
+        self.fresh_analyst = fresh_analyst
         self.circuit_breaker_threshold = flow.config.circuit_breaker_threshold
 
     # ------------------------------------------------------------------ pulse
@@ -333,6 +339,9 @@ class Supervisor:
                     self.supervisor_prompt.format(pulse=pulse.render())
                 )
                 decision = parse_supervisor_answer(str(answer))
+                if decision.action == "consult_analyst":
+                    # Additive and safe; honor it directly.
+                    return decision
                 if decision.action in {"abort", "grant_grace"}:
                     # An LLM may recommend but not unilaterally end the run,
                     # and stall forgiveness is a rules-only privilege.
@@ -380,6 +389,9 @@ class Supervisor:
         grace = self._near_miss_grace(pulse)
         if grace is not None:
             return grace
+        consult = self._drift_consult(pulse)
+        if consult is not None:
+            return consult
         repeated = self._repeated_block_source(pulse.recent_blocks)
         if repeated:
             return SupervisorDecision(
@@ -404,6 +416,62 @@ class Supervisor:
                 reason="last round blocked and the builder trace recorded no turns",
             )
         return SupervisorDecision("continue", contract=self.default_contract, reason="on track")
+
+    def _drift_consult(self, pulse: RunPulse) -> Optional[SupervisorDecision]:
+        """Entering drift recovery earns one extra agent: a fresh Analyst.
+
+        The same builder session re-reading its own failures tends to repeat
+        them; an independent reader diagnosing the block history is the
+        cheapest topology change with real value. One consult per stall
+        streak, tracked in run metadata.
+        """
+        if pulse.phase != Phase.DRIFT_RECOVERY.value:
+            return None
+        last = self.flow.state.metadata.get("last_analyst_consult_round")
+        if last is not None and int(last) >= pulse.round - 1:
+            return None
+        contract = ""
+        repeated = self._repeated_block_source(pulse.recent_blocks)
+        if repeated:
+            contract = (
+                f"Fix the repeated {repeated} failure before anything else: "
+                f"{pulse.recent_blocks[-1][:300]}. Do not weaken any fence, test, "
+                "or benchmark; make the candidate satisfy it."
+            )
+        return SupervisorDecision(
+            "consult_analyst",
+            contract=contract,
+            reason="drift recovery entered; adding a fresh analyst for an independent diagnosis",
+        )
+
+    def consult_analyst(self, pulse: RunPulse) -> str:
+        """Run the added Analyst session; returns its diagnosis (or '')."""
+        from .prompts import ANALYST_DIAGNOSIS
+
+        if self.fresh_analyst is None:
+            return ""
+        try:
+            session = self.fresh_analyst()
+            answer = str(session.ask(ANALYST_DIAGNOSIS.format(pulse=pulse.render())))
+        except Exception as error:
+            self.flow.store.write_json(
+                self.flow.store.round_dir(self.flow.state.current_round).relative_to(
+                    self.flow.store.root
+                )
+                / "diagnosis-failed.json",
+                {"error": str(error)},
+            )
+            return ""
+        if not answer.strip():
+            return ""
+        round_dir = self.flow.store.round_dir(self.flow.state.current_round)
+        self.flow.store.write_text(
+            round_dir.relative_to(self.flow.store.root) / "diagnosis.md",
+            answer.strip() + "\n",
+        )
+        self.flow.state.metadata["last_analyst_consult_round"] = self.flow.state.current_round
+        self.flow.store.save_state(self.flow.state)
+        return answer.strip()
 
     def _near_miss_grace(self, pulse: RunPulse) -> Optional[SupervisorDecision]:
         """An improving speedup near-miss earns one stall forgiveness.
@@ -470,6 +538,15 @@ class Supervisor:
                 "decision": asdict(decision),
                 "epoch": time.time(),
             },
+        )
+        self.flow.store.journal(
+            "supervision",
+            round=self.flow.state.current_round,
+            action=decision.action,
+            source=decision.source,
+            spent_usd=round(pulse.spent_usd, 2),
+            builder_turns=pulse.builder_trace.turns,
+            builder_tool_uses=pulse.builder_trace.tool_uses,
         )
 
 

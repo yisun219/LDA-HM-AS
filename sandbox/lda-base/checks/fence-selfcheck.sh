@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
+# Generic known-bad-sample validation: fence primitives must flag broken
+# inputs before any verdict is trusted. Card families add their own probes
+# through the card's selfcheck_commands (fence-selfcheck-libpng.sh,
+# run-cairo-selfcheck.sh, ...) - a checker that has never flagged a bad
+# sample is not trusted with a card.
 set -euo pipefail
-
-# Known-bad-sample validation: a checker that has never flagged a broken
-# sample is not trusted. Each probe feeds a deliberately wrong input to a
-# fence primitive and requires it to fail; a probe that "passes" the bad
-# sample fails this whole script.
-
-. /opt/lda/harness/checks/libpng-common.sh
+. /opt/lda/harness/checks/pkg-common.sh
 
 fail() { echo "SELFCHECK FAIL: $*" >&2; exit 1; }
 note() { printf 'SELFCHECK %s\n' "$*"; }
 
-baseline_lib="$(lda_libpng_library baseline)"
-consumer=/opt/lda/fixtures/libpng/libpng-consumer
-fixtures=/opt/lda/fixtures/libpng
+lib_a="$(ldconfig -p | awk '/libz\.so\.1 /{print $NF; exit}')"
+lib_b="$(ldconfig -p | awk '/libpng16\.so\.16 /{print $NF; exit}')"
+test -n "$lib_a" && test -n "$lib_b" || fail "probe libraries unavailable"
 
-# Probe 1: the symbol/ELF ABI comparator must flag a different library.
-other_lib="$(ldconfig -p | awk '/libz\.so\.1 /{print $NF; exit}')"
-test -n "$other_lib" || fail "no probe library available"
-if /opt/lda/harness/checks/abi-fence.sh "$baseline_lib" "$other_lib" >/dev/null 2>&1; then
+# Probe 1: the symbol/ELF ABI comparator must flag two different libraries.
+if /opt/lda/harness/checks/abi-fence.sh "$lib_b" "$lib_a" >/dev/null 2>&1; then
   fail "abi comparator accepted a completely different library"
 fi
 note "abi comparator flags a wrong library"
@@ -27,40 +24,52 @@ note "abi comparator flags a wrong library"
 # abidiff can hang, so the probe is time-bounded: a refusal or a timeout both
 # mean "did not accept"; only exit 0 is the fatal rubber stamp.
 command -v abidiff >/dev/null || fail "abidiff is not installed"
-if timeout 60 abidiff "$baseline_lib" "$other_lib" >/dev/null 2>&1; then
+if timeout 60 abidiff "$lib_b" "$lib_a" >/dev/null 2>&1; then
   fail "abidiff accepted a completely different library"
 fi
 note "abidiff does not accept a wrong library"
 
-# Probe 2b: the fence's real invocation shape (debug dirs + header dirs) must
-# complete a self-comparison in bounded time, or the ABI fence cannot work.
-baseline_root=/opt/lda/baseline/root
-if ! timeout 240 abidiff \
-    --d1 "$baseline_root/usr/lib/debug" --d2 "$baseline_root/usr/lib/debug" \
-    --headers-dir1 "$baseline_root/usr/include" --headers-dir2 "$baseline_root/usr/include" \
-    "$baseline_lib" "$baseline_lib" >/dev/null 2>&1; then
-  fail "abidiff cannot complete a debug-informed self-comparison"
-fi
-note "abidiff self-comparison completes with debug info"
+# Probe 3: the in-sandbox timer must declare a nonce, tag its sample with the
+# same nonce, and produce plausible, repeatable A/A readings on a
+# deterministic workload.
+workdir="$(mktemp -d)"
+trap 'rm -rf "$workdir"' EXIT
+head -c 4194304 /dev/urandom >"$workdir/fixture"
 
-# Probe 3: the behavior hash must be content-sensitive and deterministic.
-hash_small_a="$(lda_run_with_libpng baseline "$consumer" "$fixtures/small.png" 3)"
-hash_small_b="$(lda_run_with_libpng baseline "$consumer" "$fixtures/small.png" 3)"
-hash_large="$(lda_run_with_libpng baseline "$consumer" "$fixtures/large.png" 3)"
-test "$hash_small_a" = "$hash_small_b" || fail "behavior hash is not deterministic"
-test "$hash_small_a" != "$hash_large" || fail "behavior hash ignores content"
-note "behavior hash is deterministic and content-sensitive"
+sample() {
+  bash -c '
+    set -euo pipefail
+    . /opt/lda/harness/checks/pkg-common.sh
+    lda_bench_run micro selfcheck baseline 24 \
+      sh -c "for i in \$(seq 24); do sha256sum '"$workdir"'/fixture; done | tail -1"
+  '
+}
 
-# Probe 4: the in-sandbox timer must produce plausible, repeatable readings.
-t1="$(lda_bench_consumer micro selfcheck baseline "$fixtures/small.png" 2000 "$consumer" | sed -n 's/^LDA_BENCH\[[^]]*\] //p' | python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
-t2="$(lda_bench_consumer micro selfcheck baseline "$fixtures/small.png" 2000 "$consumer" | sed -n 's/^LDA_BENCH\[[^]]*\] //p' | python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
+out1="$(sample)"
+out2="$(sample)"
+hashes=""
+for run in 1 2; do
+  out="$out1"; test "$run" = 2 && out="$out2"
+  nonce="$(printf '%s\n' "$out" | sed -n 's/^LDA_BENCH_NONCE //p' | head -1)"
+  test -n "$nonce" || fail "timer did not declare a nonce"
+  printf '%s\n' "$out" | grep -q "^LDA_BENCH\[$nonce\] " || \
+    fail "timer sample is not tagged with its declared nonce"
+  hashes="$hashes $(printf '%s\n' "$out" | sed -n "s/^LDA_BENCH\[$nonce\] //p" | \
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["hash"])')"
+done
+read -r hash1 hash2 <<<"$hashes"
+test "$hash1" = "$hash2" || fail "deterministic workload hashed differently across runs"
+t1="$(printf '%s\n' "$out1" | sed -n 's/^LDA_BENCH\[[0-9a-f]*\] //p' | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
+t2="$(printf '%s\n' "$out2" | sed -n 's/^LDA_BENCH\[[0-9a-f]*\] //p' | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["seconds"])')"
 python3 - "$t1" "$t2" <<'PY'
 import sys
 a, b = float(sys.argv[1]), float(sys.argv[2])
-assert a > 0.005 and b > 0.005, f"timer readings implausibly small: {a} {b}"
+assert a > 0.01 and b > 0.01, f"timer readings implausibly small: {a} {b}"
 ratio = a / b if a > b else b / a
 assert ratio < 3.0, f"timer readings unstable: {a} vs {b}"
 PY
-note "in-sandbox timer sane (A/A ratio ok)"
+note "in-sandbox timer declares nonce, tags samples, and is A/A stable"
 
-note "all known-bad probes behaved"
+note "all generic known-bad probes behaved"

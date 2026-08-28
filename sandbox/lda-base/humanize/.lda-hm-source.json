@@ -1,0 +1,5 @@
+{
+  "source": "https://github.com/PolyArch/humanize",
+  "commit": "4eeb392cd2450c3df99cb898bd6b24839967bbc3",
+  "vendored": "agent harness for in-sandbox builder sessions"
+}

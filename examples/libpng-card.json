@@ -169,5 +169,13 @@
     "execution_template_alias": "lda-production-2604-v10",
     "execution_template_id": "01a03892-ee93-7952-9da0-bbc04fb1fdec",
     "optimization_policy": "compatibility-first"
-  }
+  },
+  "candidate_build": [
+    "/opt/lda/harness/checks/ensure-libpng-candidate.sh"
+  ],
+  "selfcheck_commands": [
+    [
+      "/opt/lda/harness/checks/fence-selfcheck-libpng.sh"
+    ]
+  ]
 }

@@ -144,6 +144,12 @@ class TaskCard:
         "/opt/lda/baseline/baseline.json",
         "/opt/lda/baseline/manifest",
     )
+    # Card-provided pre-benchmark candidate build command (env-wrapped). An
+    # empty value falls back to the libpng pilot's builder.
+    candidate_build: tuple[str, ...] = ()
+    # Card-family known-bad self-probes, run at setup after the generic fence
+    # self-check; each must make this card's own checkers flag a bad sample.
+    selfcheck_commands: tuple[tuple[str, ...], ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

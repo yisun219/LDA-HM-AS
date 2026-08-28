@@ -122,7 +122,7 @@ def build() -> None:
             )
     template = (
         template
-        .run_cmd("chmod +x /opt/lda/harness/*.sh /opt/lda/harness/checks/*.sh")
+        .run_cmd("find /opt/lda/harness /opt/lda/humanize -type f -name '*.sh' -exec chmod +x {} +")
         .run_cmd("chown -R user:user /opt/lda /home/user")
         .set_workdir("/opt/lda/work")
         .set_envs({"PLAYWRIGHT_BROWSERS_PATH": "/opt/lda/ms-playwright"})
@@ -174,7 +174,7 @@ def smoke() -> None:
                     remote = destination + "/" + str(local.relative_to(source)).replace("\\", "/")
                     sandbox.files.write(remote, local.read_bytes())
         result = sandbox.commands.run(
-            "chmod +x /opt/lda/harness/lda-agent-harness.sh /opt/lda/harness/checks/*.sh && "
+            "find /opt/lda/harness /opt/lda/humanize -type f -name '*.sh' -exec chmod +x {} + && "
             "test -x /opt/lda/harness/lda-agent-harness.sh && "
             "test -f /opt/lda/skills/lda-abi-ffi-fence.md && "
             "python3 --version && uname -m"

@@ -1,31 +1,44 @@
-# LDA-HM
+# LDA-HM: Linux Development Agent Flow
 
-LDA-HM is an independent, Humanize-inspired flow for long-running agent work.
-It is not derived from the repository's `main` branch and does not vendor the
-Humanize or Flowverse source trees.
+LDA-HM is an original workflow system that lets long-running AI agents
+optimize Ubuntu packages under hard compatibility guarantees. It is built on
+the Humanize methodology (persistent-builder / fresh-reviewer RLCR loop,
+deterministic gates before semantic review, BitLesson knowledge base) and
+extends it with layers designed for this problem: E2B-native execution,
+ABI/FFI "surgical replacement" fences, statistically certified paired
+benchmarking on noisy multi-tenant hosts, and an Argus-informed dynamic
+supervision layer.
 
-The initial implementation establishes the control plane that later revisions
-can specialize for autoresearch:
+**Proven result**: run `libpng-2604-production-008` produced a drop-in
+`libpng16-16t64` replacement for stock Ubuntu 26.04 measuring **+6.8% micro
+decode** (held on a hidden holdout) and **+12.4% on the cairo desktop-stack
+end-to-end path**, certified independently in two additional fresh sandboxes,
+with SONAME/symbols/type-level ABI/Depends unchanged and byte-identical
+decoded output.
 
-- three explicit stages: idea, plan, and RLCR execution;
-- persistent writer sessions and fresh reader/reviewer sessions;
-- immutable plan and git anchors;
-- resumable JSON state and per-round artifacts;
-- a deterministic 15-gate boundary before semantic review;
-- regular review, full alignment, drift recovery, code review, finalize, and
-  methodology-analysis phases;
-- a dynamic Supervisor command layer: a live Builder-turn watchdog plus a
-  per-round decision node (continue / retarget / restart builder / abort)
-  driven by human control, deterministic rules, and optional LLM counsel,
-  recorded as `rounds/<n>/supervision.json` (see docs/FLOW.md);
-- statistically judged paired benchmarks (Student-t interval on log ratios,
-  CPU-steal environment gate, infra-vs-candidate evidence split) and
-  fresh-sandbox A/B/A' certification at finalize;
+Core capabilities:
+
+- Humanize control loop implemented natively: idea, plan (with independent
+  analyst convergence), RLCR execution; persistent Builder session, fresh
+  Reviewer per judgement; drift recovery, full alignment, code review,
+  finalize, methodology post-mortem; 42/5/2/3 numeric contract;
+- a deterministic 15-gate boundary plus a 10-check fence suite (baseline and
+  dependency tests, ABI/FFI/behavior/lifecycle/security/result-equivalence,
+  evidence integrity, Builder trace audit) that must all pass before any LLM
+  reviewer is consulted;
+- BitLesson: a per-run lessons knowledge base with mechanically validated
+  deltas, so rounds stop rediscovering the same failures;
+- the Supervisor command node (指挥): per-round auditable decisions -
+  continue / retarget / restart builder / add analyst / grace / abort -
+  driven by run evidence (verdicts, benchmark trend, trace statistics,
+  sandbox resources, spend) under fixed authority human > rules > LLM, plus
+  a live Builder-turn watchdog with trace mirroring;
+- statistically certified paired benchmarks: in-sandbox nonce-tagged timing,
+  order-alternated pairing, Student-t CI certification, CPU-steal and
+  pathological-spread environment gates, hidden holdout, and fresh-sandbox
+  A/B/A' certification replications at finalize;
 - integrity pinning of harness/baseline/fixtures with a host-side digest
-  manifest re-checked before every fence and benchmark;
-- runtime-neutral protocols for plugging in a concrete agent backend later
-  (see docs/HUMANIZE-MIGRATION.md for the planned switch to the humanize2
-  engine).
+  manifest re-checked before every fence and benchmark.
 
 No agent loop starts automatically. The package only provides orchestration
 and state primitives until `lda run` is invoked with an E2B template and an
@@ -55,7 +68,7 @@ export LDA_AGENT_COMMAND="/opt/lda/harness/lda-agent-harness.sh"
 # set -a; source ~/.config/lda/factlab-claude.env; set +a
 python -m lda_hm.cli run ./work \
   --run-id libpng-production-001 \
-  --results-root /fact_data/yisun/Linux-Development-Agent-Runs \
+  --results-root ~/lda-runs \
   --task "Optimize libpng for Ubuntu 26.04" \
   --contract "Advance the highest-priority unmet acceptance criterion"
 ```

@@ -84,7 +84,7 @@ class FenceSuite:
     def _commands(self, name: str, commands: Iterable[tuple[str, ...]]) -> list[FenceResult]:
         results: list[FenceResult] = []
         for command in commands:
-            result = self.sandbox.run(command)
+            result = self.sandbox.run(command, timeout_seconds=3600)
             results.append(FenceResult(name, result.ok, self._command_reason(result), (result,)))
             if not result.ok:
                 break
@@ -92,7 +92,10 @@ class FenceSuite:
 
     @staticmethod
     def _command_reason(result: SandboxResult) -> str:
-        return "passed" if result.ok else f"exit={result.exit_code}: {result.stderr[-500:]}"
+        if result.ok:
+            tail = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+            return "passed" + (f": {tail[:160]}" if tail else "")
+        return f"exit={result.exit_code}: {result.stderr[-500:]}"
 
     def _integrity_fence(self) -> FenceResult | None:
         if self.integrity_manifest is None:

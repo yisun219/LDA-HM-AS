@@ -11,7 +11,8 @@ RUN_ID="${2:?usage: lda-drive WORKSPACE RUN_ID [extra lda run args...]}"
 shift 2
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-RESULTS_ROOT="${LDA_RESULTS_ROOT:-/fact_data/yisun/Linux-Development-Agent-Runs}"
+RESULTS_ROOT="${LDA_RESULTS_ROOT:-$HOME/lda-runs}"
+mkdir -p "$RESULTS_ROOT"
 LOG="$RESULTS_ROOT/driver-$RUN_ID.log"
 export PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONUNBUFFERED=1

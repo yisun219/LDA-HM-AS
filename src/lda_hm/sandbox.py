@@ -271,6 +271,10 @@ class E2BSandbox:
             (root / "checks", "/opt/lda/harness/checks"),
             (root / "skills", "/opt/lda/skills"),
             (root / "baseline", "/opt/lda/baseline"),
+            # The Humanize agent harness (vendored at a pinned commit): the
+            # in-sandbox Builder works under its methodology - skills,
+            # validator patterns, RLCR discipline - readable at /opt/lda/humanize.
+            (root / "humanize", "/opt/lda/humanize"),
         )
         for directory in ("/opt/lda/control", "/opt/lda/review"):
             result = self.run(("mkdir", "-p", directory))
@@ -285,7 +289,14 @@ class E2BSandbox:
                 self.run(("mkdir", "-p", parent))
                 self.put(local, remote)
         self.run(("chmod", "+x", "/opt/lda/harness/lda-agent-harness.sh"))
-        self.run(("find", "/opt/lda/harness/checks", "-type", "f", "-name", "*.sh", "-exec", "chmod", "+x", "{}", ";"))
+        self.run(
+            (
+                "sh",
+                "-c",
+                "find /opt/lda/harness /opt/lda/humanize -type f -name '*.sh' "
+                "-exec chmod +x {} +",
+            )
+        )
 
     def bootstrap_credentials(self) -> None:
         """Inject existing user-scoped Agent logins without copying them to Git.

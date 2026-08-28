@@ -50,7 +50,7 @@ test "$actual_version" = "$version"
 sudo apt-get "${apt_options[@]}" build-dep -y .
 find . -maxdepth 1 -type f \( -name '*.dsc' -o -name '*.tar.*' -o -name '*.diff.gz' \) -delete
 
-git init -b lda/libpng-1.6.57-1
+git init -b "lda/${package}-${version//:/_}"
 git config user.email lda@localhost
 git config user.name LDA
 git add .

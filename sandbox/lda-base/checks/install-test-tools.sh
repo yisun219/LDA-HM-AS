@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Install the test tooling (autopkgtest) from the pinned snapshot, and point
+# the system apt at the same snapshot so test dependencies resolve
+# deterministically instead of from a mutable mirror.
+set -euo pipefail
+apt_root=/opt/lda/apt
+sources="$apt_root/snapshot.sources"
+test -s "$sources" || {
+  echo "snapshot sources missing; run prepare-ubuntu-source.sh first" >&2
+  exit 78
+}
+if ! test -f /etc/apt/sources.list.d/lda-snapshot.sources; then
+  sudo -n cp "$sources" /etc/apt/sources.list.d/lda-snapshot.sources
+  for original in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
+    if test -f "$original" && ! test -f "$original.lda-disabled"; then
+      sudo -n mv "$original" "$original.lda-disabled"
+    fi
+  done
+  sudo -n apt-get -o Acquire::Check-Valid-Until=false update
+fi
+if ! command -v autopkgtest >/dev/null; then
+  sudo -n apt-get -o Acquire::Check-Valid-Until=false install -y autopkgtest
+fi
+autopkgtest --help >/dev/null
+echo "autopkgtest ready; system apt pinned to the recorded snapshot"

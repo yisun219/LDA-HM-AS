@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,23 @@ class ArtifactStore:
         if not isinstance(value, dict):
             raise ValueError("state must be a JSON object")
         return FlowState.from_dict(value)
+
+    def journal(self, kind: str, **fields: Any) -> None:
+        """Append one event to the run's chronological journal.
+
+        The journal is the flow's own behavioral trace: every phase
+        transition, verdict, block, supervision decision, and per-round agent
+        statistic lands here append-only with a timestamp, so a finished run
+        can be studied as a time series (`lda trace <run-dir>`), not just as
+        a pile of final artifacts. Distinct from the agents' raw stream-json
+        traces, which record what the models said; this records what the
+        FLOW did.
+        """
+        record = {"ts": round(time.time(), 3), "kind": kind}
+        record.update(fields)
+        path = self.root / "journal.jsonl"
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
 
     def seal_plan(self, plan: str) -> str:
         digest = hashlib.sha256(plan.encode("utf-8")).hexdigest()

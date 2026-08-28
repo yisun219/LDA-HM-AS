@@ -31,7 +31,7 @@ COPY skills/ /opt/lda/skills/
 COPY harness/ /opt/lda/harness/
 COPY checks/ /opt/lda/harness/checks/
 
-RUN chmod +x /opt/lda/harness/lda-agent-harness.sh /opt/lda/harness/checks/*.sh
+RUN find /opt/lda/harness /opt/lda/humanize -type f -name '*.sh' -exec chmod +x {} +
 
 RUN chown -R user:user /opt/lda /home/user
 

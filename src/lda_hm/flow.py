@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,21 @@ from .types import (
 
 class InvalidTransition(RuntimeError):
     pass
+
+
+# BitLesson: a per-run knowledge base of hard-won lessons, re-validated
+# mechanically every round (a claimed delta must actually exist in the KB, an
+# update must reference a real entry). The point is that rounds stop
+# rediscovering the same failures.
+_BITLESSON_ID = re.compile(r"^BL-[0-9]{8}-[A-Za-z0-9._-]+$")
+_BITLESSON_PLACEHOLDER = re.compile(r"^(\[.*\]|<.*>|\.*)$")
+BITLESSON_FILE = "bitlesson.md"
+_BITLESSON_SEED = """# BitLesson Knowledge Base
+
+One entry per hard-won, re-usable lesson. Entries are appended by rounds via
+the BITLESSON protocol and are validated mechanically: an `add` must use a
+fresh `BL-YYYYMMDD-slug` id, an `update` must reference an existing entry.
+"""
 
 
 class HumanizeFlow:
@@ -115,22 +131,56 @@ class HumanizeFlow:
         *,
         bitlesson_action: str = "none",
         bitlesson_note: str = "",
+        bitlesson_id: str = "",
     ) -> Phase:
         self._require(Phase.IMPLEMENTATION, Phase.DRIFT_RECOVERY)
         if not summary.strip():
             raise ValueError("round summary must not be empty")
-        if bitlesson_action not in {"none", "add", "update"}:
-            raise ValueError("invalid BitLesson action")
+        applied = self._apply_bitlesson(bitlesson_action, bitlesson_id, bitlesson_note)
         round_dir = self.store.round_dir(self.state.current_round)
         relative = round_dir.relative_to(self.store.root)
         self.store.write_text(relative / "summary.md", summary.rstrip() + "\n")
-        self.store.write_json(
-            relative / "bitlesson.json",
-            {"action": bitlesson_action, "note": bitlesson_note},
-        )
+        self.store.write_json(relative / "bitlesson.json", applied)
         phase = self._review_phase_for_round(self.state.current_round)
         self._move(phase)
         return phase
+
+    def _bitlesson_kb(self) -> str:
+        path = self.store.root / BITLESSON_FILE
+        if not path.is_file():
+            self.store.write_text(BITLESSON_FILE, _BITLESSON_SEED)
+        return (self.store.root / BITLESSON_FILE).read_text(encoding="utf-8")
+
+    def _apply_bitlesson(self, action: str, entry_id: str, note: str) -> dict:
+        """Validate a claimed BitLesson delta against the KB and apply it.
+
+        A malformed claim is degraded to `none` with the rejection recorded -
+        an evidence property, never a round-blocking failure: the fences judge
+        the candidate, the KB only preserves lessons.
+        """
+        if action not in {"none", "add", "update"}:
+            action, entry_id, note = "none", "", f"rejected: invalid action {action!r}"
+        kb = self._bitlesson_kb()
+        record = {"action": action, "id": entry_id, "note": note}
+        if action == "none":
+            if entry_id:
+                record = {"action": "none", "id": "", "note": "rejected: none carries an id"}
+            return record
+        if not _BITLESSON_ID.fullmatch(entry_id):
+            return {"action": "none", "id": "", "note": f"rejected: bad id {entry_id!r}"}
+        if not note.strip() or _BITLESSON_PLACEHOLDER.fullmatch(note.strip()):
+            return {"action": "none", "id": "", "note": "rejected: placeholder note"}
+        exists = f"## {entry_id}" in kb
+        if action == "add" and exists:
+            return {"action": "none", "id": "", "note": f"rejected: {entry_id} already exists"}
+        if action == "update" and not exists:
+            return {"action": "none", "id": "", "note": f"rejected: {entry_id} not in KB"}
+        if action == "add":
+            addition = f"\n## {entry_id}\n\n{note.strip()}\n"
+        else:
+            addition = f"\n### update {entry_id} (round {self.state.current_round})\n\n{note.strip()}\n"
+        self.store.write_text(BITLESSON_FILE, kb.rstrip() + "\n" + addition)
+        return record
 
     def record_review(self, result: ReviewResult) -> Phase:
         self._require(Phase.REGULAR_REVIEW, Phase.FULL_ALIGNMENT)
@@ -146,6 +196,13 @@ class HumanizeFlow:
         )
         self.state.last_verdict = result.verdict
         self.state.metadata["consecutive_infra_blocks"] = 0
+        self.store.journal(
+            "review",
+            round=self.state.current_round,
+            verdict=result.verdict.value,
+            complete=result.complete,
+            blocking=len(result.blocking_findings),
+        )
         if result.verdict is MainlineVerdict.ADVANCED:
             self.state.stall_count = 0
             self.state.drift_recovery_required = False
@@ -195,6 +252,13 @@ class HumanizeFlow:
         self.store.write_json(
             round_dir.relative_to(self.store.root) / "blocked.json",
             {"source": source, "reason": reason, "infra": infra},
+        )
+        self.store.journal(
+            "blocked",
+            round=self.state.current_round,
+            source=source,
+            infra=infra,
+            reason=reason[:200],
         )
         self.state.last_verdict = MainlineVerdict.REGRESSED
         if infra:
@@ -314,8 +378,16 @@ class HumanizeFlow:
             )
 
     def _move(self, phase: Phase) -> None:
+        previous = self.state.phase
         self.state.phase = phase
         self._save()
+        self.store.journal(
+            "phase",
+            from_phase=previous.value,
+            to_phase=phase.value,
+            round=self.state.current_round,
+            stall=self.state.stall_count,
+        )
 
     def _save(self) -> None:
         self.store.save_state(self.state)

@@ -69,6 +69,10 @@ def _card(path: Path) -> TaskCard:
         "result_equivalence_checks",
     ):
         value[name] = tuple(tuple(x) for x in value[name])
+    value["candidate_build"] = tuple(value.get("candidate_build", ()))
+    value["selfcheck_commands"] = tuple(
+        tuple(x) for x in value.get("selfcheck_commands", ())
+    )
     return TaskCard(**value)
 
 
@@ -92,6 +96,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     listing = sub.add_parser("candidates", help="list ranked optimization candidates")
     listing.add_argument("--direction", type=int, default=None)
+    trace = sub.add_parser(
+        "trace", help="render a run's behavioral timeline from its journal"
+    )
+    trace.add_argument("run_dir", type=Path, help="a <results-root>/runs/<run-id> directory")
+    gen = sub.add_parser(
+        "gen-card", help="generate a task card for a ranked candidate package"
+    )
+    gen.add_argument("package", help="binary package name from the top-30 list")
+    gen.add_argument("--out", type=Path, default=None, help="output card path")
     run = sub.add_parser("run", help="run the full LDA flow in E2B")
     run.add_argument("workspace", type=Path)
     run.add_argument("--run-id", default=None)
@@ -109,6 +122,81 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "trace":
+            import datetime
+
+            journal = args.run_dir / "journal.jsonl"
+            if not journal.is_file():
+                print("no journal.jsonl in", args.run_dir, file=sys.stderr)
+                return 2
+            rounds: dict[int, dict] = {}
+            for line in journal.read_text(encoding="utf-8").splitlines():
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                stamp = datetime.datetime.fromtimestamp(
+                    float(event.get("ts", 0))
+                ).strftime("%H:%M:%S")
+                kind = event.get("kind", "?")
+                if kind == "phase":
+                    print(
+                        f"{stamp}  r{event.get('round', '?')}  "
+                        f"{event.get('from_phase')} -> {event.get('to_phase')}"
+                        f"  (stall {event.get('stall')})"
+                    )
+                elif kind == "supervision":
+                    print(
+                        f"{stamp}  r{event.get('round', '?')}  指挥[{event.get('source')}] "
+                        f"{event.get('action')}  spent=${event.get('spent_usd')}"
+                    )
+                elif kind == "blocked":
+                    print(
+                        f"{stamp}  r{event.get('round', '?')}  BLOCKED[{event.get('source')}]"
+                        f"{' (infra)' if event.get('infra') else ''}  {event.get('reason', '')[:90]}"
+                    )
+                elif kind == "review":
+                    print(
+                        f"{stamp}  r{event.get('round', '?')}  verdict {event.get('verdict')}"
+                        f"{' COMPLETE' if event.get('complete') else ''}"
+                    )
+                elif kind == "builder_round":
+                    entry = rounds.setdefault(int(event.get("round", -1)), {})
+                    entry.update(event)
+                    print(
+                        f"{stamp}  r{event.get('round', '?')}  builder: "
+                        f"{event.get('turns')} turns, {event.get('tool_uses')} tool uses, "
+                        f"{event.get('errors')} errors, ${event.get('cost_usd')} / "
+                        f"{event.get('output_tokens')} out-tokens"
+                    )
+            if rounds:
+                print("\nper-round behavior curve (round: tool_uses / cost):")
+                for number in sorted(rounds):
+                    entry = rounds[number]
+                    print(
+                        f"  r{number}: {entry.get('tool_uses', 0):4d} tool uses, "
+                        f"${entry.get('cost_usd', 0)}"
+                    )
+            return 0
+
+        if args.command == "gen-card":
+            from .cardgen import generate_card
+
+            reference = json.loads(
+                (Path(__file__).resolve().parents[2] / "examples" / "libpng-card.json")
+                .read_text(encoding="utf-8")
+            )
+            card_value = generate_card(args.package, reference["baseline"])
+            out = args.out or Path(f"examples/{args.package}-card.json")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(
+                json.dumps(card_value, indent=2, sort_keys=False) + "\n",
+                encoding="utf-8",
+            )
+            _card(out)  # validate through the real loader before handing it out
+            print(json.dumps({"card": str(out)}, indent=2))
+            return 0
+
         if args.command == "candidates":
             from .candidates import load_candidates
 
@@ -241,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
             supervisor_prompt=SUPERVISOR,
             budget_usd=budget or None,
             trace_remote_provider=execution.builder_trace_remote,
+            fresh_analyst=topology.fresh_analyst,
         )
 
         sandbox_ttl = int(os.getenv("LDA_SANDBOX_TIMEOUT", "14400"))
@@ -269,6 +358,10 @@ def main(argv: list[str] | None = None) -> int:
                 elif decision.action == "grant_grace":
                     flow.grant_grace(decision.reason)
                 contract = decision.contract or str(control.get("contract") or args.contract)
+                if decision.action == "consult_analyst":
+                    diagnosis = supervisor.consult_analyst(pulse)
+                    if diagnosis:
+                        contract += "\n\nIndependent diagnosis (added analyst):\n" + diagnosis
                 stages.review_round(contract=contract)
             else:
                 if control.get("action") == "abort":

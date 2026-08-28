@@ -147,8 +147,34 @@ class HumanizeStages:
             if guard is not None and getattr(guard, "killed", False):
                 detail = " (watchdog killed a stalled agent process)"
             builder_text = f"BUILDER_TURN_FAILED{detail}: {error}"
-        phase = self.flow.finish_builder_round(builder_text)
+        action, entry_id, note = self._parse_bitlesson(builder_text)
+        phase = self.flow.finish_builder_round(
+            builder_text,
+            bitlesson_action=action,
+            bitlesson_id=entry_id,
+            bitlesson_note=note,
+        )
         return self._evaluate_review(phase)
+
+    @staticmethod
+    def _parse_bitlesson(text: str) -> tuple[str, str, str]:
+        """Extract the BITLESSON protocol lines from a Builder summary.
+
+        Absent or malformed lines degrade to a `none` delta; the flow's KB
+        validator re-checks everything claimed here against the KB itself.
+        """
+        action, entry_id, note = "none", "", ""
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line.startswith("BITLESSON:"):
+                action = line.partition(":")[2].strip().lower() or "none"
+            elif line.startswith("BITLESSON_ID:"):
+                entry_id = line.partition(":")[2].strip()
+            elif line.startswith("BITLESSON_NOTE:"):
+                note = line.partition(":")[2].strip()
+        if action not in {"none", "add", "update"}:
+            return "none", "", ""
+        return action, entry_id, note
 
     def resume_review(self) -> ReviewResult:
         if self.flow.state.phase not in {Phase.REGULAR_REVIEW, Phase.FULL_ALIGNMENT}:
@@ -323,6 +349,15 @@ class HumanizeStages:
                 self.flow.reopen_from_finalize(reason)
                 return reason
             certification_note = "certification: passed in fresh sandboxes"
+        # Every certified speedup ships with a human-facing report: what was
+        # changed, why it is faster, and the evidence - the mechanism section
+        # written by a fresh Analyst grounded in the actual patch.
+        from .report import write_speedup_report
+
+        write_speedup_report(
+            self.flow,
+            analyst=lambda prompt: self.topology.fresh_analyst().ask(prompt),
+        )
         sandbox = self.fence_suite.sandbox
         commit = sandbox.run(("git", "-C", "/opt/lda/work", "rev-parse", "HEAD"))
         package = sandbox.run(("cat", "/opt/lda/candidate/runtime-deb.sha256"))

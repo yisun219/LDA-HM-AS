@@ -49,7 +49,7 @@ if test "$backend" = claude; then
   # no turn overwrites history.
   common_args=(
     --print --bare --verbose --output-format stream-json
-    --add-dir /opt/lda/control /opt/lda/skills
+    --add-dir /opt/lda/control /opt/lda/skills /opt/lda/humanize
     "${model_args[@]}" "${effort_args[@]}"
   )
   case "$role" in
@@ -61,10 +61,13 @@ if test "$backend" = claude; then
       role_args=(--tools Read,Grep,Glob --allowed-tools Read,Grep,Glob --permission-mode dontAsk)
       ;;
     builder)
+      # In-turn mechanical enforcement (Humanize-style validators): the
+      # PreToolUse guard blocks evidence tampering during the turn itself.
       role_args=(
         --tools Bash,Edit,Write,Read,Grep,Glob
         --allowed-tools Bash,Edit,Write,Read,Grep,Glob
         --permission-mode dontAsk
+        --settings /opt/lda/harness/hooks/builder-settings.json
       )
       ;;
     *) echo "unknown role: $role" >&2; exit 64 ;;

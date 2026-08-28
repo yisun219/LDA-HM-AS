@@ -320,21 +320,28 @@ class LDAExecution:
             result = self.sandbox.run(("env", *self._baseline_env(), *command), timeout_seconds=3600)
             if not result.ok:
                 raise RuntimeError(f"source setup failed: {command}: {result.stderr[-1000:]}")
-        selfcheck = self.sandbox.run(
-            ("/opt/lda/harness/checks/fence-selfcheck.sh",), timeout_seconds=1800
-        )
+        selfcheck_records = []
+        selfcheck_commands = [("/opt/lda/harness/checks/fence-selfcheck.sh",)]
+        selfcheck_commands += [tuple(c) for c in self.card.selfcheck_commands]
+        for command in selfcheck_commands:
+            selfcheck = self.sandbox.run(tuple(command), timeout_seconds=1800)
+            selfcheck_records.append(
+                {
+                    "command": list(command),
+                    "passed": selfcheck.ok,
+                    "stdout": selfcheck.stdout[-4000:],
+                    "stderr": selfcheck.stderr[-2000:],
+                }
+            )
+            if not selfcheck.ok:
+                break
         self.flow.store.write_json(
-            "fence-selfcheck.json",
-            {
-                "passed": selfcheck.ok,
-                "stdout": selfcheck.stdout[-4000:],
-                "stderr": selfcheck.stderr[-2000:],
-            },
+            "fence-selfcheck.json", {"checks": selfcheck_records}
         )
-        if not selfcheck.ok:
+        if not all(record["passed"] for record in selfcheck_records):
             raise SandboxUnavailable(
                 "fence self-check failed; checkers are not trustworthy: "
-                + selfcheck.stderr[-800:]
+                + selfcheck_records[-1]["stderr"][-800:]
             )
         self._seal_pinned_directories()
         self._pin_integrity_manifest()
@@ -529,10 +536,10 @@ class LDAExecution:
         self.verify_integrity()
         self._checkpoint_candidate()
         self._scan_candidate_patch()
-        prepared = self.sandbox.run(
-            ("/opt/lda/harness/checks/ensure-libpng-candidate.sh",),
-            timeout_seconds=3600,
+        build_command = tuple(self.card.candidate_build) or (
+            "/opt/lda/harness/checks/ensure-libpng-candidate.sh",
         )
+        prepared = self.sandbox.run(build_command, timeout_seconds=3600)
         if not prepared.ok:
             raise RuntimeError(
                 "candidate package build failed before benchmarking: "
@@ -654,6 +661,23 @@ class LDAExecution:
                 "sha256": sha256_file(raw_trace),
                 "size": raw_trace.stat().st_size,
             },
+        )
+        # Per-round behavioral statistics into the flow journal, so cost,
+        # tool activity, and error counts can be studied round over round.
+        from .supervision import TraceStats
+
+        stats = TraceStats.from_lines(
+            raw_trace.read_text(encoding="utf-8", errors="replace").splitlines()
+        )
+        self.flow.store.journal(
+            "builder_round",
+            round=self.flow.state.current_round,
+            session=session,
+            turns=stats.turns,
+            tool_uses=stats.tool_uses,
+            errors=stats.errors,
+            cost_usd=round(stats.total_cost_usd, 4),
+            output_tokens=stats.output_tokens,
         )
 
     def _publish_review_bundle(self) -> None:
