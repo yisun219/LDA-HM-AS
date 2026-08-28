@@ -1,0 +1,236 @@
+{
+  "package": {
+    "package": "libsoup-3.0-0",
+    "usage_frequency": 0.7401,
+    "performance_criticality": 0.7401,
+    "dependency_centrality": 0.675125,
+    "architecture_fit": 1.0,
+    "rationale": "dependency-graph rank score 54.01 (direction 0)"
+  },
+  "goal": "Optimize libsoup-3.0-0 for Ubuntu 26.04 while preserving surgical replacement compatibility",
+  "source_reference": "ubuntu:resolute/libsoup3=3.6.6-1@20260423T120000Z",
+  "setup_commands": [
+    [
+      "/opt/lda/harness/checks/prepare-ubuntu-source.sh",
+      "libsoup3",
+      "3.6.6-1"
+    ],
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/build-package.sh",
+      "baseline"
+    ],
+    [
+      "/opt/lda/harness/checks/prepare-soup-fixtures.sh"
+    ],
+    [
+      "/opt/lda/harness/checks/install-soup-workbench.sh"
+    ],
+    [
+      "/opt/lda/harness/checks/install-test-tools.sh"
+    ],
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
+      "baseline"
+    ]
+  ],
+  "candidate_build": [
+    "env",
+    "LDA_PKG_SOURCE=libsoup3",
+    "LDA_PKG_VERSION=3.6.6-1",
+    "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+    "/opt/lda/harness/checks/ensure-pkg-candidate.sh"
+  ],
+  "selfcheck_commands": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-soup-selfcheck.sh"
+    ]
+  ],
+  "baseline_tests": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-generic-build-tests.sh"
+    ]
+  ],
+  "dependency_tests": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
+      "candidate"
+    ],
+    [
+      "sh",
+      "-c",
+      "ldconfig -p >/dev/null && test -s /opt/lda/candidate/libraries.list"
+    ]
+  ],
+  "abi_checks": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-generic-abi-fence.sh"
+    ]
+  ],
+  "ffi_checks": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-soup-ffi-fence.sh"
+    ]
+  ],
+  "behavior_checks": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-soup-behavior-fence.sh"
+    ]
+  ],
+  "package_lifecycle_checks": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-generic-lifecycle.sh"
+    ]
+  ],
+  "security_checks": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-generic-security-fence.sh"
+    ]
+  ],
+  "result_equivalence_checks": [
+    [
+      "env",
+      "LDA_PKG_SOURCE=libsoup3",
+      "LDA_PKG_VERSION=3.6.6-1",
+      "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+      "/opt/lda/harness/checks/run-soup-behavior-fence.sh"
+    ]
+  ],
+  "micro_benchmarks": [
+    {
+      "name": "soup-headers-micro",
+      "repetitions": 7,
+      "timeout_seconds": 1800,
+      "inputs": [
+        "header-churn"
+      ],
+      "max_regression_percent": 2.0,
+      "min_speedup_percent": 2.0,
+      "holdout_min_speedup_percent": 1.0,
+      "holdout_env": "LDA_SOUP_FIXDIR",
+      "holdout_setup": [
+        "env",
+        "LDA_FIXTURE_DIR={dir}",
+        "LDA_FIXTURE_SEED={seed}",
+        "/opt/lda/harness/checks/prepare-soup-fixtures.sh"
+      ],
+      "layer": "micro",
+      "command": [
+        "env",
+        "LDA_PKG_SOURCE=libsoup3",
+        "LDA_PKG_VERSION=3.6.6-1",
+        "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "/opt/lda/harness/checks/run-soup-headers-micro.sh"
+      ],
+      "baseline_command": [
+        "env",
+        "LDA_PKG_SOURCE=libsoup3",
+        "LDA_PKG_VERSION=3.6.6-1",
+        "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "/opt/lda/harness/checks/run-soup-headers-micro.sh",
+        "baseline"
+      ]
+    }
+  ],
+  "end_to_end_benchmarks": [
+    {
+      "name": "soup-http-e2e",
+      "repetitions": 7,
+      "timeout_seconds": 1800,
+      "inputs": [
+        "http-roundtrip"
+      ],
+      "max_regression_percent": 3.0,
+      "layer": "end_to_end",
+      "command": [
+        "env",
+        "LDA_PKG_SOURCE=libsoup3",
+        "LDA_PKG_VERSION=3.6.6-1",
+        "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "/opt/lda/harness/checks/run-soup-http-e2e.sh"
+      ],
+      "baseline_command": [
+        "env",
+        "LDA_PKG_SOURCE=libsoup3",
+        "LDA_PKG_VERSION=3.6.6-1",
+        "LDA_PKG_RUNTIME_DEBS=libsoup-3.0-0",
+        "/opt/lda/harness/checks/run-soup-http-e2e.sh",
+        "baseline"
+      ]
+    }
+  ],
+  "baseline": {
+    "mode": "iso_snapshot",
+    "template": "01a03892-ee93-7952-9da0-bbc04fb1fdec",
+    "release": "26.04",
+    "codename": "resolute",
+    "edition": "desktop",
+    "architecture": "amd64",
+    "iso_artifact": "https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso",
+    "iso_sha256": "487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2",
+    "iso_build_id": "20260423.1",
+    "manifest_sha256": "2e5f3af7017042ceb8f815f1a11524795881e2959c1c17a6b950e52eead6df80",
+    "snap_manifest_sha256": "09fcf64fa9471d6dd42b294c059dbf7b0bfa6c5808a78c5fb28a0ffc49e9d454",
+    "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260423T120000Z",
+    "rootfs_digest": "74e340a35a5306017d742150fd7e778e99e0b58023caeaa4b55721f165997690",
+    "package_inventory_digest": "a20a71a0735eec63991b4195eefc048ae83327265194f9ebd4c8fad210e13a87",
+    "snap_inventory_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "compatibility": {
+    "soname_unchanged": true,
+    "exported_symbols_unchanged": true,
+    "abi_types_unchanged": true,
+    "ffi_call_surface_unchanged": true,
+    "behavior_unchanged": true,
+    "configuration_preserved": true,
+    "security_defaults_preserved": true,
+    "result_equivalence_required": true
+  },
+  "lane": "mainline",
+  "metadata": {
+    "target_cpu": "INTEL(R) XEON(R) GOLD 6548Y+",
+    "target_release": "ubuntu-26.04",
+    "generated_by": "lda gen-card",
+    "rank_score": 54.01,
+    "direction": 0
+  }
+}

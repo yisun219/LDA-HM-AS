@@ -49,6 +49,35 @@ SOURCE_MAP = {
 # Benchmark profiles the CURRENT template supports end to end. Everything
 # else is refused with its template requirements listed.
 BENCHMARK_PROFILES = {
+    "libsoup-3.0-0": {
+        "setup": [
+            "prepare-soup-fixtures.sh",
+            "install-soup-workbench.sh",
+        ],
+        "micro": {
+            "name": "soup-headers-micro",
+            "script": "run-soup-headers-micro.sh",
+            "repetitions": 7,
+            "timeout_seconds": 1800,
+            "inputs": ["header-churn"],
+            "max_regression_percent": 2.0,
+            "min_speedup_percent": 2.0,
+            "holdout_min_speedup_percent": 1.0,
+            "holdout_env": "LDA_SOUP_FIXDIR",
+            "holdout_setup": [
+                "env", "LDA_FIXTURE_DIR={dir}", "LDA_FIXTURE_SEED={seed}",
+                "/opt/lda/harness/checks/prepare-soup-fixtures.sh",
+            ],
+        },
+        "e2e": {
+            "name": "soup-http-e2e",
+            "script": "run-soup-http-e2e.sh",
+            "repetitions": 7,
+            "timeout_seconds": 1800,
+            "inputs": ["http-roundtrip"],
+            "max_regression_percent": 3.0,
+        },
+    },
     "libcairo2": {
         "micro": {
             "name": "cairo-ops-micro",
@@ -81,6 +110,11 @@ BENCHMARK_PROFILES = {
 # Card check-script names per profile family; cairo doubles as the reference
 # shape for future dlopen-consumer packages.
 CHECKS = {
+    "libsoup-3.0-0": {
+        "ffi": "run-soup-ffi-fence.sh",
+        "behavior": "run-soup-behavior-fence.sh",
+        "selfcheck": "run-soup-selfcheck.sh",
+    },
     "libcairo2": {
         "ffi": "run-cairo-ffi-fence.sh",
         "behavior": "run-cairo-behavior-fence.sh",
@@ -178,7 +212,12 @@ def generate_card(binary_package: str, apt_snapshot_card: dict) -> dict:
         "setup_commands": [
             ["/opt/lda/harness/checks/prepare-ubuntu-source.sh", source, version],
             wrapped("build-package.sh", "baseline"),
-            ["/opt/lda/harness/checks/prepare-libpng-fixtures.sh"],
+        ]
+        + [
+            [f"/opt/lda/harness/checks/{script}"]
+            for script in profile.get("setup", ["prepare-libpng-fixtures.sh"])
+        ]
+        + [
             ["/opt/lda/harness/checks/install-test-tools.sh"],
             wrapped("run-autopkgtest-fence.sh", "baseline"),
         ],

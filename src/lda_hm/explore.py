@@ -47,8 +47,8 @@ EOF
 APT="%(apt)s"
 $APT update >/dev/null 2>&1 || $APT update >/dev/null
 /opt/lda/harness/checks/align-to-snapshot.sh
-sudo -n $APT install -y linux-tools-common linux-tools-generic >/dev/null 2>&1 || true
-find /usr/lib -maxdepth 2 -name perf -type f 2>/dev/null | head -1 >/opt/lda/perf-path.txt || true
+sudo -n $APT install -y linux-perf >/dev/null 2>&1 || true
+command -v perf >/opt/lda/perf-path.txt 2>/dev/null || true
 """ % {"apt": SNAPSHOT_APT}
 
 
