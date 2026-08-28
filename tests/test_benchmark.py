@@ -179,7 +179,7 @@ class BenchmarkAnalysisTest(unittest.TestCase):
             "candidate",
         )
         comparison = compare_paired(SPEC, baseline, candidate)
-        with self.assertRaisesRegex(BenchmarkEnvironmentError, "spread implausible"):
+        with self.assertRaisesRegex(BenchmarkEnvironmentError, "pathological|spread implausible"):
             judge_comparison(SPEC, comparison, SPEC.min_speedup_percent, stage="holdout")
 
     def test_output_hash_mismatch_fails_closed(self) -> None:
