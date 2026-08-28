@@ -185,26 +185,35 @@ package sits in `explore/<package>/` under the results root.
 ```bash
 # one-time: the hmz virtualenv (Python >= 3.12) and this repository
 uv venv --python 3.12 ~/.venvs/ldahm
-uv pip install --python ~/.venvs/ldahm/bin/python <humanize2> e2b
+uv pip install --python ~/.venvs/ldahm/bin/python \
+  "git+https://github.com/humanfia/humanize2.git" e2b
 uv pip install --python ~/.venvs/ldahm/bin/python -e .
+alias lda="PYTHONPATH=$PWD/src python3 -m lda_hm.cli"
 
-# E2B access (never in the repository): ~/.config/lda-hm/e2b.env
-export E2B_API_URL=... E2B_SANDBOX_URL=... E2B_API_KEY=...
+# E2B access, kept out of the repository in ~/.config/lda-hm/e2b.env (0600):
+#   E2B_API_URL=...  E2B_SANDBOX_URL=...  E2B_API_KEY=...
+# The file is loaded automatically whenever a sandbox is created.
 python sandbox/build_template.py     # build the lda-base template once
+
+# Agent credentials for the in-sandbox CLIs, exported in the shell that
+# starts a run (they are injected only when a sandbox boots; the relay
+# processes never carry them):
+export ANTHROPIC_BASE_URL=... ANTHROPIC_AUTH_TOKEN=...
 
 # explore a ranked candidate (no agent turns, measurements only)
 lda explore libsoup-3.0-0 --results-root ~/lda-runs
 
 # open a card and run the full flow under the hmz harness
 lda gen-card libsoup-3.0-0 --out examples/libsoup3-card.json
-lda init-card ./work-soup examples/libsoup3-card.json
-bin/lda-hmz-drive ./work-soup soup-production-001
+lda init-card ~/lda-work-soup examples/libsoup3-card.json
+LDA_RESULTS_ROOT=~/lda-runs bin/lda-hmz-drive ~/lda-work-soup soup-production-001
 ```
 
-Agent credentials are injected only when a sandbox starts; the relay
-processes carry none. `LDA_BUDGET_USD` caps spend,
-`LDA_CERT_REPLICATIONS` sets fresh-sandbox certification replications, and
-`lda trace <run-dir>` renders a run's behavioral timeline.
+Interrupting a run loses nothing: starting the same command again resumes
+from the kept state. `<run>/control.json` steers a live run,
+`LDA_BUDGET_USD` caps spend, `LDA_CERT_REPLICATIONS` sets fresh-sandbox
+certification replications, and `lda trace <run-dir>` renders a run's
+behavioral timeline.
 
 ## Repository layout
 
