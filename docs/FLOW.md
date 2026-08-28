@@ -2,27 +2,48 @@
 
 ## Scope
 
-This repository contains a new flow implementation. It borrows architectural
-ideas from Humanize but owns its state format, artifacts, prompts, and future
-autoresearch adaptations.
+The flow harness is Humanize 2 (`hmz`): the loop, sessions, retries,
+resumable state, and run traces belong to the hmz runner, and this repository
+contributes only what is LDA-specific - the task-card contract, the
+deterministic fences, the paired benchmark policy, the supervision rules,
+and the E2B execution adapters. The flowverse entry is `flows/lda`; both
+entry points below share one engine (`lda_hm.driver`), so they cannot drift:
 
-The production entry point is `lda run`. It creates or resumes an E2B
-execution, overlays the checked-in harness and skills, prepares a pinned Ubuntu
-26.04 source workspace, captures paired baseline measurements, and then runs
-the persistent Builder / fresh Reviewer loop. A missing E2B sandbox or missing
-Agent provider credential is a hard error; there is no host-shell fallback.
+- `bin/lda-hmz run <workspace>` - production path: the hmz runner drives
+  the flow; every agent turn is relayed into the card sandbox by the
+  `E2BHarnessAgent` backend (`lda_hm/hmz_backend.py`, one relay process per
+  turn through the run broker).
+- `lda run <workspace>` - the same engine driven directly (used by tests
+  and by environments without the hmz virtualenv).
+
+Either way the run creates or resumes an E2B execution, overlays the
+checked-in harness and skills, aligns the sandbox package set to the pinned
+snapshot, prepares the pinned Ubuntu 26.04 source workspace, captures paired
+baseline measurements, and then runs the persistent Builder / fresh Reviewer
+loop. A missing E2B sandbox or missing Agent provider credential is a hard
+error; there is no host-shell fallback.
+
+Before any card is opened, `lda explore <package>` runs the evidence-based
+feasibility probe for a ranked candidate: stock packages from the snapshot,
+a package-relevant workload timed by the in-sandbox nonce timer, perf
+attribution where the sandbox allows it, and an honest verdict (including
+falsification) recorded under the results root.
 
 ## Layers
 
 ```mermaid
 flowchart TD
-  B[Backend adapter] --> R[Agent and Session protocols]
-  R --> F[LDA-HM flow state machine]
-  F --> A[Artifacts and checkpoints]
-  F --> G[Deterministic gates]
+  H[Humanize 2 runner: loop, sessions, resume, trace] --> X[flows/lda entry]
+  X --> D[lda_hm.driver - one run engine]
+  B[E2BHarnessAgent relay backend] --> R[Agent and Session protocols]
+  R --> D
+  D --> A[Artifacts and checkpoints]
+  D --> G[Deterministic gates + fences]
   G --> V[Fresh semantic reviewer]
-  V --> F
-  F --> E[External evaluator - future]
+  V --> D
+  K[Run broker - unix socket] --> S[(E2B sandbox)]
+  B --> K
+  D --> S
 ```
 
 For an LDA package card the execution path is:
