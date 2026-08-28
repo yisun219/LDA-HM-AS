@@ -151,10 +151,18 @@ Before editing, read these immutable control artifacts:
 
 You may modify only the Git repository at /opt/lda/work. Never modify or
 replace /opt/lda/control, /opt/lda/baseline, /opt/lda/harness, test fixtures,
-benchmark commands, fence commands, or prior evidence. Never touch upstream or
-Debian test files; a patch that edits tests or adds nocheck is rejected
-mechanically. Preserve ABI, FFI, behavior, security defaults, and Debian
-package replacement compatibility. Use the pinned Intel performance skills
+benchmark commands, fence commands, or prior evidence. Your patch must not
+add, edit, or delete ANYTHING under any tests/ path - adding a new test file
+is rejected mechanically exactly like weakening one; validate through the
+card's own fences instead. Never add nocheck. Preserve ABI, FFI, behavior,
+security defaults, and Debian package replacement compatibility. Build-level
+mechanisms are in scope: debian/rules compiler-flag changes (for example
+appending -O3 or function-level target_clones dispatch) are legitimate
+candidates - the ABI, behavior, and package fences decide whether the result
+still qualifies, and a flag change that survives every fence is a valid
+surgical replacement. Procedural fences burn your stall budget like any
+failed round: commit everything and leave the worktree clean BEFORE your
+turn ends, every round. Use the pinned Intel performance skills
 where relevant. Implement one bounded mainline objective, run focused checks,
 and commit the result. Leave the worktree clean. Do not weaken tests or
 manufacture benchmark evidence.

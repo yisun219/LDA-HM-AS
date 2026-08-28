@@ -108,7 +108,14 @@ def drive(
     card = load_card(workspace / ".lda-hm" / "task-card.json")
     if not task.strip():
         task = card.goal
-    flow = HumanizeFlow(workspace, run_id=run_id, results_root=results_root)
+    from .types import FlowConfig
+
+    config = FlowConfig(
+        max_iterations=int(os.getenv("LDA_MAX_ITERATIONS", "42")),
+        circuit_breaker_threshold=int(os.getenv("LDA_STALL_LIMIT", "3")),
+        builder_stall_minutes=int(os.getenv("LDA_BUILDER_STALL_MINUTES", "30")),
+    )
+    flow = HumanizeFlow(workspace, config, run_id=run_id, results_root=results_root)
     run_lock = acquire_run_lock(flow)
     sandbox = connect_sandbox(card.baseline.template)
     if on_sandbox is not None:
