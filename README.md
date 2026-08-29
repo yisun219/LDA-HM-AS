@@ -20,8 +20,21 @@ directories under the results root.
 | package | run | micro (train) | hidden holdout | end-to-end | status |
 |---|---|---|---|---|---|
 | libpng16-16t64 | libpng-2604-production-008 | +6.77% decode | +6.76% | +12.4% cairo PNG-to-surface stack | certified, replicated in 2 fresh sandboxes |
-| libcairo2 | libcairo2-2604-production-004 | - | - | - | RUNNING |
+| libcairo2 | libcairo2-2604-production-005 | - | - | - | RUNNING (corrected deck) |
 | libsoup-3.0-0 | libsoup3-2604-production-002 | - | - | - | RUNNING |
+| libgtk-4-1 | libgtk4-2604-production-001 | - | - | - | RUNNING |
+| libgtk-3-0t64 | libgtk3-2604-production-001 | - | - | - | RUNNING |
+
+Run libcairo2-2604-production-004 ended as a recorded structural finding
+rather than a certificate, and the flow's supervision produced it honestly:
+its Builder proved with nine-repetition per-input medians that three of the
+four micro inputs live outside libcairo2 (paint/mask in pixman, png-load in
+libz), re-enabled the LTO the packaging had disabled for +3.4-4.1% on the
+one in-package input, measured that AVX-512 `target_clones` stacked on LTO
+regresses (the IFUNC indirection defeats cross-TU inlining on serial
+scan-converter code), and stated that the pre-registered summed target
+exceeded what in-package code can move. The successor card re-registered the
+deck on cairo-owned workloads only.
 
 ## The surgical-replacement boundary (the hardest fence)
 
@@ -174,7 +187,7 @@ package sits in `explore/<package>/` under the results root.
 | 3 | gnome-shell | 64.28 | falsified honestly | the frame loop lives in libmutter/clutter and JS in gjs; recompiling gnome-shell itself cannot move those hot paths |
 | 4 | libreoffice-core | 63.34 | deferred: not operable per-round | headless convert-to-pdf is a ready e2e workload, but one candidate rebuild costs hours in-sandbox |
 | 5 | sssd-common | 60.69 | deferred: needs LDAP fixture harness | hot paths are NSS/PAM lookups against a directory service the template does not ship |
-| 6 | libcairo2 | 60.20 | CARDED - run in progress | png-load turns out to be 81.6% libz / 9.5% libpng / 4.3% cairo (which is exactly why the libpng card moved cairo e2e +12.4%); the card's reward concentrates on paint/mask/text-path, cairo's own compositing and path code |
+| 6 | libcairo2 | 60.20 | CARDED - corrected-deck run in progress | the first card's deck was mis-attributed (paint/mask are pixman's code, png-load is libz's; only text-path is cairo's own, where re-enabled LTO won +3.4-4.1%); the corrected card scores only cairo-owned workloads: dashed-bezier stroking, self-intersecting fills, corpus text paths |
 | 7 | gnome-settings-daemon | 59.67 | deferred: needs a session harness | most gsd plugins need a live session bus; only a startup subset is measurable headlessly |
 | 8 | gstreamer1.0-plugins-good | 59.55 | falsified for decode: 90% libvpx | perf shows 90.3% of decode cycles in the external codec; the package's own demux/parse share is under 3% |
 | 9 | ibus | 57.77 | deferred: needs an input fixture | a truthful key-roundtrip benchmark needs a focused window and synthetic input events |
