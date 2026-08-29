@@ -135,6 +135,14 @@ Core artifacts are:
 - `finalize-summary.md`
 - `methodology-report.md`
 - `state.json`
+- `benchmarks/` - every paired report, including the breakdown of a FAILED
+  verdict (`benchmark-summary.json` carries `verdict_error` so the
+  Supervisor, the Analyst, and the next round localize from per-input
+  numbers, not from one error sentence)
+- `assets-snapshot/` - the run's own pinned copy of the sandbox assets
+  (harness, checks, skills, baseline identity), captured at first setup;
+  every resume and certification bootstraps from it, so repository
+  evolution between rounds cannot invalidate a live run's integrity pin
 
 ## Supervision layer
 
@@ -246,8 +254,11 @@ measurement noise; they are guardrails, not proof that an optimization achieved
 its acceptance target. Production cards may also set a minimum speedup; the
 libpng micro workload requires 2% before semantic review is allowed.
 
-Run recovery is artifact-based. A new E2B Sandbox reconstructs the pinned
-baseline commit, reapplies `candidate.patch`, restores the untracked raw Builder
-trace used by the trace fence, and resumes a pending regular or full-alignment
-review. The run identity rejects task-card or baseline changes under an existing
-run ID.
+Run recovery is artifact-based. A new E2B Sandbox bootstraps from the run's
+`assets-snapshot`, reconstructs the pinned baseline commit, reapplies
+`candidate.patch`, restores the untracked raw Builder trace used by the trace
+fence, and resumes a pending regular or full-alignment review. The run
+identity rejects task-card or baseline changes under an existing run ID.
+Heavyweight cards raise the per-command setup and fence ceilings with
+`LDA_SETUP_TIMEOUT` and `LDA_FENCE_TIMEOUT`; judged benchmark timeouts stay
+in the card.
