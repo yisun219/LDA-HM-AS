@@ -239,7 +239,7 @@
     "snap_manifest_sha256": "09fcf64fa9471d6dd42b294c059dbf7b0bfa6c5808a78c5fb28a0ffc49e9d454",
     "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260423T120000Z",
     "rootfs_digest": "74e340a35a5306017d742150fd7e778e99e0b58023caeaa4b55721f165997690",
-    "package_inventory_digest": "a20a71a0735eec63991b4195eefc048ae83327265194f9ebd4c8fad210e13a87",
+    "package_inventory_digest": "900b25218f66af6dba80a3fb05f531d3538c2b3c9ddb715a116e26bf00d9d636",
     "snap_inventory_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   "compatibility": {
