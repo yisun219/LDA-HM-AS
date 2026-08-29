@@ -286,13 +286,39 @@ class E2BSandbox:
                 return
             except Exception:
                 pass
-        result = self.run(("sh", "-c", f"base64 {remote}"), timeout_seconds=900)
-        if not result.ok:
-            raise SandboxUnavailable(f"could not download {remote}")
+        # Shell fallback must chunk: the gateway caps a single command's
+        # captured stdout, which silently truncates one-shot base64 of a
+        # multi-megabyte file (a grown Builder trace was the first victim).
         import base64 as _base64
 
+        sized = self.run(("sh", "-c", f"wc -c < {remote}"))
+        if not sized.ok:
+            raise SandboxUnavailable(f"could not download {remote}")
+        try:
+            total = int(sized.stdout.strip())
+        except ValueError as error:
+            raise SandboxUnavailable(f"could not size {remote}") from error
+        chunk = 2 * 1024 * 1024
+        pieces: list[bytes] = []
+        for offset in range(0, max(total, 1), chunk):
+            result = self.run(
+                (
+                    "sh",
+                    "-c",
+                    f"tail -c +{offset + 1} {remote} | head -c {chunk} | base64",
+                ),
+                timeout_seconds=900,
+            )
+            if not result.ok:
+                raise SandboxUnavailable(f"could not download {remote}")
+            pieces.append(_base64.b64decode("".join(result.stdout.split())))
+        content = b"".join(pieces)
+        if len(content) != total:
+            raise SandboxUnavailable(
+                f"download of {remote} truncated: got {len(content)} of {total} bytes"
+            )
         local.parent.mkdir(parents=True, exist_ok=True)
-        local.write_bytes(_base64.b64decode("".join(result.stdout.split())))
+        local.write_bytes(content)
 
     def close(self) -> None:
         """Release the E2B sandbox (used by fresh certification sandboxes)."""

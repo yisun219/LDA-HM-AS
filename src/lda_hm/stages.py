@@ -183,10 +183,16 @@ class HumanizeStages:
 
     def _evaluate_review(self, phase: Phase) -> ReviewResult:
         if self.pre_review_hook is not None:
+            from .sandbox import SandboxUnavailable
+
             try:
                 self.pre_review_hook()
             except BenchmarkEnvironmentError as error:
                 return self._blocked("benchmark-environment", str(error), infra=True)
+            except SandboxUnavailable as error:
+                # Transport and sandbox-lifecycle failures are evidence about
+                # the environment, never about the candidate.
+                return self._blocked("sandbox-transport", str(error), infra=True)
             except Exception as error:
                 return self._blocked("benchmark", str(error))
         if self.fence_suite is not None:
