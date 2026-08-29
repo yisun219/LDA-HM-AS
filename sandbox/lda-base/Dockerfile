@@ -30,6 +30,7 @@ RUN id -u user >/dev/null 2>&1 || useradd --create-home --shell /bin/bash user; 
 COPY skills/ /opt/lda/skills/
 COPY harness/ /opt/lda/harness/
 COPY checks/ /opt/lda/harness/checks/
+COPY humanize/ /opt/lda/humanize/
 
 RUN find /opt/lda/harness /opt/lda/humanize -type f -name '*.sh' -exec chmod +x {} +
 

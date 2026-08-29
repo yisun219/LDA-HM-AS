@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: lda-hm
-Version: 0.1.0
-Summary: A runtime-neutral Humanize-inspired agent flow
-Requires-Python: >=3.9
