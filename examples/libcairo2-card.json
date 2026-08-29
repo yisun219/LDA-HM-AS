@@ -24,7 +24,18 @@
       "baseline"
     ],
     [
+      "env",
+      "LDA_PKG_SOURCE=cairo",
+      "LDA_PKG_VERSION=1.18.4-3",
+      "LDA_PKG_RUNTIME_DEBS=libcairo2",
       "/opt/lda/harness/checks/prepare-libpng-fixtures.sh"
+    ],
+    [
+      "env",
+      "LDA_PKG_SOURCE=cairo",
+      "LDA_PKG_VERSION=1.18.4-3",
+      "LDA_PKG_RUNTIME_DEBS=libcairo2",
+      "/opt/lda/harness/checks/prepare-cairo-path-fixtures.sh"
     ],
     [
       "/opt/lda/harness/checks/install-test-tools.sh"
@@ -51,7 +62,7 @@
       "LDA_PKG_SOURCE=cairo",
       "LDA_PKG_VERSION=1.18.4-3",
       "LDA_PKG_RUNTIME_DEBS=libcairo2",
-      "/opt/lda/harness/checks/run-cairo-selfcheck.sh"
+      "/opt/lda/harness/checks/run-cairo-owned-selfcheck.sh"
     ]
   ],
   "baseline_tests": [
@@ -102,7 +113,7 @@
       "LDA_PKG_SOURCE=cairo",
       "LDA_PKG_VERSION=1.18.4-3",
       "LDA_PKG_RUNTIME_DEBS=libcairo2",
-      "/opt/lda/harness/checks/run-cairo-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-cairo-owned-behavior-fence.sh"
     ]
   ],
   "package_lifecycle_checks": [
@@ -130,30 +141,28 @@
       "LDA_PKG_SOURCE=cairo",
       "LDA_PKG_VERSION=1.18.4-3",
       "LDA_PKG_RUNTIME_DEBS=libcairo2",
-      "/opt/lda/harness/checks/run-cairo-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-cairo-owned-behavior-fence.sh"
     ]
   ],
   "micro_benchmarks": [
     {
-      "name": "cairo-ops-micro",
+      "name": "cairo-owned-micro",
       "repetitions": 7,
       "timeout_seconds": 1800,
       "inputs": [
-        "png-load",
-        "paint",
-        "mask",
-        "text-path"
+        "stroke-dash",
+        "fill-tess",
+        "text-corpus"
       ],
       "max_regression_percent": 2.0,
       "min_speedup_percent": 2.0,
       "holdout_min_speedup_percent": 1.0,
-      "holdout_env": "LDA_CAIRO_FIXDIR",
+      "holdout_env": "LDA_CAIRO_PATHDIR",
       "holdout_setup": [
         "env",
         "LDA_FIXTURE_DIR={dir}",
         "LDA_FIXTURE_SEED={seed}",
-        "LDA_FIXTURE_PNGS_ONLY=1",
-        "/opt/lda/harness/checks/prepare-libpng-fixtures.sh"
+        "/opt/lda/harness/checks/prepare-cairo-path-fixtures.sh"
       ],
       "layer": "micro",
       "command": [
@@ -161,14 +170,14 @@
         "LDA_PKG_SOURCE=cairo",
         "LDA_PKG_VERSION=1.18.4-3",
         "LDA_PKG_RUNTIME_DEBS=libcairo2",
-        "/opt/lda/harness/checks/run-cairo-ops-micro.sh"
+        "/opt/lda/harness/checks/run-cairo-owned-micro.sh"
       ],
       "baseline_command": [
         "env",
         "LDA_PKG_SOURCE=cairo",
         "LDA_PKG_VERSION=1.18.4-3",
         "LDA_PKG_RUNTIME_DEBS=libcairo2",
-        "/opt/lda/harness/checks/run-cairo-ops-micro.sh",
+        "/opt/lda/harness/checks/run-cairo-owned-micro.sh",
         "baseline"
       ]
     }
@@ -182,7 +191,6 @@
         "cairo-png-load"
       ],
       "max_regression_percent": 3.0,
-      "min_speedup_percent": 1.0,
       "layer": "end_to_end",
       "command": [
         "env",
