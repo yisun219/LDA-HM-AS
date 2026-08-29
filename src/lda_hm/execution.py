@@ -322,11 +322,27 @@ class LDAExecution:
         return name
 
     def bootstrap_template_assets(self, root: Path) -> None:
-        """Install the checked-in LDA harness into this E2B sandbox."""
+        """Install the run's pinned harness into this E2B sandbox.
+
+        The first setup snapshots the checked-in assets into the run
+        directory; every later bootstrap (resume, requeue, certification)
+        installs from that snapshot. A run is therefore immune to repository
+        evolution: new check scripts landing for the next card cannot change
+        this run's integrity-pinned content mid-flight.
+        """
         bootstrap = getattr(self.sandbox, "bootstrap_assets", None)
         if bootstrap is None:
             raise SandboxUnavailable("sandbox does not support E2B asset bootstrap")
-        bootstrap(root)
+        snapshot = self.flow.store.root / "assets-snapshot"
+        if not snapshot.is_dir():
+            import shutil
+
+            staging = snapshot.with_name("assets-snapshot.partial")
+            if staging.exists():
+                shutil.rmtree(staging)
+            shutil.copytree(root, staging)
+            staging.replace(snapshot)
+        bootstrap(snapshot)
 
     def prepare_workspace(self, *, target_workspace: str = "/opt/lda/work") -> None:
         release = self.sandbox.run(("sh", "-c", ". /etc/os-release && printf %s \"$VERSION_ID\""))
@@ -840,7 +856,10 @@ class LDAExecution:
         tag = f"certification sandbox {replication}"
         bootstrap = getattr(sandbox, "bootstrap_assets", None)
         if bootstrap is not None and bootstrap_root is not None:
-            bootstrap(bootstrap_root)
+            # Certification replays the run's pinned assets, never the
+            # repository's current state.
+            snapshot = self.flow.store.root / "assets-snapshot"
+            bootstrap(snapshot if snapshot.is_dir() else bootstrap_root)
         check = sandbox.run(self.card.baseline.verification_command(), timeout_seconds=300)
         if not check.ok:
             raise RuntimeError(f"{tag}: baseline verification failed: {check.stderr[-800:]}")
