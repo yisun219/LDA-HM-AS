@@ -15,6 +15,11 @@ from e2b.template_sync import build_api
 TEMPLATE_NAME = os.getenv("E2B_TEMPLATE", "lda-base")
 BASE_TEMPLATE = os.getenv("E2B_BASE_TEMPLATE", "")
 ROOT = Path(__file__).resolve().parent / "lda-base"
+# Instance size is a template property: package builds need real cores and
+# real memory (a 2-vCPU/1GB default cannot link gtk4), benchmarks only need
+# the size to be identical between baseline and candidate, which it is.
+CPU_COUNT = int(os.getenv("E2B_CPU_COUNT", "8"))
+MEMORY_MB = int(os.getenv("E2B_MEMORY_MB", "12288"))
 
 
 def configure_shared_gateway() -> None:
@@ -71,6 +76,8 @@ def build() -> None:
         build_info = Template.build_in_background(
             template,
             TEMPLATE_NAME,
+            cpu_count=CPU_COUNT,
+            memory_mb=MEMORY_MB,
             skip_cache=os.getenv("E2B_REBUILD", "0") == "1",
         )
         _wait_for_build(build_info)
@@ -131,6 +138,8 @@ def build() -> None:
     build_info = Template.build_in_background(
         template,
         TEMPLATE_NAME,
+        cpu_count=CPU_COUNT,
+        memory_mb=MEMORY_MB,
         skip_cache=os.getenv("E2B_REBUILD", "0") == "1",
     )
     _wait_for_build(build_info)
