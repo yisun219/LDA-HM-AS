@@ -276,6 +276,23 @@ class Supervisor:
             holdout = entry.get("holdout")
             if isinstance(holdout, dict) and holdout.get("overall_speedup_percent") is not None:
                 fragment += f", holdout {holdout['overall_speedup_percent']:+.2f}%"
+            per_input = entry.get("per_input") or {}
+            ranked = sorted(
+                (
+                    (name_, values.get("speedup_percent"))
+                    for name_, values in per_input.items()
+                    if isinstance(values, dict)
+                    and values.get("speedup_percent") is not None
+                ),
+                key=lambda pair: pair[1],
+            )
+            if len(ranked) > 1:
+                fragment += (
+                    f", inputs {ranked[0][0]} {ranked[0][1]:+.2f}%"
+                    f" .. {ranked[-1][0]} {ranked[-1][1]:+.2f}%"
+                )
+            if entry.get("verdict_error"):
+                fragment += " [failed verdict]"
             parts.append(fragment)
         return "; ".join(parts)
 

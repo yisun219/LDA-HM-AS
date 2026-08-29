@@ -161,8 +161,16 @@ def paired_with_retry(
     stage: str,
     envs: dict[str, str] | None = None,
     min_speedup_override: float | None = None,
+    on_comparison: Callable[
+        [BenchmarkReport, BenchmarkReport, PairedComparison], None
+    ] | None = None,
 ) -> tuple[BenchmarkReport, BenchmarkReport, PairedComparison]:
-    """Run one paired benchmark; an unstable environment earns one retry."""
+    """Run one paired benchmark; an unstable environment earns one retry.
+
+    `on_comparison` fires as soon as the paired measurement exists, BEFORE the
+    verdict: a failing round must still leave its full per-input breakdown as
+    durable evidence, or the Supervisor and Analyst steer blind.
+    """
     minimum = (
         min_speedup_override
         if min_speedup_override is not None
@@ -189,6 +197,8 @@ def paired_with_retry(
                 + (candidate.observations[-1].stderr_tail if candidate.observations else "")[-500:]
             )
         comparison = compare_paired(spec, baseline, candidate)
+        if on_comparison is not None:
+            on_comparison(baseline, candidate, comparison)
         try:
             judge_comparison(spec, comparison, minimum, stage=stage)
         except BenchmarkEnvironmentError as error:
@@ -561,34 +571,60 @@ class LDAExecution:
         runner = BenchmarkRunner(self.sandbox)
         reports: list[BenchmarkReport] = []
         specs = (*self.card.micro_benchmarks, *self.card.end_to_end_benchmarks)
-        comparisons = []
-        for spec in specs:
-            baseline, candidate, comparison = paired_with_retry(
-                runner, spec, stage="train"
-            )
-            paired_dir = self.flow.store.root / "benchmarks" / "paired"
-            baseline.write(paired_dir / f"{spec.layer}-{spec.name}-baseline.json")
-            candidate.write(paired_dir / f"{spec.layer}-{spec.name}-candidate.json")
-            entry = comparison.to_dict() | {
-                "max_regression_percent": spec.max_regression_percent,
-                "min_speedup_percent": spec.min_speedup_percent,
-                "certified": spec.min_speedup_percent is not None,
-            }
-            if spec.holdout_min_speedup_percent is not None:
-                holdout = self._run_holdout(runner, spec)
-                entry["holdout"] = holdout.to_dict() | {
-                    "min_speedup_percent": spec.holdout_min_speedup_percent,
-                }
-            comparisons.append(entry)
-            reports.extend((baseline, candidate))
-        self.flow.store.write_json(
-            "benchmark-summary.json",
-            {
+        comparisons: list[dict] = []
+        paired_dir = self.flow.store.root / "benchmarks" / "paired"
+
+        def flush(verdict_error: str | None = None) -> None:
+            payload = {
                 "timing_source": "in-sandbox LDA_BENCH samples (host transport excluded)",
                 "pairing": "same sandbox, per-repetition alternating order",
                 "comparisons": comparisons,
-            },
-        )
+            }
+            if verdict_error is not None:
+                payload["verdict_error"] = verdict_error
+            self.flow.store.write_json("benchmark-summary.json", payload)
+
+        for spec in specs:
+            # A blocked verdict must still leave the full per-input breakdown
+            # behind: the Supervisor, the Analyst, and the next Builder round
+            # localize from these numbers, not from one error sentence.
+            pending: dict = {}
+
+            def keep_train(baseline, candidate, comparison, *, _spec=spec, _pending=pending):
+                baseline.write(paired_dir / f"{_spec.layer}-{_spec.name}-baseline.json")
+                candidate.write(paired_dir / f"{_spec.layer}-{_spec.name}-candidate.json")
+                _pending["entry"] = comparison.to_dict() | {
+                    "max_regression_percent": _spec.max_regression_percent,
+                    "min_speedup_percent": _spec.min_speedup_percent,
+                    "certified": _spec.min_speedup_percent is not None,
+                }
+
+            def keep_holdout(baseline, candidate, comparison, *, _spec=spec, _pending=pending):
+                entry = _pending.get("entry")
+                if entry is not None:
+                    entry["holdout"] = comparison.to_dict() | {
+                        "min_speedup_percent": _spec.holdout_min_speedup_percent,
+                    }
+
+            try:
+                baseline, candidate, comparison = paired_with_retry(
+                    runner, spec, stage="train", on_comparison=keep_train
+                )
+                if spec.holdout_min_speedup_percent is not None:
+                    self._run_holdout(runner, spec, on_comparison=keep_holdout)
+            except Exception as error:
+                if pending.get("entry") is not None:
+                    pending["entry"]["verdict_error"] = str(error)
+                    comparisons.append(pending["entry"])
+                flush(verdict_error=str(error))
+                try:
+                    self._publish_review_bundle()
+                except Exception:
+                    pass  # evidence for the next round, never a second failure
+                raise
+            comparisons.append(pending["entry"])
+            flush()
+            reports.extend((baseline, candidate))
         self._publish_review_bundle()
         return tuple(reports)
 
@@ -613,7 +649,13 @@ class LDAExecution:
             self.flow.store.save_state(self.flow.state)
         return int(seed)
 
-    def _run_holdout(self, runner: BenchmarkRunner, spec: BenchmarkSpec) -> PairedComparison:
+    def _run_holdout(
+        self,
+        runner: BenchmarkRunner,
+        spec: BenchmarkSpec,
+        *,
+        on_comparison=None,
+    ) -> PairedComparison:
         seed = self._holdout_seed()
         directory = f"/tmp/lda-holdout-{self.flow.run_id}-r{self.flow.state.current_round}"
         setup = holdout_setup_command(spec, directory, seed)
@@ -629,6 +671,7 @@ class LDAExecution:
                 stage="holdout",
                 envs={spec.holdout_env: directory},
                 min_speedup_override=spec.holdout_min_speedup_percent,
+                on_comparison=on_comparison,
             )
             holdout_dir = self.flow.store.root / "benchmarks" / "holdout"
             baseline.write(holdout_dir / f"{spec.layer}-{spec.name}-baseline.json")
