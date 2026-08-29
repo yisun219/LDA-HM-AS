@@ -169,8 +169,8 @@ package sits in `explore/<package>/` under the results root.
 
 | # | package | score | verdict | how it was measured / why it can (or cannot) be accelerated |
 |---|---|---|---|---|
-| 1 | libgtk-4-1 | 71.50 | measurable, needs a compiled workbench | 40x300 widget churn under Xvfb: only ~11% of cycles land in libgtk-4 itself under a gi driver; a card needs a compiled consumer to concentrate the reward on gtk's layout/CSS code |
-| 2 | libgtk-3-0t64 | 69.42 | measurable, needs a compiled workbench | same shape; ~15% of cycles in libgtk-3, pango 9% |
+| 1 | libgtk-4-1 | 71.50 | CARDED - run in progress | the gi driver diluted attribution (~11% of cycles in libgtk-4), so the card uses a compiled dlopen workbench whose three inputs (CSS parse, selector match, full-tree layout) are gtk's own machinery by construction - probed deterministic and linearly scaling before the card opened |
+| 2 | libgtk-3-0t64 | 69.42 | CARDED - queued | same compiled workbench, gtk3 API variant; gtk3 style resolution costs ~6x gtk4's per iteration, which is exactly the in-package surface the card rewards |
 | 3 | gnome-shell | 64.28 | falsified honestly | the frame loop lives in libmutter/clutter and JS in gjs; recompiling gnome-shell itself cannot move those hot paths |
 | 4 | libreoffice-core | 63.34 | deferred: not operable per-round | headless convert-to-pdf is a ready e2e workload, but one candidate rebuild costs hours in-sandbox |
 | 5 | sssd-common | 60.69 | deferred: needs LDAP fixture harness | hot paths are NSS/PAM lookups against a directory service the template does not ship |
