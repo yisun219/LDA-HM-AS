@@ -18,8 +18,7 @@ variant=/tmp/lda-cairo-owned-selfcheck
 rm -rf "$variant"
 env LDA_FIXTURE_DIR="$variant" LDA_FIXTURE_SEED=999331 \
   /opt/lda/harness/checks/prepare-cairo-path-fixtures.sh >/dev/null
-h3="$(env LDA_CAIRO_PATHDIR="$variant" \
-  lda_run_with_pkg baseline "$CAIRO_FIXDIR/cairo-ops" stroke-dash 2)"
+h3="$(LDA_CAIRO_PATHDIR="$variant" lda_run_with_pkg baseline "$CAIRO_FIXDIR/cairo-ops" stroke-dash 2)"
 rm -rf "$variant"
 test "$h1" != "$h3" || fail "stroke-dash hash ignores corpus content"
 note "owned-code workloads deterministic and corpus-sensitive"
