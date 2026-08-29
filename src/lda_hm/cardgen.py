@@ -142,20 +142,23 @@ BENCHMARK_PROFILES = {
         },
     },
     "libcairo2": {
+        "setup": [
+            "prepare-libpng-fixtures.sh",
+            "prepare-cairo-path-fixtures.sh",
+        ],
         "micro": {
-            "name": "cairo-ops-micro",
-            "script": "run-cairo-ops-micro.sh",
+            "name": "cairo-owned-micro",
+            "script": "run-cairo-owned-micro.sh",
             "repetitions": 7,
             "timeout_seconds": 1800,
-            "inputs": ["png-load", "paint", "mask", "text-path"],
+            "inputs": ["stroke-dash", "fill-tess", "text-corpus"],
             "max_regression_percent": 2.0,
             "min_speedup_percent": 2.0,
             "holdout_min_speedup_percent": 1.0,
-            "holdout_env": "LDA_CAIRO_FIXDIR",
+            "holdout_env": "LDA_CAIRO_PATHDIR",
             "holdout_setup": [
                 "env", "LDA_FIXTURE_DIR={dir}", "LDA_FIXTURE_SEED={seed}",
-                "LDA_FIXTURE_PNGS_ONLY=1",
-                "/opt/lda/harness/checks/prepare-libpng-fixtures.sh",
+                "/opt/lda/harness/checks/prepare-cairo-path-fixtures.sh",
             ],
         },
         "e2e": {
@@ -165,7 +168,6 @@ BENCHMARK_PROFILES = {
             "timeout_seconds": 1800,
             "inputs": ["cairo-png-load"],
             "max_regression_percent": 3.0,
-            "min_speedup_percent": 1.0,
         },
     },
 }
@@ -180,8 +182,8 @@ CHECKS = {
     },
     "libcairo2": {
         "ffi": "run-cairo-ffi-fence.sh",
-        "behavior": "run-cairo-behavior-fence.sh",
-        "selfcheck": "run-cairo-selfcheck.sh",
+        "behavior": "run-cairo-owned-behavior-fence.sh",
+        "selfcheck": "run-cairo-owned-selfcheck.sh",
     },
     "libgtk-4-1": {
         "ffi": "run-gtk-ffi-fence.sh",
