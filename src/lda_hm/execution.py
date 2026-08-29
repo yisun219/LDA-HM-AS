@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import random
 import re
 from dataclasses import dataclass
@@ -28,12 +29,24 @@ from .task_card import BenchmarkSpec, TaskCard
 _TEST_PATH_PATTERNS = (
     re.compile(r"^tests/"),
     re.compile(r"/tests/"),
+    re.compile(r"^testsuite/"),
+    re.compile(r"/testsuite/"),
     re.compile(r"^debian/tests(/|$)"),
     re.compile(r"^contrib/libtests/"),
     re.compile(r"^contrib/testtools/"),
     re.compile(r"^contrib/oss-fuzz/"),
     re.compile(r"(^|/)(pngtest|pngvalid|pngstest|pngunknown|pngimage|timepng)\.c$"),
 )
+
+
+def _setup_timeout() -> int:
+    """Per-command ceiling for source setup and candidate package builds.
+
+    The default fits the pilot libraries; heavyweight cards (gtk4 builds its
+    whole test suite under the reference policy) raise it via
+    LDA_SETUP_TIMEOUT without touching any judged benchmark timeout.
+    """
+    return int(os.getenv("LDA_SETUP_TIMEOUT", "3600"))
 _TEST_TAMPER_LINE_PATTERNS = (
     re.compile(r"nocheck", re.IGNORECASE),
     re.compile(r"override_dh_auto_test", re.IGNORECASE),
@@ -340,7 +353,10 @@ class LDAExecution:
         self.flow.state.metadata["baseline_verified"] = True
         self.flow.store.write_json("baseline.json", self.card.baseline.canonical())
         for command in self.card.setup_commands:
-            result = self.sandbox.run(("env", *self._baseline_env(), *command), timeout_seconds=3600)
+            result = self.sandbox.run(
+                ("env", *self._baseline_env(), *command),
+                timeout_seconds=_setup_timeout(),
+            )
             if not result.ok:
                 raise RuntimeError(f"source setup failed: {command}: {result.stderr[-1000:]}")
         selfcheck_records = []
@@ -562,7 +578,7 @@ class LDAExecution:
         build_command = tuple(self.card.candidate_build) or (
             "/opt/lda/harness/checks/ensure-libpng-candidate.sh",
         )
-        prepared = self.sandbox.run(build_command, timeout_seconds=3600)
+        prepared = self.sandbox.run(build_command, timeout_seconds=_setup_timeout())
         if not prepared.ok:
             raise RuntimeError(
                 "candidate package build failed before benchmarking: "
@@ -830,7 +846,8 @@ class LDAExecution:
             raise RuntimeError(f"{tag}: baseline verification failed: {check.stderr[-800:]}")
         for command in self.card.setup_commands:
             result = sandbox.run(
-                ("env", *self._baseline_env(), *command), timeout_seconds=3600
+                ("env", *self._baseline_env(), *command),
+                timeout_seconds=_setup_timeout(),
             )
             if not result.ok:
                 raise RuntimeError(f"{tag}: setup failed: {command}: {result.stderr[-800:]}")

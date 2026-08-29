@@ -79,6 +79,68 @@ BENCHMARK_PROFILES = {
             "max_regression_percent": 3.0,
         },
     },
+    "libgtk-4-1": {
+        "tests_policy": "reference",
+        "extra_env": {"LDA_GTK_MAJOR": "4"},
+        "setup": [
+            "prepare-gtk-fixtures.sh",
+            "install-gtk-workbench.sh",
+        ],
+        "micro": {
+            "name": "gtk-ops-micro",
+            "script": "run-gtk-ops-micro.sh",
+            "repetitions": 7,
+            "timeout_seconds": 2400,
+            "inputs": ["css-parse", "style-match", "layout"],
+            "max_regression_percent": 2.0,
+            "min_speedup_percent": 2.0,
+            "holdout_min_speedup_percent": 1.0,
+            "holdout_env": "LDA_GTK_FIXDIR",
+            "holdout_setup": [
+                "env", "LDA_FIXTURE_DIR={dir}", "LDA_FIXTURE_SEED={seed}",
+                "/opt/lda/harness/checks/prepare-gtk-fixtures.sh",
+            ],
+        },
+        "e2e": {
+            "name": "gtk-gi-churn",
+            "script": "run-gtk-gi-e2e.sh",
+            "repetitions": 7,
+            "timeout_seconds": 2400,
+            "inputs": ["gtk-gi-churn"],
+            "max_regression_percent": 3.0,
+        },
+    },
+    "libgtk-3-0t64": {
+        "tests_policy": "reference",
+        "extra_env": {"LDA_GTK_MAJOR": "3"},
+        "setup": [
+            "prepare-gtk-fixtures.sh",
+            "install-gtk-workbench.sh",
+        ],
+        "micro": {
+            "name": "gtk-ops-micro",
+            "script": "run-gtk-ops-micro.sh",
+            "repetitions": 7,
+            "timeout_seconds": 2400,
+            "inputs": ["css-parse", "style-match", "layout"],
+            "max_regression_percent": 2.0,
+            "min_speedup_percent": 2.0,
+            "holdout_min_speedup_percent": 1.0,
+            "holdout_env": "LDA_GTK_FIXDIR",
+            "holdout_setup": [
+                "env", "LDA_FIXTURE_DIR={dir}", "LDA_FIXTURE_SEED={seed}",
+                "/opt/lda/harness/checks/prepare-gtk-fixtures.sh",
+            ],
+        },
+        "e2e": {
+            "name": "gtk-gi-churn",
+            "script": "run-gtk-gi-e2e.sh",
+            "repetitions": 7,
+            "timeout_seconds": 2400,
+            "inputs": ["gtk-gi-churn"],
+            "max_regression_percent": 3.0,
+        },
+    },
     "libcairo2": {
         "micro": {
             "name": "cairo-ops-micro",
@@ -121,11 +183,19 @@ CHECKS = {
         "behavior": "run-cairo-behavior-fence.sh",
         "selfcheck": "run-cairo-selfcheck.sh",
     },
+    "libgtk-4-1": {
+        "ffi": "run-gtk-ffi-fence.sh",
+        "behavior": "run-gtk-behavior-fence.sh",
+        "selfcheck": "run-gtk-selfcheck.sh",
+    },
+    "libgtk-3-0t64": {
+        "ffi": "run-gtk-ffi-fence.sh",
+        "behavior": "run-gtk-behavior-fence.sh",
+        "selfcheck": "run-gtk-selfcheck.sh",
+    },
 }
 
 TEMPLATE_NEEDS = {
-    "libgtk-4-1": "gtk4 runtime + libgtk-4-dev-tools + weston/xvfb widget bench (template v11)",
-    "libgtk-3-0t64": "gtk3 runtime + gtk3-widget bench under Xvfb (template v11)",
     "gnome-shell": "full GNOME session harness; out of headless scope until template v12",
     "libreoffice-core": "LibreOffice + document corpus (template v12)",
     "sssd-common": "sssd + LDAP fixture harness (template v12)",
@@ -179,6 +249,8 @@ def generate_card(binary_package: str, apt_snapshot_card: dict) -> dict:
     tests_policy = profile.get("tests_policy", "required")
     if tests_policy != "required":
         env.append(f"LDA_UPSTREAM_TESTS={tests_policy}")
+    for key, value in sorted((profile.get("extra_env") or {}).items()):
+        env.append(f"{key}={value}")
 
     def wrapped(script: str, *arguments: str) -> list:
         return env + [f"/opt/lda/harness/checks/{script}", *arguments]
@@ -199,6 +271,15 @@ def generate_card(binary_package: str, apt_snapshot_card: dict) -> dict:
         entry["baseline_command"] = wrapped(script, "baseline")
         return entry
 
+    def setup_scripts() -> list:
+        # Setup scripts get the same card environment as every other check,
+        # so a workbench that needs LDA_GTK_MAJOR (or a future card knob)
+        # reads it from the card, not from the host shell.
+        return [
+            wrapped(script)
+            for script in profile.get("setup", ["prepare-libpng-fixtures.sh"])
+        ]
+
     card = {
         "package": {
             "package": binary_package,
@@ -217,10 +298,7 @@ def generate_card(binary_package: str, apt_snapshot_card: dict) -> dict:
             ["/opt/lda/harness/checks/prepare-ubuntu-source.sh", source, version],
             wrapped("build-package.sh", "baseline"),
         ]
-        + [
-            [f"/opt/lda/harness/checks/{script}"]
-            for script in profile.get("setup", ["prepare-libpng-fixtures.sh"])
-        ]
+        + setup_scripts()
         + [
             ["/opt/lda/harness/checks/install-test-tools.sh"],
             wrapped("run-autopkgtest-fence.sh", "baseline"),

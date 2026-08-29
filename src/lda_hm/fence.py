@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,8 +84,9 @@ class FenceSuite:
 
     def _commands(self, name: str, commands: Iterable[tuple[str, ...]]) -> list[FenceResult]:
         results: list[FenceResult] = []
+        timeout = int(os.getenv("LDA_FENCE_TIMEOUT", "3600"))
         for command in commands:
-            result = self.sandbox.run(command, timeout_seconds=3600)
+            result = self.sandbox.run(command, timeout_seconds=timeout)
             results.append(FenceResult(name, result.ok, self._command_reason(result), (result,)))
             if not result.ok:
                 break
