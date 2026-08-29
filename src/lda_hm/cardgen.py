@@ -33,6 +33,11 @@ SOURCE_MAP = {
     },
     "libpng16-16t64": {"source": "libpng1.6", "runtime_debs": "libpng16-16t64"},
     "libgtk-4-1": {"source": "gtk4", "runtime_debs": "libgtk-4-1"},
+    "sssd-common": {
+        "source": "sssd",
+        "runtime_debs": "sssd-common libnss-sss sssd-proxy",
+        "probe": "test -x /usr/sbin/sssd",
+    },
     "libgtk-3-0t64": {"source": "gtk+3.0", "runtime_debs": "libgtk-3-0t64"},
     "libsoup-3.0-0": {"source": "libsoup3", "runtime_debs": "libsoup-3.0-0"},
     "libpango-1.0-0": {"source": "pango1.0", "runtime_debs": "libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0"},
@@ -76,6 +81,36 @@ BENCHMARK_PROFILES = {
             "repetitions": 7,
             "timeout_seconds": 1800,
             "inputs": ["http-roundtrip"],
+            "max_regression_percent": 3.0,
+        },
+    },
+    "sssd-common": {
+        "tests_policy": "reference",
+        "setup": [
+            "prepare-sssd-fixtures.sh",
+            "install-sssd-workbench.sh",
+        ],
+        "micro": {
+            "name": "sssd-nss-micro",
+            "script": "run-sssd-nss-micro.sh",
+            "repetitions": 7,
+            "timeout_seconds": 2400,
+            "inputs": ["nss-lookups"],
+            "max_regression_percent": 2.0,
+            "min_speedup_percent": 2.0,
+            "holdout_min_speedup_percent": 1.0,
+            "holdout_env": "LDA_SSSD_FIXDIR",
+            "holdout_setup": [
+                "env", "LDA_FIXTURE_DIR={dir}", "LDA_FIXTURE_SEED={seed}",
+                "/opt/lda/harness/checks/prepare-sssd-fixtures.sh",
+            ],
+        },
+        "e2e": {
+            "name": "sssd-id-e2e",
+            "script": "run-sssd-id-e2e.sh",
+            "repetitions": 7,
+            "timeout_seconds": 2400,
+            "inputs": ["getent-processes"],
             "max_regression_percent": 3.0,
         },
     },
@@ -185,6 +220,11 @@ CHECKS = {
         "behavior": "run-cairo-owned-behavior-fence.sh",
         "selfcheck": "run-cairo-owned-selfcheck.sh",
     },
+    "sssd-common": {
+        "ffi": "run-sssd-ffi-fence.sh",
+        "behavior": "run-sssd-behavior-fence.sh",
+        "selfcheck": "run-sssd-selfcheck.sh",
+    },
     "libgtk-4-1": {
         "ffi": "run-gtk-ffi-fence.sh",
         "behavior": "run-gtk-behavior-fence.sh",
@@ -200,7 +240,6 @@ CHECKS = {
 TEMPLATE_NEEDS = {
     "gnome-shell": "full GNOME session harness; out of headless scope until template v12",
     "libreoffice-core": "LibreOffice + document corpus (template v12)",
-    "sssd-common": "sssd + LDAP fixture harness (template v12)",
     "gnome-settings-daemon": "GNOME session harness (template v12)",
     "ibus": "ibus daemon + input fixture harness (template v12)",
     "gstreamer1.0-plugins-good": "gstreamer runtime + gst-launch decode corpus (template v11)",
