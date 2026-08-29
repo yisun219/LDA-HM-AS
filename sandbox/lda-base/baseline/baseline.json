@@ -23,7 +23,7 @@
   "execution_template_id": "01a03892-ee93-7952-9da0-bbc04fb1fdec",
   "execution_package_count": 848,
   "package_inventory_format": "LC_ALL=C dpkg-query -W | sort",
-  "package_inventory_digest": "a20a71a0735eec63991b4195eefc048ae83327265194f9ebd4c8fad210e13a87",
+  "package_inventory_digest": "900b25218f66af6dba80a3fb05f531d3538c2b3c9ddb715a116e26bf00d9d636",
   "snap_inventory_format": "empty stream because snapd is absent from the development template",
   "snap_inventory_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "target_cpu": "INTEL(R) XEON(R) GOLD 6548Y+",
