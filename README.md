@@ -20,8 +20,8 @@ directories under the results root.
 | package | run | micro (train) | hidden holdout | end-to-end | status |
 |---|---|---|---|---|---|
 | libpng16-16t64 | libpng-2604-production-008 | +6.77% decode | +6.76% | +12.4% cairo PNG-to-surface stack | certified, replicated in 2 fresh sandboxes |
-| libcairo2 | libcairo2-2604-production-003 | - | - | - | RUNNING |
-| libsoup-3.0-0 | libsoup3-2604-production-001 | - | - | - | RUNNING |
+| libcairo2 | libcairo2-2604-production-004 | - | - | - | RUNNING |
+| libsoup-3.0-0 | libsoup3-2604-production-002 | - | - | - | RUNNING |
 
 ## The surgical-replacement boundary (the hardest fence)
 
