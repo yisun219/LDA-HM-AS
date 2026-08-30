@@ -20,13 +20,13 @@ FORBIDDEN = (
     r"bypass[_ -]?fence",
     r"git\s+push\s+--force",
     r"git\s+add\s+.*\.lda-hm",
-    r"(?:rm|truncate)\s+.*(?:evidence|task-card|state\.json)",
+    r"(?<![\w-])(?:rm|truncate)\s+.*(?:evidence|task-card|state\.json)",
     r"(?:sed\s+-i|perl\s+-pi).*?(?:task-card|state\.json|plan\.md)",
     # The holdout fixture set must stay invisible to the Builder.
     r"/tmp/lda-holdout",
     r"holdout_seed",
     # Un-sealing or rewriting immutable control surfaces.
-    r"\b(?:chmod|chown|rm|mv|tee)\b.*(?:/opt/lda/control|/opt/lda/review|/opt/lda/baseline|/opt/lda/harness)",
+    r"(?<![\w-])(?:chmod|chown|rm|mv|tee)\b.*(?:/opt/lda/control|/opt/lda/review|/opt/lda/baseline|/opt/lda/harness)",
     r"(?:>|>>)\s*/opt/lda/(?:control|review|baseline|harness)/",
 )
 

@@ -20,6 +20,8 @@ from .execution import (
     LDAExecution,
     holdout_setup_command,
     judge_comparison,
+    judge_null_run,
+    NULL_RUN_BIAS_FRACTION,
     paired_with_retry,
     scan_candidate_patch_text,
 )
@@ -71,6 +73,8 @@ __all__ = [
     "parse_bench_samples",
     "holdout_setup_command",
     "judge_comparison",
+    "judge_null_run",
+    "NULL_RUN_BIAS_FRACTION",
     "scan_candidate_patch_text",
     "BenchmarkSpec",
     "CommandAgent",

@@ -13,6 +13,29 @@ class SandboxUnavailable(RuntimeError):
     pass
 
 
+# An SDK exception carrying no exit code of its own means the command never
+# reached the sandbox. A failure with this code is evidence about the
+# environment, never about the candidate under review.
+TRANSPORT_EXIT_CODE = 125
+
+
+def _condense_gateway_error(error: BaseException, *, limit: int = 180) -> str:
+    """Reduce an SDK transport error to one loggable line.
+
+    A 502 from the gateway arrives as a full Cloudflare HTML page. Bootstrap can
+    retry for hours, so echoing the page each time would bury the driver log.
+    """
+    text = " ".join(str(error).split())
+    cut = text.find("<!DOCTYPE")
+    if cut == -1:
+        cut = text.find("<html")
+    if cut != -1:
+        text = text[:cut].strip() or f"{type(error).__name__} (html error page)"
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "..."
+    return text or type(error).__name__
+
+
 @dataclass(frozen=True)
 class SandboxResult:
     command: tuple[str, ...]
@@ -153,7 +176,15 @@ class E2BSandbox:
                 from e2b import Sandbox as E2BSdkSandbox  # type: ignore
             except ImportError as error:
                 raise SandboxUnavailable("E2B SDK is not installed; refusing host execution") from error
-            client = E2BSdkSandbox.create(template=template, timeout=timeout, envs=forwarded)
+            try:
+                client = E2BSdkSandbox.create(template=template, timeout=timeout, envs=forwarded)
+            except SandboxUnavailable:
+                raise
+            except Exception as error:
+                raise SandboxUnavailable(
+                    f"E2B gateway could not create a sandbox from template {template!r}: "
+                    f"{_condense_gateway_error(error)}"
+                ) from error
             sandbox_id = str(getattr(client, "sandbox_id", getattr(client, "id", "unknown")))
             instance = cls(client, sandbox_id=sandbox_id, cwd=cwd)
             instance._ensure_workdir()
@@ -176,7 +207,15 @@ class E2BSandbox:
             from e2b import Sandbox as E2BSdkSandbox  # type: ignore
         except ImportError as error:
             raise SandboxUnavailable("E2B SDK is not installed") from error
-        client = E2BSdkSandbox.connect(sandbox_id)
+        try:
+            client = E2BSdkSandbox.connect(sandbox_id)
+        except SandboxUnavailable:
+            raise
+        except Exception as error:
+            raise SandboxUnavailable(
+                f"E2B gateway could not attach to sandbox {sandbox_id}: "
+                f"{_condense_gateway_error(error)}"
+            ) from error
         return cls(client, sandbox_id=sandbox_id, cwd=cwd)
 
     def _ensure_workdir(self) -> None:
@@ -237,7 +276,7 @@ class E2BSandbox:
                 stdout = str(getattr(error, "stdout", ""))
                 stderr = str(getattr(error, "stderr", ""))
             else:
-                exit_code, stdout, stderr = 125, "", repr(error)
+                exit_code, stdout, stderr = TRANSPORT_EXIT_CODE, "", repr(error)
         return SandboxResult(tuple(command), exit_code, stdout, stderr, time.monotonic() - started, self.sandbox_id)
 
     def put(self, local: Path, remote: str) -> None:

@@ -19,7 +19,12 @@ from .fence import FenceResult, FenceSuite, integrity_manifest_command, sha256_f
 from .flow import HumanizeFlow
 from .gates import GateContext, GateRunner
 from .runtime import SessionTopology
-from .sandbox import Sandbox, SandboxUnavailable, sandbox_manifest
+from .sandbox import (
+    TRANSPORT_EXIT_CODE,
+    Sandbox,
+    SandboxUnavailable,
+    sandbox_manifest,
+)
 from .stages import HumanizeStages
 from .task_card import BenchmarkSpec, TaskCard
 
@@ -79,6 +84,54 @@ def scan_candidate_patch_text(patch_text: str) -> list[str]:
 # evidence about the host, not the candidate.
 MAX_STEAL_FRACTION = 0.10
 
+
+# An A-A calibration run whose apparent effect exceeds this fraction of the
+# target it is calibrating for cannot certify that target: the instrument is
+# manufacturing more signal than the effect being claimed.
+NULL_RUN_BIAS_FRACTION = 0.5
+
+
+def judge_null_run(
+    spec: BenchmarkSpec,
+    comparison: PairedComparison,
+    min_speedup_percent: float | None,
+    *,
+    stage: str,
+) -> None:
+    """Falsify the instrument before trusting it on the candidate.
+
+    This comparison measured the baseline against itself, so the true
+    effect is exactly zero by construction. Two ways it can fail. A CI
+    that excludes 1.0 means the harness certifies a difference that does
+    not exist - a false-positive generator, and no candidate verdict from
+    it is worth anything. An apparent effect that is large next to the
+    target means the noise floor sits too close to the thing being
+    claimed to tell them apart.
+    """
+    if min_speedup_percent is None:
+        return
+    apparent = abs(comparison.overall_speedup_percent)
+    if comparison.repetitions >= 3 and (
+        comparison.ratio_ci95_upper < 1.0 or comparison.ratio_ci95_lower > 1.0
+    ):
+        raise BenchmarkEnvironmentError(
+            f"null run certified a phantom effect [{stage}] "
+            f"{spec.layer}/{spec.name}: baseline against itself resolved "
+            f"{comparison.overall_speedup_percent:+.3f}% with ratio "
+            f"CI95=[{comparison.ratio_ci95_lower:.4f}, "
+            f"{comparison.ratio_ci95_upper:.4f}] excluding 1.0; the harness "
+            "is a false-positive generator on this host and cannot certify "
+            "a candidate"
+        )
+    budget = NULL_RUN_BIAS_FRACTION * min_speedup_percent
+    if apparent > budget:
+        raise BenchmarkEnvironmentError(
+            f"null run bias too large [{stage}] {spec.layer}/{spec.name}: "
+            f"baseline against itself shows {apparent:.3f}% apparent effect "
+            f"(budget {budget:.3f}% = half the {min_speedup_percent:.3f}% "
+            "target); measure on a quieter host or raise repetitions "
+            "before judging the candidate"
+        )
 
 def judge_comparison(
     spec: BenchmarkSpec,
@@ -469,6 +522,11 @@ class LDAExecution:
             timeout_seconds=900,
         )
         if not result.ok:
+            if result.exit_code == TRANSPORT_EXIT_CODE:
+                raise SandboxUnavailable(
+                    "integrity sweep could not reach the sandbox: "
+                    + result.stderr[-500:]
+                )
             raise RuntimeError("integrity sweep failed: " + result.stderr[-500:])
         if result.stdout.strip() != stored.strip():
             raise RuntimeError(
@@ -897,6 +955,21 @@ class LDAExecution:
         comparisons = []
         cert_dir = self.flow.store.root / "benchmarks" / "certification" / f"rep{replication}"
         for spec in (*self.card.micro_benchmarks, *self.card.end_to_end_benchmarks):
+            # Calibrate the instrument on this host before trusting it: the
+            # baseline against itself must not resolve an effect, or a
+            # certified speedup here cannot be told from measurement bias.
+            if spec.min_speedup_percent is not None:
+                null_a, null_b = runner.run_null(spec)
+                if null_a.successful and null_b.successful:
+                    null_comparison = compare_paired(spec, null_a, null_b)
+                    null_a.write(cert_dir / f"{spec.layer}-{spec.name}-nullA.json")
+                    null_b.write(cert_dir / f"{spec.layer}-{spec.name}-nullB.json")
+                    judge_null_run(
+                        spec,
+                        null_comparison,
+                        spec.min_speedup_percent,
+                        stage=f"certify-{replication}-null",
+                    )
             baseline, candidate, comparison = paired_with_retry(
                 runner, spec, stage=f"certify-{replication}"
             )

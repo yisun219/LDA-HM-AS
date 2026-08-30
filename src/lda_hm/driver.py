@@ -12,13 +12,14 @@ import fcntl
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
 from .execution import LDAExecution
 from .flow import HumanizeFlow
 from .runtime import SessionTopology
-from .sandbox import E2BSandbox
+from .sandbox import E2BSandbox, SandboxUnavailable
 from .task_card import TaskCard
 
 
@@ -85,11 +86,70 @@ def load_card(path: Path) -> TaskCard:
     return TaskCard(**value)
 
 
-def connect_sandbox(template: str) -> E2BSandbox:
-    return E2BSandbox.connect(
-        template=os.getenv("E2B_TEMPLATE", template),
-        timeout=int(os.getenv("LDA_SANDBOX_TIMEOUT", "14400")),
+def _resolve_template(
+    template: str,
+    *,
+    log: Callable[[str], None],
+) -> str:
+    """Resolve the sandbox template, refusing a silent divergence from the card.
+
+    The card digest is part of run identity, so certifying against a template the
+    card never declared would make the recorded provenance wrong. An override is
+    still allowed for template-development runs, but it has to be stated.
+    """
+    override = os.getenv("E2B_TEMPLATE")
+    if not override or override == template:
+        return template
+    if os.getenv("LDA_ALLOW_TEMPLATE_OVERRIDE") != "1":
+        raise SandboxUnavailable(
+            f"E2B_TEMPLATE={override!r} contradicts the task card template "
+            f"{template!r}; refusing so the run cannot be certified against an "
+            "undeclared template. Set LDA_ALLOW_TEMPLATE_OVERRIDE=1 to override."
+        )
+    log(
+        f"lda: WARNING template override in effect: card declares {template!r}, "
+        f"running on {override!r} (LDA_ALLOW_TEMPLATE_OVERRIDE=1)"
     )
+    return override
+
+
+def connect_sandbox(
+    template: str,
+    *,
+    log: Callable[[str], None] = lambda line: print(line, file=sys.stderr),
+) -> E2BSandbox:
+    """Acquire the run sandbox, waiting out gateway outages.
+
+    A dead or 502-ing E2B gateway is an infrastructure fact, never a statement
+    about the candidate. Losing an entire card because the control plane blinked
+    during bootstrap is the most expensive failure mode this flow has, so the
+    bootstrap waits (bounded, logged) instead of exiting.
+    """
+    resolved = _resolve_template(template, log=log)
+    timeout = int(os.getenv("LDA_SANDBOX_TIMEOUT", "14400"))
+    budget = int(os.getenv("LDA_GATEWAY_WAIT_SECONDS", "21600"))
+    ceiling = int(os.getenv("LDA_GATEWAY_BACKOFF_CAP", "300"))
+    deadline = time.monotonic() + budget
+    delay = 15.0
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return E2BSandbox.connect(template=resolved, timeout=timeout)
+        except SandboxUnavailable as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SandboxUnavailable(
+                    f"E2B gateway unavailable for {budget}s across {attempt} attempts; "
+                    f"giving up bootstrap: {error}"
+                ) from error
+            pause = min(delay, ceiling, max(remaining, 1.0))
+            log(
+                f"lda: e2b gateway unavailable (attempt {attempt}, "
+                f"{int(remaining)}s of wait budget left); retrying in {int(pause)}s: {error}"
+            )
+            time.sleep(pause)
+            delay = min(delay * 2, ceiling)
 
 
 def drive(

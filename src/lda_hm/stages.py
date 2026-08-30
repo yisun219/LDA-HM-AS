@@ -21,6 +21,7 @@ from .prompts import (
     REGULAR_REVIEW,
 )
 from .runtime import SessionTopology
+from .sandbox import TRANSPORT_EXIT_CODE, SandboxUnavailable
 from .types import MainlineVerdict, Phase, ReviewResult
 
 
@@ -183,8 +184,6 @@ class HumanizeStages:
 
     def _evaluate_review(self, phase: Phase) -> ReviewResult:
         if self.pre_review_hook is not None:
-            from .sandbox import SandboxUnavailable
-
             try:
                 self.pre_review_hook()
             except BenchmarkEnvironmentError as error:
@@ -217,7 +216,7 @@ class HumanizeStages:
                 # sandbox, never about the candidate.
                 transport = all(
                     any(
-                        command.exit_code == 125
+                        command.exit_code == TRANSPORT_EXIT_CODE
                         for command in result.command_results
                     )
                     for result in failed

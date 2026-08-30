@@ -370,6 +370,47 @@ class BenchmarkRunner:
             BenchmarkReport(spec.layer, spec.name + "-candidate", tuple(candidate)),
         )
 
+    def run_null(
+        self,
+        spec: BenchmarkSpec,
+        *,
+        envs: dict[str, str] | None = None,
+        repetitions: int | None = None,
+    ) -> tuple[BenchmarkReport, BenchmarkReport]:
+        """Measure the baseline against itself: an A-A calibration run.
+
+        The true effect here is exactly zero, so whatever this run reports is
+        the instrument talking, not the candidate. It is the only measurement
+        in the suite whose correct answer is known in advance, which makes it
+        the one that can falsify the harness rather than the patch.
+        """
+        baseline_command = spec.baseline_command or spec.command
+        reps = spec.repetitions if repetitions is None else repetitions
+        left: list[BenchmarkObservation] = []
+        right: list[BenchmarkObservation] = []
+        for repetition in range(reps):
+            # Same order-alternation as the real pairing, so any order effect
+            # this run exposes is the one the real pairing would suffer.
+            ordered = (
+                (left, right) if repetition % 2 == 0 else (right, left)
+            )
+            for target in ordered:
+                result = self.sandbox.run(
+                    tuple(baseline_command),
+                    timeout_seconds=spec.timeout_seconds,
+                    envs=envs,
+                )
+                target.append(self._observation(spec, repetition, result))
+                if not result.ok:
+                    return (
+                        BenchmarkReport(spec.layer, spec.name + "-nullA", tuple(left)),
+                        BenchmarkReport(spec.layer, spec.name + "-nullB", tuple(right)),
+                    )
+        return (
+            BenchmarkReport(spec.layer, spec.name + "-nullA", tuple(left)),
+            BenchmarkReport(spec.layer, spec.name + "-nullB", tuple(right)),
+        )
+
     def _run_command(
         self,
         spec: BenchmarkSpec,
