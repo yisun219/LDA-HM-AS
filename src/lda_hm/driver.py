@@ -8,9 +8,11 @@ round loop - so the two entry points cannot drift.
 """
 from __future__ import annotations
 
+import atexit
 import fcntl
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -21,6 +23,66 @@ from .flow import HumanizeFlow
 from .runtime import SessionTopology
 from .sandbox import E2BSandbox, SandboxUnavailable
 from .task_card import TaskCard
+
+# Sandboxes this process opened and has not released yet. A leaked sandbox
+# holds its disk image on the shared E2B host for the whole re-armed TTL, so
+# release is wired to every exit path we can observe: the normal return below,
+# an unhandled exception, and SIGTERM/SIGINT. SIGKILL cannot be observed from
+# here - `tools/e2b/reap-sandboxes.py` is what collects those.
+_LIVE_SANDBOXES: list = []
+_EXIT_HOOKS_ARMED = False
+
+
+def release_sandbox(sandbox, *, log: Callable[[str], None] = lambda line: None) -> None:
+    """Kill one sandbox and forget it. Safe to call more than once."""
+    if sandbox in _LIVE_SANDBOXES:
+        _LIVE_SANDBOXES.remove(sandbox)
+    close = getattr(sandbox, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+        log(f"lda: released sandbox {getattr(sandbox, 'sandbox_id', '?')}")
+    except Exception as error:  # a run must never fail on cleanup
+        log(f"lda: sandbox release failed (reaper will collect it): {error}")
+
+
+def _release_all_sandboxes() -> None:
+    for sandbox in list(_LIVE_SANDBOXES):
+        release_sandbox(
+            sandbox, log=lambda line: print(line, file=sys.stderr)
+        )
+
+
+def _arm_exit_hooks() -> None:
+    """Release sandboxes on interpreter exit and on a polite kill."""
+    global _EXIT_HOOKS_ARMED
+    if _EXIT_HOOKS_ARMED:
+        return
+    _EXIT_HOOKS_ARMED = True
+    atexit.register(_release_all_sandboxes)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            previous = signal.getsignal(sig)
+
+            def handler(signum, frame, _previous=previous):
+                _release_all_sandboxes()
+                if callable(_previous):
+                    _previous(signum, frame)
+                else:
+                    raise SystemExit(128 + signum)
+
+            signal.signal(sig, handler)
+        except (ValueError, OSError):
+            pass  # not the main thread; atexit still covers us
+
+
+def track_sandbox(sandbox):
+    """Adopt a sandbox so it is released even if this run dies badly."""
+    _arm_exit_hooks()
+    if sandbox not in _LIVE_SANDBOXES:
+        _LIVE_SANDBOXES.append(sandbox)
+    return sandbox
 
 
 def acquire_run_lock(flow: HumanizeFlow):
@@ -177,7 +239,7 @@ def drive(
     )
     flow = HumanizeFlow(workspace, config, run_id=run_id, results_root=results_root)
     run_lock = acquire_run_lock(flow)
-    sandbox = connect_sandbox(card.baseline.template)
+    sandbox = track_sandbox(connect_sandbox(card.baseline.template))
     if on_sandbox is not None:
         on_sandbox(sandbox)
     run_identity = {
@@ -226,7 +288,7 @@ def drive(
         def certifier() -> Optional[str]:
             try:
                 execution.certify_candidate(
-                    lambda: connect_sandbox(card.baseline.template),
+                    lambda: track_sandbox(connect_sandbox(card.baseline.template)),
                     bootstrap_root=assets_root,
                     replications=replications,
                 )
@@ -312,5 +374,6 @@ def drive(
                 stages.methodology_analysis()
             else:
                 raise RuntimeError(f"unhandled flow phase: {phase}")
+    release_sandbox(sandbox, log=log)
     run_lock.close()
     return flow
