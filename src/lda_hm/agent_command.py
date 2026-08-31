@@ -25,7 +25,9 @@ class CommandSession:
             local.write_text(prompt, encoding="utf-8")
             self.sandbox.put(local, name)
             command = self.command + ("--prompt-file", name, "--role", self.role, "--session", self.session_id)
-            result = self.sandbox.run(command, timeout_seconds=3600)
+            turn_timeout = int(os.getenv("LDA_TURN_TIMEOUT", "4200"))
+            command = ("env", f"LDA_TURN_TIMEOUT={turn_timeout}") + command
+            result = self.sandbox.run(command, timeout_seconds=2 * turn_timeout + 600)
             if not result.ok:
                 raise RuntimeError(f"{self.role} agent failed with exit {result.exit_code}: {result.stderr[-1000:]}")
             return result.stdout.strip()

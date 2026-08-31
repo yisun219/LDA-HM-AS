@@ -6,7 +6,10 @@ The flow harness is Humanize 2 (`hmz`): the loop, sessions, retries,
 resumable state, and run traces belong to the hmz runner, and this repository
 contributes only what is LDA-specific - the task-card contract, the
 deterministic fences, the paired benchmark policy, the supervision rules,
-and the E2B execution adapters. The flowverse entry is `flows/lda`; both
+and the E2B execution adapters. hmz is the brick, LDA is the building: the
+generic machinery is never re-engineered here, which is why extending the
+flow to a new package family is a workbench script plus a card profile, and
+swapping the agent backend or model is a flag. The flowverse entry is `flows/lda`; both
 entry points below share one engine (`lda_hm.driver`), so they cannot drift:
 
 - `bin/lda-hmz run <workspace>` - production path: the hmz runner drives
@@ -152,9 +155,13 @@ deterministic rules > LLM counsel.
 1. Live (during a Builder turn): `BuilderWatchdog` polls the size of
    `/opt/lda/agent-state` inside E2B. A turn whose activity stops growing for
    `builder_stall_minutes` is double-confirmed and then killed, so a hung
-   agent surfaces as a judged failed round instead of a silent hour. A
-   watchdog that cannot observe never kills. A failed Builder turn does not
-   crash the flow: the fences and gates rule on whatever state the turn left.
+   agent surfaces as a failed round instead of a silent hour. A watchdog
+   that cannot observe never kills. Independently, the in-sandbox harness
+   bounds every agent turn at `LDA_TURN_TIMEOUT` wall seconds (the relay's
+   own deadline is longer), so a runaway agent process is killed inside the
+   sandbox and never left running behind a relay that gave up on it. A
+   failed Builder turn does not crash the flow - and it is never judged:
+   see the infrastructure split below.
 2. Between rounds: the `Supervisor` node assembles a `RunPulse` from the
    run's own evidence (round verdicts, blocked reasons, benchmark trend,
    Builder trace statistics with cost, sandbox load and disk, cumulative
@@ -172,10 +179,21 @@ deterministic rules > LLM counsel.
    ACTION/CONTRACT/REASON protocol, a malformed answer degrades to the rule
    decision, and an LLM abort is demoted to retarget - only humans and hard
    rules may end a run.
-3. Evidence split (Argus-style): infrastructure failures (unstable benchmark
-   host, dead reviewer backend) never count against the candidate's idea -
-   they bypass the stall/drift counters and have their own
-   consecutive-failure circuit breaker instead.
+3. Evidence split: infrastructure failures never count against the
+   candidate's idea. An interrupted Builder turn (dead relay, watchdog
+   kill, or a model-gateway error printed as the "answer" - the harness and
+   the flow both recognize those), a Reviewer answer that is a transport
+   error, an unstable benchmark window, a dead sandbox - each is recorded
+   as an infrastructure block (`blocked.json` with `infra: true`) that
+   consumes neither the stall budget nor the iteration budget
+   (`productive_rounds` excludes them), and no fence or benchmark judges
+   the half-finished state such a turn leaves behind; the next round's
+   contract tells the Builder the turn was interrupted and to inspect
+   `git status`. Three consecutive infrastructure blocks raise
+   `InfrastructureOutage`: the run pauses (state saved at the next
+   implementation round, sandbox released, exit code 75) and the driver
+   loop resumes it when the platform recovers - an outage can delay a card,
+   never end one.
 
 ## Benchmark verdict policy
 
@@ -242,8 +260,16 @@ visibly disables it - and the package's autopkgtest suite must not regress
 against the baseline reference recorded at setup), the ABI/FFI
 surgical-replacement suite, and the Builder-trace audit (the harness appends
 every turn to a cumulative stream-json trace inside the sandbox, mirrored
-live to the host by the watchdog, scanned for tampering patterns, and
-required by the trace fence before any verdict). Setup also aligns every
+live to the host by the watchdog, and required by the trace fence before any
+verdict). The trace audit judges recorded ACTIONS - executed commands,
+edited paths - never prose: assistant text and quoted contracts legitimately
+mention the very patterns a cheating command would contain, and because the
+trace is cumulative a prose match would fail every later round with no way
+back. When a session's trace does fail audit, the Supervisor replaces the
+Builder with a fresh session (clean trace; the stall stays on the counter).
+A Reviewer verdict is parsed from the closing protocol block of its answer,
+so a reviewer that restates the protocol while reasoning is not mistaken
+for a malformed one. Setup also aligns every
 installed package to the pinned snapshot's version (the template carries
 newer security updates; the apt solver only honors explicit downgrades), so
 build-dependencies and stock installs resolve exactly as an ISO-era system

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 import time
@@ -64,7 +65,7 @@ def main() -> int:
         local.unlink(missing_ok=True)
 
     effort = {"xhigh": "max"}.get(args.effort, args.effort) or "high"
-    environment = [f"LDA_AGENT_THINKING={effort}"]
+    environment = [f"LDA_AGENT_THINKING={effort}", f"LDA_TURN_TIMEOUT={os.getenv('LDA_TURN_TIMEOUT', '4200')}"]
     if args.model:
         environment.append(f"LDA_AGENT_MODEL_{args.role.upper()}={args.model}")
     command = (
@@ -78,7 +79,11 @@ def main() -> int:
         "--session",
         args.session,
     )
-    result = sandbox.run(command, timeout_seconds=int(3600 * 1.5))
+    # The harness bounds each attempt with LDA_TURN_TIMEOUT and retries once;
+    # the relay's deadline must outlive both attempts so the in-sandbox
+    # process is always the one that dies first, never the observer.
+    turn_timeout = int(os.getenv("LDA_TURN_TIMEOUT", "4200"))
+    result = sandbox.run(command, timeout_seconds=2 * turn_timeout + 600)
     print(f"LDA-SESSION: {args.session}", file=sys.stderr)
     if result.stderr:
         sys.stderr.write(result.stderr[-4000:])

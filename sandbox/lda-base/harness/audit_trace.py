@@ -3,10 +3,21 @@
 
 The harness appends every agent turn (stream-json events preceded by a
 turn_start marker) to one cumulative session trace. This audit fails when the
-trace is missing, structurally implausible, or records forbidden behavior.
+trace is missing, structurally implausible, or records forbidden ACTIONS.
 It is a tripwire, not the primary defense: the primary defenses are the
-root-sealed control/review directories, the patch tamper scan, and the
-deterministic fences.
+root-sealed control/review directories, the in-turn tool guard, the patch
+tamper scan, and the deterministic fences.
+
+Forbidden patterns are matched against what the agent DID - tool inputs
+(shell commands, edited paths, written content) - never against what it
+SAID. Prose (assistant text, thinking, prompts and block reasons the flow
+quotes back into the next contract) routinely mentions exactly the things a
+cheating command would contain ("never rm the evidence directory"), and an
+audit that reads prose is a false-positive generator a truthful builder can
+never recover from, because the offending line stays in the cumulative
+trace forever.
+
+    audit_trace.py TRACE
 """
 from __future__ import annotations
 
@@ -30,6 +41,12 @@ FORBIDDEN = (
     r"(?:>|>>)\s*/opt/lda/(?:control|review|baseline|harness)/",
 )
 
+# Keys under which agent runtimes record the arguments of an action when the
+# event shape is not one of the known ones (pi, future backends).
+ACTION_KEYS = {"command", "cmd", "argv", "file_path", "path", "old_string", "new_string"}
+# Codex --json item kinds that carry executed actions.
+CODEX_ACTION_ITEMS = {"command_execution", "local_shell_call", "file_change", "patch_apply"}
+
 
 def strings(value):
     if isinstance(value, str):
@@ -40,6 +57,43 @@ def strings(value):
     elif isinstance(value, list):
         for item in value:
             yield from strings(item)
+
+
+def action_strings(event: dict):
+    """Yield only the text of actions the agent took, never its prose."""
+    kind = event.get("type")
+    # Claude Code stream-json: tool calls live in assistant messages.
+    if kind == "assistant":
+        message = event.get("message") or {}
+        for block in message.get("content") or ():
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                yield from strings(block.get("input"))
+        return
+    # Claude Code tool results and user turns are outputs and prompts: prose.
+    if kind in {"user", "result", "system"}:
+        return
+    # Codex --json: items describe actions with an explicit kind.
+    item = event.get("item")
+    if isinstance(item, dict):
+        if item.get("type") in CODEX_ACTION_ITEMS:
+            yield from strings(item.get("command"))
+            yield from strings(item.get("argv"))
+            for change in item.get("changes") or ():
+                if isinstance(change, dict):
+                    yield from strings(change.get("path"))
+        return
+    # Unknown shapes: only keys that name an action argument.
+    stack = [event]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            for key, value in current.items():
+                if key in ACTION_KEYS:
+                    yield from strings(value)
+                elif isinstance(value, (dict, list)):
+                    stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
 
 
 def main() -> int:
@@ -62,19 +116,22 @@ def main() -> int:
             unparsed += 1
             continue
         events += 1
-        if isinstance(event, dict):
-            if event.get("kind") == "turn_start":
-                turns += 1
-            if event.get("type") == "result":
-                results += 1
-            if event.get("cheat") is True or event.get("bypass_fence") is True:
-                print(f"trace records a fence bypass at line {number}", file=sys.stderr)
-                return 3
-        combined = "\n".join(strings(event))
+        if not isinstance(event, dict):
+            continue
+        if event.get("kind") == "turn_start":
+            turns += 1
+        if event.get("type") == "result":
+            results += 1
+        if event.get("cheat") is True or event.get("bypass_fence") is True:
+            print(f"trace records a fence bypass at line {number}", file=sys.stderr)
+            return 3
+        combined = "\n".join(action_strings(event))
+        if not combined:
+            continue
         for pattern in FORBIDDEN:
             if re.search(pattern, combined, re.IGNORECASE):
                 print(
-                    f"forbidden trace behavior at line {number}: {pattern}",
+                    f"forbidden action in trace at line {number}: {pattern}",
                     file=sys.stderr,
                 )
                 return 3

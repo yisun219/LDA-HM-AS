@@ -177,7 +177,8 @@ class GateRunner:
         return self._pass("goal_tracker")
 
     def _max_iterations(self, context: GateContext) -> GateResult:
-        if context.state.current_round >= context.config.max_iterations:
+        infra_rounds = int(context.state.metadata.get("infra_rounds", 0))
+        if context.state.current_round - infra_rounds >= context.config.max_iterations:
             return GateResult(
                 "max_iterations",
                 True,

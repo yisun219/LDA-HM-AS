@@ -1,3 +1,8 @@
+---
+name: lda-adversarial-review
+description: Division of labor between deterministic fences and the fresh read-only Reviewer; how to judge a candidate patch against sealed evidence and treat Builder claims as untrusted.
+---
+
 # LDA Adversarial Review
 
 The Builder and Reviewer must be separate sessions. The Reviewer is read-only

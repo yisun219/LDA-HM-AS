@@ -19,6 +19,16 @@ class InvalidTransition(RuntimeError):
     pass
 
 
+class InfrastructureOutage(RuntimeError):
+    """Consecutive infrastructure blocks: the run must pause, not end.
+
+    Raised after the state has been saved at the next implementation round,
+    so the process can exit, wait, and resume from exactly where it was. A
+    dead model gateway or a flapping sandbox platform is never a verdict on
+    the candidate, and a run must not be lost to it.
+    """
+
+
 # BitLesson: a per-run knowledge base of hard-won lessons, re-validated
 # mechanically every round (a claimed delta must actually exist in the KB, an
 # update must reference a real entry). The point is that rounds stop
@@ -224,7 +234,7 @@ class HumanizeFlow:
             return self.state.phase
 
         self.state.current_round += 1
-        if self.state.current_round >= self.config.max_iterations:
+        if self.productive_rounds() >= self.config.max_iterations:
             self.state.terminal_reason = TerminalReason.MAX_ITER
             self._move(Phase.MAX_ITER)
             return self.state.phase
@@ -261,13 +271,19 @@ class HumanizeFlow:
             reason=reason[:200],
         )
         self.state.last_verdict = MainlineVerdict.REGRESSED
+        outage = False
         if infra:
             consecutive = int(self.state.metadata.get("consecutive_infra_blocks", 0)) + 1
-            self.state.metadata["consecutive_infra_blocks"] = consecutive
+            # Infrastructure rounds do not consume the run's iteration budget:
+            # an outage that lasts an afternoon must not end a card.
+            self.state.metadata["infra_rounds"] = int(self.state.metadata.get("infra_rounds", 0)) + 1
             if consecutive >= self.config.circuit_breaker_threshold:
-                self.state.terminal_reason = TerminalReason.STOP
-                self._move(Phase.STOP)
-                return self.state.phase
+                # Pause, never stop: the counter restarts after the pause so
+                # the next streak is judged on its own.
+                self.state.metadata["consecutive_infra_blocks"] = 0
+                outage = True
+            else:
+                self.state.metadata["consecutive_infra_blocks"] = consecutive
         else:
             self.state.metadata["consecutive_infra_blocks"] = 0
             self.state.stall_count += 1
@@ -276,7 +292,7 @@ class HumanizeFlow:
                 self._move(Phase.STOP)
                 return self.state.phase
         self.state.current_round += 1
-        if self.state.current_round >= self.config.max_iterations:
+        if self.productive_rounds() >= self.config.max_iterations:
             self.state.terminal_reason = TerminalReason.MAX_ITER
             self._move(Phase.MAX_ITER)
             return self.state.phase
@@ -285,7 +301,16 @@ class HumanizeFlow:
             self._move(Phase.DRIFT_RECOVERY)
         else:
             self._move(Phase.IMPLEMENTATION)
+        if outage:
+            raise InfrastructureOutage(
+                f"{self.config.circuit_breaker_threshold} consecutive infrastructure "
+                f"blocks; last: {source}: {reason[:300]}"
+            )
         return self.state.phase
+
+    def productive_rounds(self) -> int:
+        """Rounds that judged the candidate; infrastructure rounds excluded."""
+        return self.state.current_round - int(self.state.metadata.get("infra_rounds", 0))
 
     def record_code_review(self, findings: tuple[str, ...]) -> Phase:
         self._require(Phase.CODE_REVIEW)
@@ -316,7 +341,7 @@ class HumanizeFlow:
             {"reason": reason, "round": self.state.current_round},
         )
         self.state.current_round += 1
-        if self.state.current_round >= self.config.max_iterations:
+        if self.productive_rounds() >= self.config.max_iterations:
             self.state.terminal_reason = TerminalReason.MAX_ITER
             self._move(Phase.MAX_ITER)
         else:

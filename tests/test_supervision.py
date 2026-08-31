@@ -271,11 +271,21 @@ class InfraBlockTest(unittest.TestCase):
         self.assertEqual(self.flow.state.stall_count, 0)
         self.assertEqual(self.flow.state.phase.value, "implementation")
 
-    def test_three_consecutive_infra_blocks_stop_the_run(self) -> None:
+    def test_three_consecutive_infra_blocks_pause_not_stop(self) -> None:
+        from lda_hm import InfrastructureOutage
+
         self._blocked_round(infra=True)
         self._blocked_round(infra=True)
-        self._blocked_round(infra=True)
-        self.assertEqual(self.flow.state.phase.value, "stop")
+        with self.assertRaises(InfrastructureOutage):
+            self._blocked_round(infra=True)
+        # The run is parked at the next implementation round, resumable,
+        # with the streak counter reset and no iteration budget consumed.
+        self.assertEqual(self.flow.state.phase.value, "implementation")
+        self.assertEqual(self.flow.state.stall_count, 0)
+        self.assertEqual(self.flow.state.metadata["consecutive_infra_blocks"], 0)
+        self.assertEqual(self.flow.state.metadata["infra_rounds"], 3)
+        self.assertEqual(self.flow.productive_rounds(), 0)
+        self.assertEqual(self.flow.state.current_round, 3)
 
     def test_candidate_blocks_still_drift(self) -> None:
         self._blocked_round(infra=False)

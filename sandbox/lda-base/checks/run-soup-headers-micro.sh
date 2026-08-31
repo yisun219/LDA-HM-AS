@@ -15,11 +15,16 @@ fixroot="${LDA_SOUP_FIXDIR:-/opt/lda/fixtures/soup}"
 corpus="$fixroot/headers-corpus.txt"
 test -s "$corpus" || { echo "soup corpus missing at $corpus" >&2; exit 65; }
 mult="${LDA_SOUP_ITER_MULT:-1}"
+# One repetition must run for seconds, not tens of milliseconds: at 60
+# corpus passes a sample lasted ~65 ms and process start-up plus scheduler
+# jitter alone exceeded the 1-2% targets on every window. 2400 passes puts a
+# sample in the 2-4 s band where the paired policy resolves 1%.
+iterations=$((2400 * mult))
 
 # Warmup (unmeasured).
-lda_run_with_pkg "$mode" "$SOUP_FIXDIR/soup-headers" "$corpus" 2 >/dev/null
+lda_run_with_pkg "$mode" "$SOUP_FIXDIR/soup-headers" "$corpus" 40 >/dev/null
 
-lda_bench_run micro header-churn "$mode" $((60 * mult)) \
-  lda_run_with_pkg "$mode" "$SOUP_FIXDIR/soup-headers" "$corpus" $((60 * mult))
+lda_bench_run micro header-churn "$mode" "$iterations" \
+  lda_run_with_pkg "$mode" "$SOUP_FIXDIR/soup-headers" "$corpus" "$iterations"
 
 printf 'soup headers micro mode=%s complete\n' "$mode"

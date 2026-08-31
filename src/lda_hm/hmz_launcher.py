@@ -74,7 +74,14 @@ def main(argv=None) -> int:
         ),
         name="reviewer",
     )
-    Runner(str(flow_path), [builder, reviewer]).run(str(workspace))
+    from .flow import InfrastructureOutage
+
+    try:
+        Runner(str(flow_path), [builder, reviewer]).run(str(workspace))
+    except InfrastructureOutage as outage:
+        # Temporary failure: the run state is saved; the driver loop resumes it.
+        print(f"lda-hmz: paused on infrastructure outage: {outage}", file=sys.stderr)
+        return 75
     return 0
 
 

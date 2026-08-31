@@ -409,7 +409,31 @@ class Supervisor:
         consult = self._drift_consult(pulse)
         if consult is not None:
             return consult
+        latest_block = pulse.recent_blocks[-1] if pulse.recent_blocks else ""
+        if "[fence]" in latest_block and "trace audit failed" in latest_block:
+            # The audited trace is cumulative per Builder session, so a
+            # recorded forbidden action would fail every later round of that
+            # session. A fresh session starts a clean trace; the stall the
+            # violation earned stays on the counter.
+            return SupervisorDecision(
+                "restart_builder",
+                contract=(
+                    "The previous Builder session's trace failed the tamper "
+                    f"audit: {latest_block[:300]}. You are a fresh session. "
+                    "Inspect `git log` and `git status` in /opt/lda/work, keep "
+                    "the committed candidate if it is sound, and continue the "
+                    "plan without touching /opt/lda/control, /opt/lda/review, "
+                    "/opt/lda/baseline, /opt/lda/harness, fixtures, or traces."
+                ),
+                reason="builder trace failed audit; a fresh session starts a clean trace",
+            )
         repeated = self._repeated_block_source(pulse.recent_blocks)
+        if repeated == "builder-infra":
+            return SupervisorDecision(
+                "continue",
+                contract=self.default_contract,
+                reason="consecutive builder turns were interrupted by infrastructure; nothing to steer",
+            )
         if repeated:
             return SupervisorDecision(
                 "retarget",

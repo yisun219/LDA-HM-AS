@@ -22,4 +22,11 @@ if ! command -v autopkgtest >/dev/null; then
   sudo -n apt-get -o Acquire::Check-Valid-Until=false install -y autopkgtest
 fi
 test -x "$(command -v autopkgtest)"
-echo "autopkgtest ready; system apt pinned to the recorded snapshot"
+# Profiling: on Ubuntu 26.04 the perf binary ships in linux-perf (not in
+# linux-tools-*). Software sampling (cpu-clock) is what the Firecracker guest
+# supports - there is no PMU - and that is what the Builder profiles with.
+if ! command -v perf >/dev/null; then
+  sudo -n apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends linux-perf \
+    || echo "linux-perf unavailable from the snapshot; profiling falls back to the Builder's own tooling" >&2
+fi
+echo "autopkgtest ready; perf: $(command -v perf || echo absent); system apt pinned to the recorded snapshot"

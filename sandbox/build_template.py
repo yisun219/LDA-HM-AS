@@ -92,7 +92,7 @@ def build() -> None:
             "apt-get update && apt-get install -y --no-install-recommends "
             "build-essential clang cmake ninja-build meson pkg-config git git-lfs "
             "python3 python3-pip python3-venv nodejs npm binutils elfutils abigail-tools "
-            "libffi-dev strace linux-tools-generic devscripts debhelper dpkg-dev fakeroot "
+            "libffi-dev strace linux-perf devscripts debhelper dpkg-dev fakeroot "
             "ca-certificates jq curl wget procps file time sudo xz-utils squashfs-tools "
             "libpng-dev libpng-tools python3-pil libgdk-pixbuf2.0-bin "
             "xvfb xauth dbus-x11 fonts-dejavu-core && rm -rf /var/lib/apt/lists/*"
@@ -117,6 +117,7 @@ def build() -> None:
         (ROOT / "harness", Path("/opt/lda/harness")),
         (ROOT / "checks", Path("/opt/lda/harness/checks")),
         (ROOT / "baseline", Path("/opt/lda/baseline")),
+        (ROOT / "humanize", Path("/opt/lda/humanize")),
     )
     for source, destination in mappings:
         for local in sorted(source.rglob("*")):
@@ -129,7 +130,14 @@ def build() -> None:
             )
     template = (
         template
-        .run_cmd("find /opt/lda/harness -type f -name '*.sh' -exec chmod +x {} +")
+        .run_cmd("find /opt/lda/harness /opt/lda/humanize -type f -name '*.sh' -exec chmod +x {} +")
+        # Claude Code loads skills from ~/.claude/skills/<name>/SKILL.md.
+        .run_cmd(
+            "mkdir -p /home/user/.claude/skills && "
+            "for skill in /opt/lda/skills/*/SKILL.md "
+            "/opt/lda/skills/intel-performance-skills/skills/*/SKILL.md; do "
+            "dir=$(dirname $skill); ln -sfn $dir /home/user/.claude/skills/$(basename $dir); done"
+        )
         .run_cmd("chown -R user:user /opt/lda /home/user")
         .set_workdir("/opt/lda/work")
         .set_envs({"PLAYWRIGHT_BROWSERS_PATH": "/opt/lda/ms-playwright"})
@@ -185,7 +193,8 @@ def smoke() -> None:
         result = sandbox.commands.run(
             "find /opt/lda/harness -type f -name '*.sh' -exec chmod +x {} + && "
             "test -x /opt/lda/harness/lda-agent-harness.sh && "
-            "test -f /opt/lda/skills/lda-abi-ffi-fence.md && "
+            "test -f /opt/lda/skills/lda-abi-ffi-fence/SKILL.md && "
+            "test -L /home/user/.claude/skills/linux-perf && "
             "python3 --version && uname -m"
         )
         print(result.stdout, end="")

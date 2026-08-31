@@ -1,3 +1,8 @@
+---
+name: lda-end-to-end-benchmark
+description: How LDA end-to-end benchmarks work: real consumer workloads (browser render, GUI, web server) kept separate from micro results; a zero e2e gain is valid, a regression is not.
+---
+
 # LDA End-to-End Benchmark
 
 Use real workloads such as browser rendering, GUI automation, and web-server

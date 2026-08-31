@@ -428,6 +428,20 @@ class E2BSandbox:
                 "-exec chmod +x {} +",
             )
         )
+        # Claude Code loads skills from ~/.claude/skills/<name>/SKILL.md; the
+        # LDA skills and the vendored Intel performance skills are linked
+        # there so the in-sandbox agents actually load them, on any template.
+        self.run(
+            (
+                "sh",
+                "-c",
+                "mkdir -p $HOME/.claude/skills && "
+                "for skill in /opt/lda/skills/*/SKILL.md "
+                "/opt/lda/skills/intel-performance-skills/skills/*/SKILL.md; do "
+                "test -f \"$skill\" || continue; dir=$(dirname \"$skill\"); "
+                "ln -sfn \"$dir\" \"$HOME/.claude/skills/$(basename \"$dir\")\"; done",
+            )
+        )
 
     def bootstrap_credentials(self) -> None:
         """Inject existing user-scoped Agent logins without copying them to Git.

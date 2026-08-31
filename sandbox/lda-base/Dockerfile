@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git git-lfs python3 python3-pip python3-venv \
     nodejs npm \
     binutils elfutils abigail-tools \
-    libffi-dev strace linux-tools-generic devscripts debhelper dpkg-dev fakeroot \
+    libffi-dev strace linux-perf devscripts debhelper dpkg-dev fakeroot \
     ca-certificates jq curl wget procps file time sudo xz-utils squashfs-tools \
     libpng-dev libpng-tools python3-pil libgdk-pixbuf2.0-bin \
     xvfb xauth dbus-x11 fonts-dejavu-core \
@@ -34,7 +34,14 @@ COPY humanize/ /opt/lda/humanize/
 
 RUN find /opt/lda/harness /opt/lda/humanize -type f -name '*.sh' -exec chmod +x {} +
 
-RUN chown -R user:user /opt/lda /home/user
+# Agent skills: Claude Code loads skills from ~/.claude/skills/<name>/SKILL.md,
+# so every LDA skill directory and every vendored Intel performance skill is
+# linked there for the in-sandbox agent user.
+RUN mkdir -p /home/user/.claude/skills \
+    && for skill in /opt/lda/skills/*/SKILL.md /opt/lda/skills/intel-performance-skills/skills/*/SKILL.md; do \
+         dir="$(dirname "$skill")"; ln -sfn "$dir" "/home/user/.claude/skills/$(basename "$dir")"; \
+       done \
+    && chown -R user:user /opt/lda /home/user
 
 USER user
 

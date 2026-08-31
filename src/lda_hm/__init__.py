@@ -14,7 +14,7 @@ from .benchmark import (
 )
 from .agent_command import CommandAgent, CommandSession
 from .fence import FenceResult, FenceSuite, integrity_manifest_command
-from .flow import HumanizeFlow, InvalidTransition
+from .flow import HumanizeFlow, InfrastructureOutage, InvalidTransition
 from .gates import GateContext, GateResult, GateRunner
 from .execution import (
     LDAExecution,
@@ -93,6 +93,7 @@ __all__ = [
     "GateRunner",
     "HumanizeFlow",
     "HumanizeStages",
+    "InfrastructureOutage",
     "LDAExecution",
     "InvalidTransition",
     "Lane",

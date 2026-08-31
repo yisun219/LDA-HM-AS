@@ -1,3 +1,8 @@
+---
+name: lda-abi-ffi-fence
+description: The surgical-replacement contract: what an optimized Ubuntu package must preserve (SONAME, symbols, abidiff, FFI, behavior, security defaults) before any speedup counts.
+---
+
 # LDA ABI/FFI Fence
 
 The optimized package must replace the Ubuntu package without recompiling

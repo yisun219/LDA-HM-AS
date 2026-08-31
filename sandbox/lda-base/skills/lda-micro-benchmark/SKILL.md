@@ -1,3 +1,8 @@
+---
+name: lda-micro-benchmark
+description: How LDA micro benchmarks are run and judged: paired baseline/candidate in one sandbox, alternating order, in-sandbox nonce-tagged timing, hidden holdout; micro speedup is local reward only.
+---
+
 # LDA Micro Benchmark
 
 Benchmark each optimized function/library with representative, boundary, and

@@ -1,3 +1,8 @@
+---
+name: lda-libpng-lessons
+description: Measured lessons from the certified libpng pilot on Ubuntu 26.04 / Xeon Gold 6548Y+: confirmed wins, traps, and where a libpng speedup actually translates (cairo yes, gdk-pixbuf no).
+---
+
 # Validated libpng Optimization Lessons (Ubuntu 26.04, Xeon Gold 6548Y+)
 
 Evidence-backed lessons from certified benchmark rounds; every claim below
@@ -11,7 +16,7 @@ was measured under paired in-sandbox benchmarks with holdout.
   The stock Ubuntu build already enables `PNG_INTEL_SSE` (SSE2 baseline), so
   the win must come from upgrading the Paeth path, not enabling SSE.
 - A COMPLETE VALIDATED PATCH implementing this (plus an SSE2 Up-filter row)
-  is checked in at `/opt/lda/skills/lda-libpng-validated-r0.patch`. It
+  is checked in at `/opt/lda/skills/lda-libpng-lessons/lda-libpng-validated-r0.patch`. It
   passed the full micro certification (train +6%, hidden holdout, all four
   inputs including the 1x1 boundary, ABI/FFI/behavior/lifecycle/security
   fences) in a prior run. Apply it with `git apply` as the starting point

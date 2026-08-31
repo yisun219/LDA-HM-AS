@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .execution import LDAExecution
-from .flow import HumanizeFlow
+from .flow import HumanizeFlow, InfrastructureOutage
 from .runtime import SessionTopology
 from .sandbox import E2BSandbox, SandboxUnavailable
 from .task_card import TaskCard
@@ -331,6 +331,37 @@ def drive(
     )
 
     sandbox_ttl = int(os.getenv("LDA_SANDBOX_TIMEOUT", "14400"))
+    try:
+        _round_loop(
+            flow, execution, stages, supervisor, sandbox, sandbox_ttl,
+            contract=contract, log=log,
+        )
+    except InfrastructureOutage as outage:
+        # Consecutive infrastructure blocks: the state is saved at the next
+        # implementation round. Give the platform time to recover, release
+        # the sandbox, and let the driver loop resume this exact run.
+        pause = int(os.getenv("LDA_INFRA_PAUSE_SECONDS", "900"))
+        log(f"lda: infrastructure outage, pausing {pause}s before resuming: {outage}")
+        release_sandbox(sandbox, log=log)
+        run_lock.close()
+        time.sleep(pause)
+        raise
+    release_sandbox(sandbox, log=log)
+    run_lock.close()
+    return flow
+
+
+def _round_loop(
+    flow: HumanizeFlow,
+    execution: LDAExecution,
+    stages,
+    supervisor,
+    sandbox: E2BSandbox,
+    sandbox_ttl: int,
+    *,
+    contract: str,
+    log: Callable[[str], None],
+) -> None:
     while flow.state.phase.value not in {"complete", "stop", "unexpected"}:
         # Re-arm the sandbox deadline every round so a long run is never
         # killed by the connect-time TTL.
@@ -374,6 +405,3 @@ def drive(
                 stages.methodology_analysis()
             else:
                 raise RuntimeError(f"unhandled flow phase: {phase}")
-    release_sandbox(sandbox, log=log)
-    run_lock.close()
-    return flow

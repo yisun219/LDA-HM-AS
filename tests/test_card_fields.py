@@ -61,7 +61,7 @@ class CardgenTest(unittest.TestCase):
         )
         self.assertEqual(
             card["selfcheck_commands"][0][-1],
-            "/opt/lda/harness/checks/run-cairo-selfcheck.sh",
+            "/opt/lda/harness/checks/run-cairo-owned-selfcheck.sh",
         )
         self.assertEqual(
             card["dependency_tests"][0][-2:],
@@ -71,8 +71,9 @@ class CardgenTest(unittest.TestCase):
         self.assertIn("/opt/lda/harness/checks/install-test-tools.sh", setup_tails)
         self.assertIn("baseline", setup_tails)
         micro = card["micro_benchmarks"][0]
-        self.assertEqual(micro["holdout_env"], "LDA_CAIRO_FIXDIR")
+        self.assertEqual(micro["holdout_env"], "LDA_CAIRO_PATHDIR")
         self.assertEqual(micro["holdout_min_speedup_percent"], 1.0)
+        self.assertEqual(micro["inputs"], ["stroke-dash", "fill-tess", "text-corpus"])
 
     def test_unprofiled_package_is_refused(self) -> None:
         from lda_hm.cardgen import generate_card

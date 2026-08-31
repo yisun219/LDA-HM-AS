@@ -8,8 +8,13 @@
     "lda-micro-benchmark",
     "lda-end-to-end-benchmark",
     "lda-adversarial-review",
-    "intel-performance-skills"
+    "lda-libpng-lessons",
+    "intel-performance-skills/skills/linux-perf",
+    "intel-performance-skills/skills/performance-patterns",
+    "intel-performance-skills/skills/phoronix-test-suite"
   ],
-  "harness": "lda-agent-harness.sh"
-  ,"intel_performance_skills_commit": "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
+  "skills_layout": "skills/<name>/SKILL.md, linked into /home/user/.claude/skills at bootstrap",
+  "profiler": "linux-perf (software sampling; the Firecracker guest exposes no PMU)",
+  "harness": "lda-agent-harness.sh",
+  "intel_performance_skills_commit": "e9d0b6410fb1ad7a50fb81e0868fd23ae886882c"
 }

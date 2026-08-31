@@ -217,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(flow.state.to_dict(), indent=2, sort_keys=True))
         return 0
     except Exception as error:
+        from .flow import InfrastructureOutage
+
+        if isinstance(error, InfrastructureOutage):
+            print(f"lda: paused on infrastructure outage: {error}", file=sys.stderr)
+            return 75
         print(f"lda: {error}", file=sys.stderr)
         return 2
 
