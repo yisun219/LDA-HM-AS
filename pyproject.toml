@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lda-hm"
 version = "0.1.0"
-description = "A runtime-neutral Humanize-inspired agent flow"
+description = "Linux Development Agent: agent-driven Ubuntu 26.04 package optimization under surgical-replacement fences, as a Humanize 2 flowverse"
 requires-python = ">=3.9"
 
 [tool.setuptools]
