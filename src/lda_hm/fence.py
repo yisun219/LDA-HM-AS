@@ -27,10 +27,20 @@ def integrity_manifest_command(paths: tuple[str, ...]) -> tuple[str, ...]:
     sandbox, so replacing a checker script cannot also replace its auditor.
     """
     quoted = " ".join(paths)
+    # The sweep must be able to read everything sealing produced. Sealing chowns
+    # the pinned trees to root, and some packages ship fixtures the owner alone
+    # can read (sssd's proxy_child and sssd_pam are 0750), so digesting as the
+    # agent user would fail on exactly the files most worth pinning. Reading
+    # them as root grants the Builder nothing it does not already have - it
+    # holds sandbox sudo by design - while the manifest text stays identical
+    # either way, so a manifest recorded on one path still compares against a
+    # manifest recomputed on the other.
     return (
         "sh",
         "-c",
-        f"find {quoted} -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum",
+        'if sudo -n true 2>/dev/null; then privileged="sudo -n"; else privileged=""; fi; '
+        f"find {quoted} -type f -print0 | LC_ALL=C sort -z "
+        "| xargs -0 $privileged sha256sum",
     )
 
 
