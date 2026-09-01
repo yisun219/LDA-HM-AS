@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shlex
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
@@ -257,27 +259,15 @@ class E2BSandbox:
         command = _with_envs(command, merged_envs)
         rendered = " ".join(shlex.quote(part) for part in command)
         if timeout_seconds >= 1200:
-            # The shared gateway drops command streams that stay silent for
-            # long stretches, which leaves the client hanging on an idle
-            # sandbox. Long-running commands therefore tick on stderr; the
-            # ticks are stripped from the captured stream below.
-            rendered = (
-                "( while :; do echo LDA-HEARTBEAT >&2; sleep 20; done ) & "
-                "__lda_hb=$!; " + rendered + "; __lda_rc=$?; "
-                "kill $__lda_hb 2>/dev/null; exit $__lda_rc"
-            )
+            detached = self._run_detached(command, rendered, timeout_seconds)
+            if detached is not None:
+                return detached
         started = time.monotonic()
         try:
             result = self.client.commands.run(rendered, cwd=self.cwd, timeout=timeout_seconds)
             exit_code = int(getattr(result, "exit_code", getattr(result, "exit_code", 0)))
             stdout = str(getattr(result, "stdout", ""))
             stderr = str(getattr(result, "stderr", ""))
-            if timeout_seconds >= 1200 and "LDA-HEARTBEAT" in stderr:
-                stderr = "\n".join(
-                    line
-                    for line in stderr.splitlines()
-                    if line.strip() != "LDA-HEARTBEAT"
-                )
         except Exception as error:  # transport errors are surfaced as failed results
             if hasattr(error, "exit_code"):
                 exit_code = int(getattr(error, "exit_code"))
@@ -286,6 +276,132 @@ class E2BSandbox:
             else:
                 exit_code, stdout, stderr = TRANSPORT_EXIT_CODE, "", repr(error)
         return SandboxResult(tuple(command), exit_code, stdout, stderr, time.monotonic() - started, self.sandbox_id)
+
+    def _run_detached(
+        self,
+        command: tuple[str, ...],
+        rendered: str,
+        timeout_seconds: int,
+    ) -> SandboxResult | None:
+        """Run a long command without one long-lived gateway response stream."""
+        started = time.monotonic()
+        remote_tmp = os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")
+        root = f"{remote_tmp}/commands/{uuid.uuid4().hex}"
+        script_path = f"{root}/run.sh"
+        exit_path = f"{root}/exit"
+        script = (
+            "#!/bin/sh\n"
+            "set +e\n"
+            f"{rendered}\n"
+            "__lda_rc=$?\n"
+            f"printf '%s\\n' \"$__lda_rc\" > {shlex.quote(exit_path)}.tmp\n"
+            f"mv {shlex.quote(exit_path)}.tmp {shlex.quote(exit_path)}\n"
+            "exit \"$__lda_rc\"\n"
+        )
+        encoded = base64.b64encode(script.encode()).decode("ascii")
+        stage = (
+            f"mkdir -p {shlex.quote(root)} && "
+            f"printf %s {encoded} | base64 -d > {shlex.quote(script_path)} && "
+            f"chmod 700 {shlex.quote(script_path)}"
+        )
+        try:
+            staged = self.client.commands.run(stage, cwd=self.cwd, timeout=60)
+            if int(getattr(staged, "exit_code", 0)) != 0:
+                return SandboxResult(
+                    tuple(command),
+                    int(getattr(staged, "exit_code", TRANSPORT_EXIT_CODE)),
+                    str(getattr(staged, "stdout", "")),
+                    str(getattr(staged, "stderr", "")),
+                    time.monotonic() - started,
+                    self.sandbox_id,
+                )
+            handle = self.client.commands.run(
+                f"{shlex.quote(script_path)} > {shlex.quote(root)}/stdout "
+                f"2> {shlex.quote(root)}/stderr",
+                background=True,
+                cwd=self.cwd,
+                timeout=60,
+            )
+        except TypeError:
+            # Older injected test clients may not implement the SDK's
+            # background option; retain the foreground path for them.
+            return None
+        except Exception as error:
+            return SandboxResult(
+                tuple(command),
+                int(getattr(error, "exit_code", TRANSPORT_EXIT_CODE)),
+                str(getattr(error, "stdout", "")),
+                str(getattr(error, "stderr", repr(error))),
+                time.monotonic() - started,
+                self.sandbox_id,
+            )
+
+        pid = int(handle.pid)
+        disconnect = getattr(handle, "disconnect", None)
+        if callable(disconnect):
+            disconnect()
+        deadline = started + timeout_seconds
+        exit_code: int | None = None
+        transport_error = ""
+        poll_seconds = max(1, int(os.getenv("LDA_LONG_POLL_SECONDS", "15")))
+        while time.monotonic() < deadline:
+            poll = (
+                f"if test -f {shlex.quote(exit_path)}; then "
+                f"printf 'DONE '; cat {shlex.quote(exit_path)}; "
+                f"elif kill -0 {pid} 2>/dev/null; then printf RUNNING; "
+                "else printf LOST; fi"
+            )
+            try:
+                status = self.client.commands.run(poll, cwd=self.cwd, timeout=60)
+                marker = str(getattr(status, "stdout", "")).strip()
+                if marker.startswith("DONE "):
+                    exit_code = int(marker.split(None, 1)[1])
+                    break
+                if marker == "LOST":
+                    transport_error = "detached E2B command disappeared before recording an exit code"
+                    exit_code = TRANSPORT_EXIT_CODE
+                    break
+            except Exception as error:
+                transport_error = repr(error)
+            time.sleep(min(poll_seconds, max(0.0, deadline - time.monotonic())))
+
+        if exit_code is None:
+            try:
+                self.client.commands.kill(pid)
+            except Exception:
+                pass
+            exit_code = 124
+            transport_error = f"detached E2B command exceeded timeout {timeout_seconds}s"
+
+        stdout = self._read_detached_tail(f"{root}/stdout")
+        stderr = self._read_detached_tail(f"{root}/stderr")
+        if transport_error:
+            stderr = (stderr.rstrip() + "\n" + transport_error).lstrip()
+        try:
+            self.client.commands.run(
+                f"rm -rf -- {shlex.quote(root)}", cwd="/", timeout=60
+            )
+        except Exception:
+            pass
+        return SandboxResult(
+            tuple(command),
+            exit_code,
+            stdout,
+            stderr,
+            time.monotonic() - started,
+            self.sandbox_id,
+        )
+
+    def _read_detached_tail(self, path: str, *, limit: int = 4_000_000) -> str:
+        try:
+            result = self.client.commands.run(
+                f"test ! -f {shlex.quote(path)} || tail -c {limit} {shlex.quote(path)}",
+                cwd=self.cwd,
+                timeout=120,
+            )
+            return str(getattr(result, "stdout", ""))
+        except Exception as error:
+            return f"could not collect detached output: {error!r}"
 
     def put(self, local: Path, remote: str) -> None:
         if not local.is_file():

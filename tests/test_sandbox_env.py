@@ -8,6 +8,49 @@ from pathlib import Path
 from lda_hm import E2BSandbox, SandboxUnavailable
 
 
+class _Result:
+    def __init__(self, stdout="", stderr="", exit_code=0):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.exit_code = exit_code
+
+
+class _Handle:
+    pid = 42
+
+    def __init__(self):
+        self.disconnected = False
+
+    def disconnect(self):
+        self.disconnected = True
+
+
+class _LongCommands:
+    def __init__(self):
+        self.calls = []
+        self.handle = _Handle()
+
+    def run(self, command, **kwargs):
+        self.calls.append((command, kwargs))
+        if kwargs.get("background"):
+            return self.handle
+        if "printf 'DONE '" in command:
+            return _Result("DONE 0")
+        if "tail -c" in command and command.endswith("/stdout"):
+            return _Result("long command output")
+        if "tail -c" in command and command.endswith("/stderr"):
+            return _Result("")
+        return _Result()
+
+    def kill(self, pid):
+        raise AssertionError(f"successful command unexpectedly killed pid {pid}")
+
+
+class _LongClient:
+    def __init__(self):
+        self.commands = _LongCommands()
+
+
 class SandboxPrivateEnvTest(unittest.TestCase):
     def test_loads_private_config_without_overriding_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -42,6 +85,19 @@ class SandboxPrivateEnvTest(unittest.TestCase):
             config.chmod(0o640)
             with self.assertRaises(SandboxUnavailable):
                 E2BSandbox.load_private_env(config)
+
+
+class DetachedLongCommandTest(unittest.TestCase):
+    def test_long_command_uses_background_handle_and_short_poll(self) -> None:
+        client = _LongClient()
+        sandbox = E2BSandbox(client, sandbox_id="e2b-test")
+        result = sandbox.run(("build-package", "baseline"), timeout_seconds=1200)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.stdout, "long command output")
+        self.assertTrue(client.commands.handle.disconnected)
+        self.assertTrue(
+            any(kwargs.get("background") for _command, kwargs in client.commands.calls)
+        )
 
 
 if __name__ == "__main__":
