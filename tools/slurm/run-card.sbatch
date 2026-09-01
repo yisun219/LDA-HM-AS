@@ -29,6 +29,11 @@ export LDA_RESULTS_ROOT="${LDA_RESULTS_ROOT:-/fact_data/yisun/Linux-Development-
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/scratch/$USER/cache}"
 export TMPDIR="${TMPDIR:-/scratch/$USER/lda-hm/$RUN_ID}"
 export PATH="$HOME/.venvs/ldahm/bin:$PATH"
+# Full GTK and LibreOffice package builds legitimately exceed the library-pilot
+# one-hour setup default. Keep the sandbox alive across the remaining setup
+# commands as well; both ceilings are still below the Slurm job limit.
+export LDA_SETUP_TIMEOUT="${LDA_SETUP_TIMEOUT:-10800}"
+export LDA_SANDBOX_TIMEOUT="${LDA_SANDBOX_TIMEOUT:-21600}"
 export PYTHONUNBUFFERED=1
 mkdir -p "$XDG_CACHE_HOME" "$TMPDIR" "$LDA_RESULTS_ROOT"
 
