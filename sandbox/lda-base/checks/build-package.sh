@@ -33,6 +33,18 @@ test -z "$(git status --porcelain)" || {
 }
 
 source_commit="$(git rev-parse HEAD)"
+if test "$mode" = baseline; then
+  baseline_commit="$(git rev-parse 'refs/tags/lda-baseline^{}' 2>/dev/null)" || {
+    echo "verified lda-baseline tag is missing; refusing baseline artifact build" >&2
+    exit 65
+  }
+  if test "$source_commit" != "$baseline_commit"; then
+    echo "refusing to overwrite baseline artifacts from a candidate commit" >&2
+    echo "HEAD=$source_commit lda-baseline=$baseline_commit" >&2
+    exit 65
+  fi
+fi
+
 if test -f "$output_root/source-commit" &&
    test "$(cat "$output_root/source-commit")" = "$source_commit" &&
    test -f "$output_root/artifact-schema" &&

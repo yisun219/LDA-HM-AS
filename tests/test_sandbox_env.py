@@ -108,6 +108,22 @@ class DetachedLongCommandTest(unittest.TestCase):
         self.assertEqual(background_calls[0]["timeout"], 1200)
 
 
+class BaselineArtifactGuardTest(unittest.TestCase):
+    def test_baseline_guard_precedes_destructive_cleanup(self) -> None:
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "sandbox/lda-base/checks/build-package.sh"
+        ).read_text(encoding="utf-8")
+        guard = script.index('if test "$mode" = baseline; then')
+        cleanup = script.index("# Clear build outputs only")
+        self.assertLess(guard, cleanup)
+        self.assertIn("refs/tags/lda-baseline^{}", script[guard:cleanup])
+        self.assertIn(
+            "refusing to overwrite baseline artifacts from a candidate commit",
+            script[guard:cleanup],
+        )
+
+
 class X11DisplayReadyTest(unittest.TestCase):
     def test_detects_abstract_x11_socket_without_filesystem_entry(self) -> None:
         display = f":{30000 + os.getpid() % 20000}"
