@@ -134,6 +134,10 @@ if test "$backend" = codex; then
   last_message="$session_dir/$session.last.txt"
   model_args=()
   test -z "$selected_model" || model_args=(--model "$selected_model")
+  provider_args=()
+  if test -n "${OPENAI_BASE_URL:-}"; then
+    provider_args=(-c "openai_base_url=\"${OPENAI_BASE_URL}\"")
+  fi
   # Keep the reasoning budget explicit for Codex runs. The relay sets
   # LDA_AGENT_THINKING=max for this campaign; passing it as a config override
   # prevents a stale sandbox config from downgrading a turn.
@@ -143,14 +147,14 @@ if test "$backend" = codex; then
   if test -s "$thread_file"; then
     thread_id="$(cat "$thread_file")"
     timeout -k 60 "$turn_timeout" codex exec resume --json \
-      "${model_args[@]}" "${effort_args[@]}" \
+      "${model_args[@]}" "${provider_args[@]}" "${effort_args[@]}" \
       --output-last-message "$last_message" \
       "$thread_id" "$(cat "$prompt_file")" >"$turn_file" 2>&1 || codex_rc=$?
   else
     sandbox_mode=read-only
     test "$role" = builder && sandbox_mode=workspace-write
     timeout -k 60 "$turn_timeout" codex exec --json --sandbox "$sandbox_mode" --cd /opt/lda/work \
-      --skip-git-repo-check "${model_args[@]}" "${effort_args[@]}" \
+      --skip-git-repo-check "${model_args[@]}" "${provider_args[@]}" "${effort_args[@]}" \
       --output-last-message "$last_message" \
       "$(cat "$prompt_file")" >"$turn_file" 2>&1 || codex_rc=$?
     thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' "$turn_file" 2>/dev/null | head -1 || true)"
