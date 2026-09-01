@@ -18,7 +18,7 @@ case "$pkg" in
     out="$scratch/lo-probe-$mode"
     rm -rf "$out"; mkdir -p "$out"
     lda_run_with_pkg "$mode" "$program" --headless --convert-to pdf --outdir "$out" "$TOP10_FIXDIR/sample.fodt" >/dev/null
-    sha256sum "$out/sample.pdf" | cut -c1-16
+    pdftotext "$out/sample.pdf" - | sha256sum | cut -c1-16
     rm -rf "$out"
     ;;
   gnome-settings-daemon)

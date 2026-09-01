@@ -22,7 +22,7 @@ source_root=/opt/lda/work
 output_root="/opt/lda/$mode"
 package_root="$output_root/root"
 package_dir="$output_root/packages"
-artifact_schema=1
+artifact_schema=2
 
 cd "$source_root"
 test "$(dpkg-parsechangelog -S Source)" = "$source_name"

@@ -12,7 +12,7 @@ OPTS=(-o "Dir::Etc::sourcelist=$sources" -o "Dir::Etc::sourceparts=-"
 
 case "$pkg" in
   gnome-shell) packages=(gnome-shell gjs dbus-x11 xvfb) ;;
-  libreoffice-core) packages=(libreoffice-core libreoffice-common) ;;
+  libreoffice-core) packages=(libreoffice-core libreoffice-common poppler-utils) ;;
   gnome-settings-daemon) packages=(gnome-settings-daemon dbus-x11) ;;
   gstreamer1.0-plugins-good) packages=(gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good) ;;
   ibus) packages=(ibus dbus-x11 xvfb) ;;

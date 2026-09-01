@@ -219,6 +219,7 @@ BENCHMARK_PROFILES = {
             "timeout_seconds": 900,
             "inputs": ["version-startup"],
             "max_regression_percent": 5.0,
+            "min_speedup_percent": 1.0,
         },
         "e2e": {
             "name": "gnome-shell-headless-startup",
@@ -239,6 +240,7 @@ BENCHMARK_PROFILES = {
             "timeout_seconds": 2400,
             "inputs": ["fodt-to-pdf"],
             "max_regression_percent": 5.0,
+            "min_speedup_percent": 1.0,
         },
         "e2e": {
             "name": "libreoffice-document-e2e",
@@ -259,6 +261,7 @@ BENCHMARK_PROFILES = {
             "timeout_seconds": 900,
             "inputs": ["plugin-version"],
             "max_regression_percent": 5.0,
+            "min_speedup_percent": 1.0,
         },
         "e2e": {
             "name": "gsd-session-startup",
@@ -279,6 +282,7 @@ BENCHMARK_PROFILES = {
             "timeout_seconds": 1800,
             "inputs": ["wav-flac-matroska"],
             "max_regression_percent": 5.0,
+            "min_speedup_percent": 1.0,
         },
         "e2e": {
             "name": "gst-good-pipeline-e2e",
@@ -299,6 +303,7 @@ BENCHMARK_PROFILES = {
             "timeout_seconds": 900,
             "inputs": ["engine-list"],
             "max_regression_percent": 5.0,
+            "min_speedup_percent": 1.0,
         },
         "e2e": {
             "name": "ibus-daemon-session",

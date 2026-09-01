@@ -139,28 +139,48 @@ if test "$backend" = codex; then
   # prevents a stale sandbox config from downgrading a turn.
   effort_args=(-c "model_reasoning_effort=${LDA_AGENT_THINKING:-high}")
   turn_timeout="${LDA_TURN_TIMEOUT:-4200}"
+  codex_rc=0
   if test -s "$thread_file"; then
     thread_id="$(cat "$thread_file")"
     timeout -k 60 "$turn_timeout" codex exec resume --json \
       "${model_args[@]}" "${effort_args[@]}" \
       --output-last-message "$last_message" \
-      "$thread_id" "$(cat "$prompt_file")" >"$turn_file"
+      "$thread_id" "$(cat "$prompt_file")" >"$turn_file" 2>&1 || codex_rc=$?
   else
     sandbox_mode=read-only
     test "$role" = builder && sandbox_mode=workspace-write
     timeout -k 60 "$turn_timeout" codex exec --json --sandbox "$sandbox_mode" --cd /opt/lda/work \
       --skip-git-repo-check "${model_args[@]}" "${effort_args[@]}" \
       --output-last-message "$last_message" \
-      "$(cat "$prompt_file")" >"$turn_file"
-    thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' "$turn_file" | head -1)"
-    test -n "$thread_id" && test "$thread_id" != null
-    printf '%s\n' "$thread_id" >"$thread_file"
+      "$(cat "$prompt_file")" >"$turn_file" 2>&1 || codex_rc=$?
+    thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' "$turn_file" 2>/dev/null | head -1 || true)"
+    if test -n "$thread_id" && test "$thread_id" != null; then
+      printf '%s\n' "$thread_id" >"$thread_file"
+    fi
   fi
-  printf '{"kind":"turn_start","role":"%s","session":"%s","epoch":%s}\n' \
-    "$role" "$session" "$(date +%s)" >>"$raw_trace"
+  printf '{"kind":"turn_start","role":"%s","session":"%s","exit":%s,"epoch":%s}\n' \
+    "$role" "$session" "$codex_rc" "$(date +%s)" >>"$raw_trace"
   cat "$turn_file" >>"$raw_trace"
+  if test "$codex_rc" -ne 0; then
+    echo "harness: Codex turn failed (rc=$codex_rc); trace tail:" >&2
+    tail -c 1200 "$turn_file" >&2 || true
+    echo >&2
+    # Auth, gateway, quota, transport, and timeout failures describe the
+    # execution infrastructure, never a package candidate.
+    if test "$codex_rc" = 124 || grep -Eqi \
+      'unsupported_country|401 Unauthorized|403 Forbidden|429|5[0-9][0-9]|timed? out|connection|transport|rate.?limit|overloaded|API Error' \
+      "$turn_file"; then
+      rm -f "$turn_file"
+      exit 75
+    fi
+    rm -f "$turn_file"
+    exit "$codex_rc"
+  fi
   rm -f "$turn_file"
-  test -s "$last_message"
+  test -s "$last_message" || {
+    echo "harness: Codex turn produced no final message" >&2
+    exit 75
+  }
   cat "$last_message"
   exit 0
 fi

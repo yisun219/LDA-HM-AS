@@ -34,6 +34,7 @@ mkdir -p "$XDG_CACHE_HOME" "$TMPDIR" "$LDA_RESULTS_ROOT"
 
 set -a
 . "$HOME/.config/lda-hm/e2b.env"
+. "$HOME/.config/lda/codex.env"
 set +a
 # New campaign runs use the Codex login copied into each E2B sandbox. Keep the
 # model and reasoning budget explicit so template-local config cannot silently
