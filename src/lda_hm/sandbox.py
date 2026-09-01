@@ -224,9 +224,12 @@ class E2BSandbox:
             return
         try:
             scratch = os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")
+            owner = "$(id -u):$(id -g)"
             result = self.client.commands.run(
-                f"mkdir -p {shlex.quote(self.cwd)} {shlex.quote(scratch)} "
-                f"&& chmod 700 {shlex.quote(scratch)}",
+                f"mkdir -p {shlex.quote(self.cwd)} && "
+                f"sudo -n mkdir -p {shlex.quote(scratch)} && "
+                f"sudo -n chown {owner} {shlex.quote(scratch)} && "
+                f"chmod 700 {shlex.quote(scratch)}",
                 cwd="/",
                 timeout=60,
             )
