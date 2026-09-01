@@ -21,11 +21,12 @@ lda_gtk_soname() {
 
 # One shared headless display: transport only, identical for both modes.
 lda_gtk_display() {
+  local scratch="${LDA_REMOTE_TMPDIR:-/scratch/lda-hm}"
   export GDK_BACKEND=x11 GTK_A11Y=none NO_AT_BRIDGE=1 GSETTINGS_BACKEND=memory \
-    LC_ALL=C XDG_RUNTIME_DIR=/tmp/lda-xdg
-  mkdir -p /tmp/lda-xdg && chmod 700 /tmp/lda-xdg
+    LC_ALL=C XDG_RUNTIME_DIR="$scratch/xdg"
+  mkdir -p "$scratch/xdg" && chmod 700 "$scratch/xdg"
   if ! test -e /tmp/.X11-unix/X77; then
-    (Xvfb :77 -screen 0 1280x1024x24 -nolisten tcp >/tmp/lda-xvfb.log 2>&1 &)
+    (Xvfb :77 -screen 0 1280x1024x24 -nolisten tcp >"$scratch/xvfb.log" 2>&1 &)
     for _ in $(seq 1 50); do
       test -e /tmp/.X11-unix/X77 && break
       sleep 0.2

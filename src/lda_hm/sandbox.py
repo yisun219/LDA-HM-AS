@@ -223,8 +223,10 @@ class E2BSandbox:
         if not hasattr(self.client, "commands"):
             return
         try:
+            scratch = os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")
             result = self.client.commands.run(
-                f"mkdir -p {shlex.quote(self.cwd)}",
+                f"mkdir -p {shlex.quote(self.cwd)} {shlex.quote(scratch)} "
+                f"&& chmod 700 {shlex.quote(scratch)}",
                 cwd="/",
                 timeout=60,
             )
@@ -246,7 +248,10 @@ class E2BSandbox:
     ) -> SandboxResult:
         if not command:
             raise ValueError("sandbox command must not be empty")
-        command = _with_envs(command, envs)
+        merged_envs = {"TMPDIR": os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")}
+        if envs:
+            merged_envs.update(envs)
+        command = _with_envs(command, merged_envs)
         rendered = " ".join(shlex.quote(part) for part in command)
         if timeout_seconds >= 1200:
             # The shared gateway drops command streams that stay silent for

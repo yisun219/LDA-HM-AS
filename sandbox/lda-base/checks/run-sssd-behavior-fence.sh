@@ -6,7 +6,7 @@ set -euo pipefail
 . /opt/lda/harness/checks/sssd-workbench.sh
 /opt/lda/harness/checks/ensure-pkg-candidate.sh
 tool="$(lda_sssd_lookup_tool)"
-universe=/tmp/lda-sssd-universe.txt
+universe="${LDA_REMOTE_TMPDIR:-/scratch/lda-hm}/sssd-universe.txt"
 { for i in $(seq 0 2999); do echo "lda_u$i"; done
   for i in $(seq 0 199); do echo "lda_missing$i"; done; } >"$universe"
 

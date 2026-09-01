@@ -18,9 +18,12 @@ class CommandSession:
 
     def ask(self, prompt: str, *, schema=None):
         self.turn += 1
-        name = f"/tmp/lda-{self.role}-{self.session_id}-{self.turn}.prompt"
+        remote_tmp = os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")
+        name = f"{remote_tmp}/lda-{self.role}-{self.session_id}-{self.turn}.prompt"
         # The E2B adapter owns file transport. Prompts never go through a host shell.
-        local = Path(tempfile.mkstemp(prefix="lda-prompt-")[1])
+        local_tmp = os.getenv("TMPDIR", "/scratch/lda-hm")
+        Path(local_tmp).mkdir(parents=True, exist_ok=True)
+        local = Path(tempfile.mkstemp(prefix="lda-prompt-", dir=local_tmp)[1])
         try:
             local.write_text(prompt, encoding="utf-8")
             self.sandbox.put(local, name)

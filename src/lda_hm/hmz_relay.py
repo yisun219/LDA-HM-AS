@@ -56,8 +56,11 @@ def main() -> int:
     else:
         # Legacy path for gateways that serve attached clients.
         sandbox = E2BSandbox.attach(str(live["sandbox_id"]))
-    remote_prompt = f"/tmp/lda-{args.role}-{uuid.uuid4().hex[:8]}.prompt"
-    local = Path(tempfile.mkstemp(prefix="lda-hmz-prompt-")[1])
+    remote_tmp = os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")
+    remote_prompt = f"{remote_tmp}/lda-{args.role}-{uuid.uuid4().hex[:8]}.prompt"
+    local_tmp = os.getenv("TMPDIR", "/scratch/lda-hm")
+    Path(local_tmp).mkdir(parents=True, exist_ok=True)
+    local = Path(tempfile.mkstemp(prefix="lda-hmz-prompt-", dir=local_tmp)[1])
     try:
         local.write_text(prompt, encoding="utf-8")
         sandbox.put(local, remote_prompt)

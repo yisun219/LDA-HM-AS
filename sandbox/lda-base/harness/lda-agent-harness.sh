@@ -134,17 +134,22 @@ if test "$backend" = codex; then
   last_message="$session_dir/$session.last.txt"
   model_args=()
   test -z "$selected_model" || model_args=(--model "$selected_model")
+  # Keep the reasoning budget explicit for Codex runs. The relay sets
+  # LDA_AGENT_THINKING=max for this campaign; passing it as a config override
+  # prevents a stale sandbox config from downgrading a turn.
+  effort_args=(-c "model_reasoning_effort=${LDA_AGENT_THINKING:-high}")
   turn_timeout="${LDA_TURN_TIMEOUT:-4200}"
   if test -s "$thread_file"; then
     thread_id="$(cat "$thread_file")"
-    timeout -k 60 "$turn_timeout" codex exec resume --json "${model_args[@]}" \
+    timeout -k 60 "$turn_timeout" codex exec resume --json \
+      "${model_args[@]}" "${effort_args[@]}" \
       --output-last-message "$last_message" \
       "$thread_id" "$(cat "$prompt_file")" >"$turn_file"
   else
     sandbox_mode=read-only
     test "$role" = builder && sandbox_mode=workspace-write
     timeout -k 60 "$turn_timeout" codex exec --json --sandbox "$sandbox_mode" --cd /opt/lda/work \
-      --skip-git-repo-check "${model_args[@]}" \
+      --skip-git-repo-check "${model_args[@]}" "${effort_args[@]}" \
       --output-last-message "$last_message" \
       "$(cat "$prompt_file")" >"$turn_file"
     thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' "$turn_file" | head -1)"

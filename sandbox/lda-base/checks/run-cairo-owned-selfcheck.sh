@@ -14,7 +14,7 @@ export LDA_CAIRO_PATHDIR="${LDA_CAIRO_PATHDIR:-/opt/lda/fixtures/cairo-paths}"
 h1="$(lda_run_with_pkg baseline "$CAIRO_FIXDIR/cairo-ops" stroke-dash 2)"
 h2="$(lda_run_with_pkg baseline "$CAIRO_FIXDIR/cairo-ops" stroke-dash 2)"
 test "$h1" = "$h2" || fail "stroke-dash hash is not deterministic"
-variant=/tmp/lda-cairo-owned-selfcheck
+variant="${LDA_REMOTE_TMPDIR:-/scratch/lda-hm}/cairo-owned-selfcheck"
 rm -rf "$variant"
 env LDA_FIXTURE_DIR="$variant" LDA_FIXTURE_SEED=999331 \
   /opt/lda/harness/checks/prepare-cairo-path-fixtures.sh >/dev/null

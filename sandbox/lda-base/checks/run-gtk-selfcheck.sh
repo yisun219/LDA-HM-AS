@@ -27,7 +27,7 @@ note "abi comparator flags a wrong pair"
 h1="$(lda_run_with_pkg baseline "$GTK_BENCHDIR/gtk-ops" "$major" all 2 "$fixroot")"
 h2="$(lda_run_with_pkg baseline "$GTK_BENCHDIR/gtk-ops" "$major" all 2 "$fixroot")"
 test "$h1" = "$h2" || fail "gtk behavior hash is not deterministic"
-variant=/tmp/lda-gtk-selfcheck-fixtures
+variant="${LDA_REMOTE_TMPDIR:-/scratch/lda-hm}/gtk-selfcheck-fixtures"
 rm -rf "$variant"
 env LDA_FIXTURE_DIR="$variant" LDA_FIXTURE_SEED=999331 \
   /opt/lda/harness/checks/prepare-gtk-fixtures.sh >/dev/null

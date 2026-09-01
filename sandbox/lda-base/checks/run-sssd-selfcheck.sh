@@ -22,7 +22,7 @@ schedule="${LDA_SSSD_FIXDIR:-$SSSD_FIXDIR_DEFAULT}/schedule.txt"
 h1="$(python3 "$tool" "$schedule" 5000)"
 h2="$(python3 "$tool" "$schedule" 5000)"
 test "$h1" = "$h2" || fail "lookup schedule hash is not deterministic"
-variant=/tmp/lda-sssd-selfcheck-fixtures
+variant="${LDA_REMOTE_TMPDIR:-/scratch/lda-hm}/sssd-selfcheck-fixtures"
 rm -rf "$variant"
 env LDA_FIXTURE_DIR="$variant" LDA_FIXTURE_SEED=999331 \
   /opt/lda/harness/checks/prepare-sssd-fixtures.sh >/dev/null

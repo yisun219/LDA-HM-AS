@@ -30,14 +30,16 @@ lda_sssd_restart() {
   sleep 0.5
   sudo -n sh -c 'rm -rf /var/lib/sss/db/* /var/lib/sss/mc/* /var/log/sssd/*'
   sudo -n mkdir -p /var/lib/sss/db /var/lib/sss/mc /var/lib/sss/pipes/private
-  (sudo -n /usr/sbin/sssd -i --logger=stderr >>/tmp/lda-sssd.log 2>&1 &)
+  local scratch="${LDA_REMOTE_TMPDIR:-/scratch/lda-hm}"
+  mkdir -p "$scratch"
+  (sudo -n /usr/sbin/sssd -i --logger=stderr >>"$scratch/sssd.log" 2>&1 &)
   for _ in $(seq 1 80); do
     test -S /var/lib/sss/pipes/nss && break
     sleep 0.25
   done
   test -S /var/lib/sss/pipes/nss || {
     echo "sssd nss socket did not appear" >&2
-    tail -12 /tmp/lda-sssd.log >&2 || true
+    tail -12 "$scratch/sssd.log" >&2 || true
     return 70
   }
   getent passwd lda_u0 >/dev/null || { echo "warm lookup failed" >&2; return 70; }

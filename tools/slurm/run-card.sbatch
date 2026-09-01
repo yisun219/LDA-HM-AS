@@ -27,19 +27,20 @@ REPO="${LDA_REPO:-/fact_data/yisun/LDA-HM}"
 # scratch; nothing large is written to /tmp (a ramdisk on these nodes).
 export LDA_RESULTS_ROOT="${LDA_RESULTS_ROOT:-/fact_data/yisun/Linux-Development-Agent-Runs}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/scratch/$USER/cache}"
+export TMPDIR="${TMPDIR:-/scratch/$USER/lda-hm/$RUN_ID}"
 export PATH="$HOME/.venvs/ldahm/bin:$PATH"
 export PYTHONUNBUFFERED=1
-mkdir -p "$XDG_CACHE_HOME" "$LDA_RESULTS_ROOT"
+mkdir -p "$XDG_CACHE_HOME" "$TMPDIR" "$LDA_RESULTS_ROOT"
 
 set -a
 . "$HOME/.config/lda-hm/e2b.env"
-# The Claude group of the lab gateway (Anthropic dialect). The subscription
-# OAuth env files carry no base URL, so they reach api.anthropic.com and are
-# refused from inside the cluster; this file is what makes the CLI usable.
-. "$HOME/.config/lda/factlab-claude.env"
 set +a
-export LDA_AGENT_BACKEND=claude
-export LDA_AGENT_MODEL="${LDA_AGENT_MODEL:-claude-opus-4-8}"
+# New campaign runs use the Codex login copied into each E2B sandbox. Keep the
+# model and reasoning budget explicit so template-local config cannot silently
+# select a different model.
+export LDA_AGENT_BACKEND=codex
+export LDA_AGENT_MODEL="${LDA_AGENT_MODEL:-gpt-5.6-sol}"
+export LDA_AGENT_THINKING="${LDA_AGENT_THINKING:-max}"
 
 echo "$(date -Is) slurm job ${SLURM_JOB_ID:-none} on $(hostname): $PKG run $RUN_ID"
 cd "$REPO" || exit 1

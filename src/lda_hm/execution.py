@@ -552,7 +552,7 @@ class LDAExecution:
         """Rehydrate the latest durable candidate into a newly created Sandbox."""
         patch = self.flow.store.root / "candidate.patch"
         if patch.is_file() and patch.stat().st_size:
-            remote_patch = "/tmp/lda-resume-candidate.patch"
+            remote_patch = f"/scratch/lda-hm/{self.flow.run_id}-resume-candidate.patch"
             self.sandbox.put(patch, remote_patch)
             check = self.sandbox.run(
                 ("git", "-C", target_workspace, "apply", "--check", remote_patch)
@@ -761,7 +761,7 @@ class LDAExecution:
         on_comparison=None,
     ) -> PairedComparison:
         seed = self._holdout_seed()
-        directory = f"/tmp/lda-holdout-{self.flow.run_id}-r{self.flow.state.current_round}"
+        directory = f"/scratch/lda-hm/holdout-{self.flow.run_id}-r{self.flow.state.current_round}"
         setup = holdout_setup_command(spec, directory, seed)
         prepared = self.sandbox.run(setup, timeout_seconds=600)
         if not prepared.ok:
@@ -942,7 +942,7 @@ class LDAExecution:
             )
             if not result.ok:
                 raise RuntimeError(f"{tag}: setup failed: {command}: {result.stderr[-800:]}")
-        remote_patch = "/tmp/lda-cert-candidate.patch"
+        remote_patch = f"/scratch/lda-hm/{self.flow.run_id}-cert-candidate.patch"
         sandbox.put(patch, remote_patch)
         for arguments in (("apply", "--check", remote_patch), ("apply", "--index", remote_patch)):
             result = sandbox.run(("git", "-C", "/opt/lda/work", *arguments))
@@ -997,7 +997,7 @@ class LDAExecution:
                 # Fresh secret seed per replication: no builder anywhere has
                 # ever seen these fixtures.
                 seed = random.SystemRandom().randrange(1, 2**31)
-                directory = f"/tmp/lda-cert-holdout-{replication}"
+                directory = f"/scratch/lda-hm/{self.flow.run_id}-cert-holdout-{replication}"
                 prepared = sandbox.run(
                     holdout_setup_command(spec, directory, seed), timeout_seconds=600
                 )

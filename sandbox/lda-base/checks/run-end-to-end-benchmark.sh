@@ -12,7 +12,9 @@ port=$((18000 + RANDOM % 20000))
 # Attribution probe: PIL (the server's encoder) must bind the selected
 # library in this environment. Run separately so LD_DEBUG's very verbose
 # linker logging never slows the actual server.
-probe_log="/tmp/lda-e2e-probe-$mode.log"
+scratch="${LDA_REMOTE_TMPDIR:-/scratch/lda-hm}"
+mkdir -p "$scratch"
+probe_log="$scratch/e2e-probe-$mode.log"
 env LD_LIBRARY_PATH="$libdir" LD_DEBUG=libs python3 - >/dev/null 2>"$probe_log" <<'PY'
 import io
 from PIL import Image
@@ -25,7 +27,7 @@ grep -F "$libdir/libpng16.so.16" "$probe_log" >/dev/null || {
 }
 
 env LD_LIBRARY_PATH="$libdir" \
-  python3 "$root/png-server.py" "$port" >"/tmp/lda-png-server-$mode.log" 2>&1 &
+  python3 "$root/png-server.py" "$port" >"$scratch/png-server-$mode.log" 2>&1 &
 server_pid=$!
 trap 'kill "$server_pid" >/dev/null 2>&1 || true; wait "$server_pid" 2>/dev/null || true' EXIT
 for _ in $(seq 1 100); do

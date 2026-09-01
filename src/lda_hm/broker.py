@@ -80,7 +80,9 @@ class SandboxBroker:
                 content = base64.b64decode(request["content_b64"])
                 import tempfile
 
-                staging = Path(tempfile.mkstemp(prefix="lda-broker-put-")[1])
+                local_tmp = os.getenv("TMPDIR", "/scratch/lda-hm")
+                Path(local_tmp).mkdir(parents=True, exist_ok=True)
+                staging = Path(tempfile.mkstemp(prefix="lda-broker-put-", dir=local_tmp)[1])
                 try:
                     staging.write_bytes(content)
                     self.sandbox.put(staging, str(request["path"]))
