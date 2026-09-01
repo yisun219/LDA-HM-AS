@@ -123,6 +123,14 @@ class BaselineArtifactGuardTest(unittest.TestCase):
             script[guard:cleanup],
         )
 
+    def test_source_snapshot_tracks_ignored_source_files(self) -> None:
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "sandbox/lda-base/checks/prepare-ubuntu-source.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("git add --all --force", script)
+        self.assertNotIn("\ngit add .\n", script)
+
 
 class X11DisplayReadyTest(unittest.TestCase):
     def test_detects_abstract_x11_socket_without_filesystem_entry(self) -> None:

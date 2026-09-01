@@ -90,7 +90,9 @@ find . -maxdepth 1 -type f \( -name '*.dsc' -o -name '*.tar.*' -o -name '*.diff.
 git init -b "lda/${package}-${version//:/_}"
 git config user.email lda@localhost
 git config user.name LDA
-git add .
+# Debian source archives can intentionally contain files matched by upstream
+# .gitignore rules. They are still part of the exact buildable baseline.
+git add --all --force
 snapshot_stamp="${snapshot%/}"
 snapshot_stamp="${snapshot_stamp##*/}"
 if [[ "$snapshot_stamp" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$ ]]; then
