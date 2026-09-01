@@ -1,0 +1,254 @@
+{
+  "package": {
+    "package": "libreoffice-core",
+    "usage_frequency": 0.8334000000000001,
+    "performance_criticality": 0.8334000000000001,
+    "dependency_centrality": 0.7917500000000001,
+    "architecture_fit": 1.0,
+    "rationale": "dependency-graph rank score 63.34 (direction 2)"
+  },
+  "goal": "Optimize libreoffice-core for Ubuntu 26.04 while preserving surgical replacement compatibility",
+  "source_reference": "ubuntu:resolute/libreoffice=4:26.2.2.2-0ubuntu1@20260423T120000Z",
+  "setup_commands": [
+    [
+      "/opt/lda/harness/checks/prepare-ubuntu-source.sh",
+      "libreoffice",
+      "4:26.2.2.2-0ubuntu1"
+    ],
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/build-package.sh",
+      "baseline"
+    ],
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/install-top10-workbench.sh"
+    ],
+    [
+      "/opt/lda/harness/checks/install-test-tools.sh"
+    ],
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
+      "baseline"
+    ]
+  ],
+  "candidate_build": [
+    "env",
+    "LDA_TOP10_PACKAGE=libreoffice-core",
+    "LDA_PKG_SOURCE=libreoffice",
+    "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+    "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+    "LDA_UPSTREAM_TESTS=reference",
+    "/opt/lda/harness/checks/ensure-pkg-candidate.sh"
+  ],
+  "selfcheck_commands": [],
+  "baseline_tests": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-generic-build-tests.sh"
+    ]
+  ],
+  "dependency_tests": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
+      "candidate"
+    ],
+    [
+      "sh",
+      "-c",
+      "ldconfig -p >/dev/null && test -s /opt/lda/candidate/libraries.list"
+    ]
+  ],
+  "abi_checks": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-generic-abi-fence.sh"
+    ]
+  ],
+  "ffi_checks": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-top10-ffi-fence.sh"
+    ]
+  ],
+  "behavior_checks": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+    ]
+  ],
+  "package_lifecycle_checks": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "LDA_PKG_PROBE=test -x /usr/lib/libreoffice/program/soffice.bin",
+      "/opt/lda/harness/checks/run-generic-lifecycle.sh"
+    ]
+  ],
+  "security_checks": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-generic-security-fence.sh"
+    ]
+  ],
+  "result_equivalence_checks": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+    ]
+  ],
+  "micro_benchmarks": [
+    {
+      "name": "libreoffice-convert",
+      "repetitions": 5,
+      "timeout_seconds": 2400,
+      "inputs": [
+        "fodt-to-pdf"
+      ],
+      "max_regression_percent": 5.0,
+      "min_speedup_percent": 1.0,
+      "layer": "micro",
+      "command": [
+        "env",
+        "LDA_TOP10_PACKAGE=libreoffice-core",
+        "LDA_PKG_SOURCE=libreoffice",
+        "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+        "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+        "LDA_UPSTREAM_TESTS=reference",
+        "/opt/lda/harness/checks/run-libreoffice-convert.sh"
+      ],
+      "baseline_command": [
+        "env",
+        "LDA_TOP10_PACKAGE=libreoffice-core",
+        "LDA_PKG_SOURCE=libreoffice",
+        "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+        "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+        "LDA_UPSTREAM_TESTS=reference",
+        "/opt/lda/harness/checks/run-libreoffice-convert.sh",
+        "baseline"
+      ]
+    }
+  ],
+  "end_to_end_benchmarks": [
+    {
+      "name": "libreoffice-document-e2e",
+      "repetitions": 5,
+      "timeout_seconds": 2400,
+      "inputs": [
+        "document-to-pdf"
+      ],
+      "max_regression_percent": 5.0,
+      "layer": "end_to_end",
+      "command": [
+        "env",
+        "LDA_TOP10_PACKAGE=libreoffice-core",
+        "LDA_PKG_SOURCE=libreoffice",
+        "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+        "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+        "LDA_UPSTREAM_TESTS=reference",
+        "/opt/lda/harness/checks/run-libreoffice-document-e2e.sh"
+      ],
+      "baseline_command": [
+        "env",
+        "LDA_TOP10_PACKAGE=libreoffice-core",
+        "LDA_PKG_SOURCE=libreoffice",
+        "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+        "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+        "LDA_UPSTREAM_TESTS=reference",
+        "/opt/lda/harness/checks/run-libreoffice-document-e2e.sh",
+        "baseline"
+      ]
+    }
+  ],
+  "baseline": {
+    "mode": "iso_snapshot",
+    "template": "01a04bbf-9099-7232-9d5d-11f11bdb1867",
+    "release": "26.04",
+    "codename": "resolute",
+    "edition": "desktop",
+    "architecture": "amd64",
+    "iso_artifact": "https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso",
+    "iso_sha256": "487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2",
+    "iso_build_id": "20260423.1",
+    "manifest_sha256": "2e5f3af7017042ceb8f815f1a11524795881e2959c1c17a6b950e52eead6df80",
+    "snap_manifest_sha256": "09fcf64fa9471d6dd42b294c059dbf7b0bfa6c5808a78c5fb28a0ffc49e9d454",
+    "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260423T120000Z",
+    "rootfs_digest": "74e340a35a5306017d742150fd7e778e99e0b58023caeaa4b55721f165997690",
+    "package_inventory_digest": "900b25218f66af6dba80a3fb05f531d3538c2b3c9ddb715a116e26bf00d9d636",
+    "snap_inventory_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "compatibility": {
+    "soname_unchanged": true,
+    "exported_symbols_unchanged": true,
+    "abi_types_unchanged": true,
+    "ffi_call_surface_unchanged": true,
+    "behavior_unchanged": true,
+    "configuration_preserved": true,
+    "security_defaults_preserved": true,
+    "result_equivalence_required": true
+  },
+  "lane": "mainline",
+  "metadata": {
+    "target_cpu": "INTEL(R) XEON(R) GOLD 6548Y+",
+    "target_release": "ubuntu-26.04",
+    "generated_by": "lda gen-card",
+    "rank_score": 63.34,
+    "direction": 2
+  }
+}
