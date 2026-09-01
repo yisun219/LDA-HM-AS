@@ -21,6 +21,13 @@ while true; do
     printf "%s hmz-driver: run exited cleanly after %ss\n" "$(date -Is)" "$elapsed" >>"$LOG"
     break
   fi
+  if [ "$code" -eq 75 ]; then
+    attempts=0
+    printf "%s hmz-driver: infrastructure pause after %ss; retrying in 90s\n" \
+      "$(date -Is)" "$elapsed" >>"$LOG"
+    sleep 90
+    continue
+  fi
   [ "$elapsed" -gt 600 ] && attempts=0
   attempts=$((attempts + 1))
   if [ "$attempts" -ge 8 ]; then

@@ -22,6 +22,7 @@ from .runtime import SessionTopology
 from .sandbox import (
     TRANSPORT_EXIT_CODE,
     Sandbox,
+    SandboxResult,
     SandboxUnavailable,
     sandbox_manifest,
 )
@@ -56,6 +57,24 @@ def _setup_timeout() -> int:
     LDA_SETUP_TIMEOUT without touching any judged benchmark timeout.
     """
     return int(os.getenv("LDA_SETUP_TIMEOUT", "3600"))
+
+
+def _raise_setup_failure(command: tuple[str, ...], result: SandboxResult) -> None:
+    if result.ok:
+        return
+    if result.exit_code == TRANSPORT_EXIT_CODE:
+        raise SandboxUnavailable(
+            f"sandbox transport died during setup: {command}: "
+            + result.stderr[-800:]
+        )
+    if result.exit_code == _EX_TEMPFAIL:
+        raise SandboxUnavailable(
+            f"package source outage during setup: {command}: "
+            + result.stderr[-800:]
+        )
+    raise RuntimeError(f"source setup failed: {command}: {result.stderr[-1000:]}")
+
+
 _TEST_TAMPER_LINE_PATTERNS = (
     re.compile(r"nocheck", re.IGNORECASE),
     re.compile(r"override_dh_auto_test", re.IGNORECASE),
@@ -430,18 +449,7 @@ class LDAExecution:
                 ("env", *self._baseline_env(), *command),
                 timeout_seconds=_setup_timeout(),
             )
-            if not result.ok:
-                # EX_TEMPFAIL from a setup check means an upstream package
-                # source is down (Canonical's snapshot service, the release
-                # archive). That is an infrastructure fact: the run pauses and
-                # resumes later, rather than ending as if the candidate were at
-                # fault. Any other non-zero exit is a real setup defect.
-                if result.exit_code == _EX_TEMPFAIL:
-                    raise SandboxUnavailable(
-                        f"package source outage during setup: {command}: "
-                        + result.stderr[-800:]
-                    )
-                raise RuntimeError(f"source setup failed: {command}: {result.stderr[-1000:]}")
+            _raise_setup_failure(command, result)
         selfcheck_records = []
         selfcheck_commands = [("/opt/lda/harness/checks/fence-selfcheck.sh",)]
         selfcheck_commands += [tuple(c) for c in self.card.selfcheck_commands]

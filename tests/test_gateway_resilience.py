@@ -6,7 +6,8 @@ from unittest import mock
 
 from lda_hm import SandboxUnavailable
 from lda_hm.driver import _resolve_template, connect_sandbox
-from lda_hm.sandbox import _condense_gateway_error
+from lda_hm.execution import _raise_setup_failure
+from lda_hm.sandbox import SandboxResult, _condense_gateway_error
 
 
 class _EnvGuard(unittest.TestCase):
@@ -62,6 +63,27 @@ class GatewayErrorCondensationTest(unittest.TestCase):
 
     def test_empty_message_falls_back_to_type_name(self) -> None:
         self.assertEqual(_condense_gateway_error(TimeoutError("")), "TimeoutError")
+
+
+class SetupFailureClassificationTest(unittest.TestCase):
+    def test_transport_exit_is_infrastructure(self) -> None:
+        result = SandboxResult(
+            ("install-test-tools",),
+            125,
+            "",
+            "RemoteProtocolError('server disconnected')",
+            1.0,
+            "e2b-test",
+        )
+        with self.assertRaises(SandboxUnavailable):
+            _raise_setup_failure(("install-test-tools",), result)
+
+    def test_real_setup_exit_remains_a_defect(self) -> None:
+        result = SandboxResult(
+            ("build-package",), 2, "", "compiler error", 1.0, "e2b-test"
+        )
+        with self.assertRaises(RuntimeError):
+            _raise_setup_failure(("build-package",), result)
 
 
 class BootstrapWaitTest(_EnvGuard):
