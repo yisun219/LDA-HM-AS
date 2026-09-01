@@ -20,6 +20,7 @@ from lda_hm import (
     select_package_batch,
 )
 from lda_hm.driver import _task_with_acceptance_contract
+from lda_hm.execution import LDAExecution
 
 
 class ExecutionContractTest(unittest.TestCase):
@@ -89,6 +90,43 @@ class ExecutionContractTest(unittest.TestCase):
         self.assertIn("do not wait for human decisions", rendered)
         self.assertNotIn("LDA_SECRET_HOLDOUT", rendered)
         self.assertNotIn("generate-holdout", rendered)
+
+    def test_controller_commits_codex_workspace_changes(self) -> None:
+        class GitSandbox:
+            sandbox_id = "e2b-test"
+
+            def __init__(self):
+                self.calls = []
+                self.statuses = iter((" M gtk/widget.c\n", ""))
+
+            def run(self, command, *, timeout_seconds=900, envs=None):
+                command = tuple(command)
+                self.calls.append(command)
+                stdout = ""
+                if command[-2:] == ("status", "--porcelain"):
+                    stdout = next(self.statuses)
+                return SandboxResult(command, 0, stdout, "", 0.01, self.sandbox_id)
+
+        flow = HumanizeFlow(self.root)
+        sandbox = GitSandbox()
+        execution = LDAExecution(
+            flow,
+            self.card,
+            sandbox,
+            topology=None,
+        )
+        execution._commit_candidate_changes()
+        self.assertIn(
+            ("git", "-C", "/opt/lda/work", "add", "-A"),
+            sandbox.calls,
+        )
+        self.assertIn(
+            (
+                "git", "-C", "/opt/lda/work", "commit", "-m",
+                "LDA candidate round 0",
+            ),
+            sandbox.calls,
+        )
 
     def test_fence_requires_all_commands_and_trace(self) -> None:
         results = FenceSuite(FakeSandbox(), self.card, trace_file=self.trace).run()

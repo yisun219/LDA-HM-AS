@@ -668,6 +668,7 @@ class LDAExecution:
         return tuple(reports)
 
     def run_candidate_benchmarks(self) -> tuple[BenchmarkReport, ...]:
+        self._commit_candidate_changes()
         self.verify_integrity()
         self._checkpoint_candidate()
         self._scan_candidate_patch()
@@ -739,6 +740,43 @@ class LDAExecution:
             reports.extend((baseline, candidate))
         self._publish_review_bundle()
         return tuple(reports)
+
+    def _commit_candidate_changes(self) -> None:
+        """Commit a Builder patch outside the agent CLI's inner sandbox.
+
+        Codex workspace-write deliberately mounts Git metadata read-only. The
+        Builder can edit the source tree but cannot create ``index.lock``;
+        this controller-side boundary has the live E2B connection and commits
+        those edits before the clean-tree package builder runs. Later patch,
+        trace, fence, and fresh-sandbox checks remain authoritative.
+        """
+        workspace = "/opt/lda/work"
+        status = self.sandbox.run(
+            ("git", "-C", workspace, "status", "--porcelain")
+        )
+        if not status.ok:
+            raise RuntimeError("could not inspect Builder worktree")
+        if status.stdout.strip():
+            staged = self.sandbox.run(("git", "-C", workspace, "add", "-A"))
+            if not staged.ok:
+                raise RuntimeError(
+                    "could not stage Builder changes: " + staged.stderr[-500:]
+                )
+            committed = self.sandbox.run(
+                (
+                    "git", "-C", workspace, "commit", "-m",
+                    f"LDA candidate round {self.flow.state.current_round}",
+                )
+            )
+            if not committed.ok:
+                raise RuntimeError(
+                    "could not commit Builder changes: " + committed.stderr[-500:]
+                )
+        clean = self.sandbox.run(
+            ("git", "-C", workspace, "status", "--porcelain")
+        )
+        if not clean.ok or clean.stdout.strip():
+            raise RuntimeError("Builder worktree is not clean after controller commit")
 
     def _scan_candidate_patch(self) -> None:
         patch = self.flow.store.root / "candidate.patch"

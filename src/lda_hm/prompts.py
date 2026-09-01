@@ -170,11 +170,14 @@ mechanisms are in scope: debian/rules compiler-flag changes (for example
 appending -O3 or function-level target_clones dispatch) are legitimate
 candidates - the ABI, behavior, and package fences decide whether the result
 still qualifies, and a flag change that survives every fence is a valid
-surgical replacement. Procedural fences burn your stall budget like any
-failed round: commit everything and leave the worktree clean BEFORE your
-turn ends, every round. Use the pinned Intel performance skills
+surgical replacement. Keep only intended source changes and remove generated
+or temporary files before your turn ends. Commit the changes when your backend
+permits it. Codex workspace-write intentionally exposes Git metadata read-only;
+if `.git/index.lock` cannot be created, do not work around that boundary or
+discard the patch - the outer E2B controller stages and commits it immediately
+after your turn. Use the pinned Intel performance skills
 where relevant. Implement one bounded mainline objective, run focused checks,
-and commit the result. Leave the worktree clean. Do not weaken tests or
+and leave a reviewable source diff. Do not weaken tests or
 manufacture benchmark evidence.
 
 The micro benchmark fixtures you can see are the train set only. At review
