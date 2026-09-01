@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -19,6 +20,52 @@ import uuid
 from pathlib import Path
 
 from .sandbox import E2BSandbox
+
+
+_TRACE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\.jsonl$")
+
+
+def _persist_role_traces(sandbox, results_root: Path, run_id: str, current_session: str) -> None:
+    """Mirror completed in-sandbox role traces into the durable run directory."""
+    if not _TRACE_NAME.fullmatch(f"{run_id}.jsonl"):
+        return
+    destination = results_root / "runs" / run_id / "raw-traces"
+    destination.mkdir(parents=True, exist_ok=True)
+    listing = sandbox.run(
+        (
+            "find",
+            "/opt/lda/agent-state/traces",
+            "-maxdepth",
+            "1",
+            "-type",
+            "f",
+            "-name",
+            "*.jsonl",
+            "-printf",
+            "%f\n",
+        ),
+        timeout_seconds=60,
+    )
+    if not listing.ok:
+        return
+    for name in sorted(set(listing.stdout.splitlines())):
+        if not _TRACE_NAME.fullmatch(name):
+            continue
+        local = destination / name
+        if local.is_file() and name != f"{current_session}.jsonl":
+            continue
+        captured = sandbox.run(
+            ("cat", "--", f"/opt/lda/agent-state/traces/{name}"),
+            timeout_seconds=120,
+        )
+        if not captured.ok or not captured.stdout:
+            continue
+        temporary = local.with_name(f".{local.name}.{os.getpid()}.tmp")
+        try:
+            temporary.write_text(captured.stdout, encoding="utf-8")
+            os.replace(temporary, local)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -87,6 +134,13 @@ def main() -> int:
     # process is always the one that dies first, never the observer.
     turn_timeout = int(os.getenv("LDA_TURN_TIMEOUT", "4200"))
     result = sandbox.run(command, timeout_seconds=2 * turn_timeout + 600)
+    results_root = os.getenv("LDA_RESULTS_ROOT", "")
+    run_id = os.getenv("LDA_RUN_ID", "")
+    if results_root and run_id:
+        try:
+            _persist_role_traces(sandbox, Path(results_root), run_id, args.session)
+        except Exception as error:
+            print(f"relay: could not persist role traces: {error}", file=sys.stderr)
     print(f"LDA-SESSION: {args.session}", file=sys.stderr)
     if result.stderr:
         sys.stderr.write(result.stderr[-4000:])
