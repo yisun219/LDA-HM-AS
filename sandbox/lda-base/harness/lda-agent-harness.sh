@@ -136,7 +136,17 @@ if test "$backend" = codex; then
   test -z "$selected_model" || model_args=(--model "$selected_model")
   provider_args=()
   if test -n "${OPENAI_BASE_URL:-}"; then
-    provider_args=(-c "openai_base_url=\"${OPENAI_BASE_URL}\"")
+    if test -n "${OPENAI_API_KEY:-}"; then
+      provider_args=(
+        -c 'model_provider="factlab"'
+        -c 'model_providers.factlab.name="Fact Lab"'
+        -c "model_providers.factlab.base_url=\"${OPENAI_BASE_URL}\""
+        -c 'model_providers.factlab.env_key="OPENAI_API_KEY"'
+        -c 'model_providers.factlab.wire_api="responses"'
+      )
+    else
+      provider_args=(-c "openai_base_url=\"${OPENAI_BASE_URL}\"")
+    fi
   fi
   # Keep the reasoning budget explicit for Codex runs. The relay sets
   # LDA_AGENT_THINKING=max for this campaign; passing it as a config override
