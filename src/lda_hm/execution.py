@@ -28,6 +28,10 @@ from .sandbox import (
 from .stages import HumanizeStages
 from .task_card import BenchmarkSpec, TaskCard
 
+# EX_TEMPFAIL: a setup check signalling that an upstream package source,
+# not the candidate, is what failed.
+_EX_TEMPFAIL = 75
+
 
 # Paths a candidate patch must never touch: changing tests to pass tests is
 # the cheapest cheat, so it is blocked mechanically, not by review.
@@ -427,6 +431,16 @@ class LDAExecution:
                 timeout_seconds=_setup_timeout(),
             )
             if not result.ok:
+                # EX_TEMPFAIL from a setup check means an upstream package
+                # source is down (Canonical's snapshot service, the release
+                # archive). That is an infrastructure fact: the run pauses and
+                # resumes later, rather than ending as if the candidate were at
+                # fault. Any other non-zero exit is a real setup defect.
+                if result.exit_code == _EX_TEMPFAIL:
+                    raise SandboxUnavailable(
+                        f"package source outage during setup: {command}: "
+                        + result.stderr[-800:]
+                    )
                 raise RuntimeError(f"source setup failed: {command}: {result.stderr[-1000:]}")
         selfcheck_records = []
         selfcheck_commands = [("/opt/lda/harness/checks/fence-selfcheck.sh",)]

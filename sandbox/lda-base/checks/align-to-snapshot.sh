@@ -33,7 +33,20 @@ if test "$count" -eq 0; then
   exit 0
 fi
 echo "aligning $count installed packages to snapshot versions"
+# When the pinned snapshot service is down and the release archive stands in
+# (see prepare-ubuntu-source.sh), ISO-era versions are not what the index
+# offers, so alignment becomes best-effort: it is recorded, not enforced.
+# Benchmark validity does not rest on it — baseline and candidate are built
+# from one source tree in one sandbox and measured interleaved, so the
+# installed set is common to both sides of every pair.
 # shellcheck disable=SC2046
-sudo -n apt-get "${OPTS[@]}" install -y --allow-downgrades $(cat "$tmp/requests")
-touch "$marker"
-echo "aligned $count packages to the snapshot"
+if sudo -n apt-get "${OPTS[@]}" install -y --allow-downgrades $(cat "$tmp/requests"); then
+  touch "$marker"
+  echo "aligned $count packages to the snapshot"
+elif test "${LDA_APT_FALLBACK_USED:-false}" = true; then
+  touch "$marker"
+  echo "alignment skipped: release-archive fallback cannot reproduce snapshot versions" >&2
+else
+  echo "alignment against the pinned snapshot failed" >&2
+  exit 1
+fi
