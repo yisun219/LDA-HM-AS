@@ -198,6 +198,18 @@ class TraceAuditTest(unittest.TestCase):
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertIn("forbidden action", result.stderr)
 
+    def test_read_only_search_for_forbidden_text_passes(self) -> None:
+        command = (
+            "/bin/bash -lc \"sed -n '1,80p' "
+            "/opt/lda/harness/checks/build-package.sh; "
+            "rg -n \\\"candidate|mkdir|rm -rf|build-package\\\" "
+            "/opt/lda/harness/checks/build-package.sh\""
+        )
+        result = self._audit([
+            {"type": "item.started", "item": {"type": "command_execution", "command": command}},
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_forbidden_edit_path_fails(self) -> None:
         result = self._audit([
             self._assistant({"type": "tool_use", "name": "Bash", "input": {"command": "sed -i s/x/y/ /opt/lda/control/task-card.json"}}),

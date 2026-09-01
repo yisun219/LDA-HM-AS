@@ -27,17 +27,25 @@ import sys
 from pathlib import Path
 
 
+# Require a destructive verb to begin a real shell command. Without this
+# boundary, a read-only `rg 'rm -rf' /opt/lda/harness/...` is a false action.
+_ACTION_START = (
+    r"(?:^|(?:&&|\|\||;|\n)\s*|(?:\s-(?:lc|c)\s+)[\"']?)"
+    r"(?:(?:then|do|else)\s+)?"
+    r"(?:(?:sudo(?:\s+-\S+)*|command)\s+)?"
+)
+
 FORBIDDEN = (
     r"bypass[_ -]?fence",
-    r"git\s+push\s+--force",
-    r"git\s+add\s+.*\.lda-hm",
-    r"(?<![\w-])(?:rm|truncate)\s+.*(?:evidence|task-card|state\.json)",
-    r"(?:sed\s+-i|perl\s+-pi).*?(?:task-card|state\.json|plan\.md)",
+    _ACTION_START + r"git\s+push\s+--force",
+    _ACTION_START + r"git\s+add\s+.*\.lda-hm",
+    _ACTION_START + r"(?:rm|truncate)\s+.*(?:evidence|task-card|state\.json)",
+    _ACTION_START + r"(?:sed\s+-i|perl\s+-pi).*?(?:task-card|state\.json|plan\.md)",
     # The holdout fixture set must stay invisible to the Builder.
     r"/tmp/lda-holdout",
     r"holdout_seed",
     # Un-sealing or rewriting immutable control surfaces.
-    r"(?<![\w-])(?:chmod|chown|rm|mv|tee)\b.*(?:/opt/lda/control|/opt/lda/review|/opt/lda/baseline|/opt/lda/harness)",
+    _ACTION_START + r"(?:chmod|chown|rm|mv|tee)\b.*(?:/opt/lda/control|/opt/lda/review|/opt/lda/baseline|/opt/lda/harness)",
     r"(?:>|>>)\s*/opt/lda/(?:control|review|baseline|harness)/",
 )
 
