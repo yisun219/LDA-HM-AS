@@ -320,7 +320,7 @@ class E2BSandbox:
                 f"2> {shlex.quote(root)}/stderr",
                 background=True,
                 cwd=self.cwd,
-                timeout=60,
+                timeout=timeout_seconds,
             )
         except TypeError:
             # Older injected test clients may not implement the SDK's

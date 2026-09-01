@@ -98,6 +98,11 @@ class DetachedLongCommandTest(unittest.TestCase):
         self.assertTrue(
             any(kwargs.get("background") for _command, kwargs in client.commands.calls)
         )
+        background_calls = [
+            kwargs for _command, kwargs in client.commands.calls
+            if kwargs.get("background")
+        ]
+        self.assertEqual(background_calls[0]["timeout"], 1200)
 
 
 if __name__ == "__main__":
