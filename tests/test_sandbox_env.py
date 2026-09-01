@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import socket
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -103,6 +106,30 @@ class DetachedLongCommandTest(unittest.TestCase):
             if kwargs.get("background")
         ]
         self.assertEqual(background_calls[0]["timeout"], 1200)
+
+
+class X11DisplayReadyTest(unittest.TestCase):
+    def test_detects_abstract_x11_socket_without_filesystem_entry(self) -> None:
+        display = f":{30000 + os.getpid() % 20000}"
+        address = "\0/tmp/.X11-unix/X" + display[1:]
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(address)
+        listener.listen(1)
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "sandbox/lda-base/checks/x11-display-ready.py"
+        )
+        try:
+            ready = subprocess.run(
+                (sys.executable, str(script), display), check=False
+            )
+            self.assertEqual(ready.returncode, 0)
+        finally:
+            listener.close()
+        missing = subprocess.run(
+            (sys.executable, str(script), display), check=False
+        )
+        self.assertEqual(missing.returncode, 1)
 
 
 if __name__ == "__main__":

@@ -25,13 +25,18 @@ lda_gtk_display() {
   export GDK_BACKEND=x11 GTK_A11Y=none NO_AT_BRIDGE=1 GSETTINGS_BACKEND=memory \
     LC_ALL=C XDG_RUNTIME_DIR="$scratch/xdg"
   mkdir -p "$scratch/xdg" && chmod 700 "$scratch/xdg"
-  if ! test -e /tmp/.X11-unix/X77; then
+  local ready=(python3 /opt/lda/harness/checks/x11-display-ready.py :77)
+  if ! "${ready[@]}"; then
     (Xvfb :77 -screen 0 1280x1024x24 -nolisten tcp >"$scratch/xvfb.log" 2>&1 &)
     for _ in $(seq 1 50); do
-      test -e /tmp/.X11-unix/X77 && break
+      "${ready[@]}" && break
       sleep 0.2
     done
-    test -e /tmp/.X11-unix/X77 || { echo "Xvfb did not come up" >&2; return 70; }
+    "${ready[@]}" || {
+      tail -20 "$scratch/xvfb.log" >&2 || true
+      echo "Xvfb did not accept X11 connections" >&2
+      return 70
+    }
   fi
   export DISPLAY=:77
 }
