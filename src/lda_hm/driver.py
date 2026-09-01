@@ -12,6 +12,7 @@ import atexit
 import fcntl
 import json
 import os
+import shlex
 import signal
 import sys
 import time
@@ -148,6 +149,45 @@ def load_card(path: Path) -> TaskCard:
     return TaskCard(**value)
 
 
+def _task_with_acceptance_contract(requested: str, card: TaskCard) -> str:
+    """Expose the public reward boundary before planning, not after it.
+
+    Holdout setup remains host-only. Agents need the training workload and
+    threshold to choose a mechanism that can actually move the sealed metric.
+    """
+    original = requested.strip() or card.goal.strip()
+    target_cpu = str(card.metadata.get("target_cpu") or "recorded E2B sandbox CPU")
+    lines = [
+        original,
+        "",
+        "Immutable task-card performance contract:",
+        f"- Pinned source: {card.source_reference}",
+        f"- Optimization target CPU: {target_cpu}",
+    ]
+    for spec in (*card.micro_benchmarks, *card.end_to_end_benchmarks):
+        inputs = ", ".join(spec.inputs) if spec.inputs else "benchmark-defined"
+        minimum = (
+            f"minimum speedup {spec.min_speedup_percent:g}%"
+            if spec.min_speedup_percent is not None
+            else "no required speedup, but no accepted regression"
+        )
+        lines.append(
+            f"- {spec.layer} benchmark {spec.name!r}: train inputs [{inputs}]; "
+            f"{minimum}; maximum regression {spec.max_regression_percent:g}%; "
+            f"command: {shlex.join(spec.command)}"
+        )
+    lines.extend(
+        (
+            "Choose a primary mechanism that plausibly affects these timed code paths. "
+            "A speedup elsewhere does not satisfy this card.",
+            "Benchmark, fixture, fence, ABI/FFI, behavior, lifecycle, security, and "
+            "equivalence controls are immutable and must not be edited or bypassed.",
+            "Hidden holdout inputs remain undisclosed and are checked automatically.",
+        )
+    )
+    return "\n".join(lines)
+
+
 def _resolve_template(
     template: str,
     *,
@@ -228,8 +268,7 @@ def drive(
 ) -> HumanizeFlow:
     workspace = workspace.resolve()
     card = load_card(workspace / ".lda-hm" / "task-card.json")
-    if not task.strip():
-        task = card.goal
+    task = _task_with_acceptance_contract(task, card)
     from .types import FlowConfig
 
     config = FlowConfig(

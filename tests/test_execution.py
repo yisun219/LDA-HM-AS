@@ -19,6 +19,7 @@ from lda_hm import (
     SandboxResult,
     select_package_batch,
 )
+from lda_hm.driver import _task_with_acceptance_contract
 
 
 class ExecutionContractTest(unittest.TestCase):
@@ -62,6 +63,30 @@ class ExecutionContractTest(unittest.TestCase):
         report = BenchmarkRunner(FakeSandbox()).run(self.card.micro_benchmarks[0])
         self.assertTrue(report.successful)
         self.assertEqual(len(report.observations), 2)
+
+    def test_planning_task_contains_public_benchmark_contract_only(self) -> None:
+        self.card.micro_benchmarks = (
+            BenchmarkSpec(
+                "png-decode",
+                "micro",
+                ("./micro", "--train"),
+                repetitions=2,
+                inputs=("small", "large"),
+                min_speedup_percent=1.5,
+                max_regression_percent=0.5,
+                holdout_min_speedup_percent=1.0,
+                holdout_env="LDA_SECRET_HOLDOUT",
+                holdout_setup=("/opt/lda/private/generate-holdout",),
+            ),
+        )
+        rendered = _task_with_acceptance_contract("Narrow explicit task", self.card)
+        self.assertTrue(rendered.startswith("Narrow explicit task\n"))
+        self.assertIn("micro benchmark 'png-decode'", rendered)
+        self.assertIn("train inputs [small, large]", rendered)
+        self.assertIn("minimum speedup 1.5%", rendered)
+        self.assertIn("./micro --train", rendered)
+        self.assertNotIn("LDA_SECRET_HOLDOUT", rendered)
+        self.assertNotIn("generate-holdout", rendered)
 
     def test_fence_requires_all_commands_and_trace(self) -> None:
         results = FenceSuite(FakeSandbox(), self.card, trace_file=self.trace).run()
