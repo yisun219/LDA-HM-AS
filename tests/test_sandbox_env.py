@@ -107,6 +107,16 @@ class DetachedLongCommandTest(unittest.TestCase):
         ]
         self.assertEqual(background_calls[0]["timeout"], 1200)
 
+    def test_connect_prepares_candidate_output_directory(self) -> None:
+        client = _LongClient()
+        E2BSandbox.connect(client_factory=lambda **_kwargs: client)
+        command, kwargs = client.commands.calls[0]
+        self.assertIn("sudo -n mkdir -p", command)
+        self.assertIn("/opt/lda/candidate", command)
+        self.assertIn("sudo -n chown", command)
+        self.assertEqual(kwargs["cwd"], "/")
+        self.assertEqual(kwargs["timeout"], 60)
+
 
 class BaselineArtifactGuardTest(unittest.TestCase):
     def test_baseline_guard_precedes_destructive_cleanup(self) -> None:
