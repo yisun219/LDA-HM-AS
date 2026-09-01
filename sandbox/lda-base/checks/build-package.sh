@@ -45,7 +45,8 @@ rm -rf "$package_root" "$package_dir" \
   "$output_root/source-commit" "$output_root/artifact-schema" \
   "$output_root/libraries.list" "$output_root/runtime-debs.list" \
   "$output_root/upstream-tests-state" "$output_root/upstream-tests-passed" \
-  "$output_root/upstream-tests-failures" "$output_root/build.log"
+  "$output_root/upstream-tests-failures" "$output_root/build.log" \
+  "$output_root/executables.list"
 mkdir -p "$package_dir" "$package_root"
 find /opt/lda -maxdepth 1 -type f \
   \( -name '*.deb' -o -name '*.ddeb' -o -name '*.changes' -o -name '*.buildinfo' \) \
@@ -109,10 +110,20 @@ done
 # Inventory every shared library shipped by the selected runtime debs.
 find "$package_root/usr/lib" "$package_root/lib" -type f -name '*.so*' 2>/dev/null \
   | grep -v '/usr/lib/debug/' | LC_ALL=C sort >"$output_root/libraries.list" || true
-test -s "$output_root/libraries.list" || {
-  echo "no shared libraries found in $runtime_debs" >&2
+# Executable-only packages (gnome-shell, gsd, ibus) still have a surgical
+# replacement surface. Record ELF programs so the generic ABI/security fences
+# can validate their interpreter and NEEDED set without requiring a .so.
+: >"$output_root/executables.list"
+find "$package_root/usr/bin" "$package_root/usr/sbin" "$package_root/usr/libexec" \
+  -type f -perm -0100 2>/dev/null -exec sh -c '
+    for file_path do
+      file -b "$file_path" | grep -q "ELF" && printf "%s\\n" "$file_path"
+    done
+  ' sh {} + | LC_ALL=C sort >"$output_root/executables.list" || true
+if ! test -s "$output_root/libraries.list" && ! test -s "$output_root/executables.list"; then
+  echo "no shared libraries or ELF executables found in $runtime_debs" >&2
   exit 67
-}
+fi
 
 printf '%s\n' "$source_commit" >"$output_root/source-commit"
 printf '%s\n' "$artifact_schema" >"$output_root/artifact-schema"

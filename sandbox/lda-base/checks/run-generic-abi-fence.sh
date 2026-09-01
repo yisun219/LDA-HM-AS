@@ -9,8 +9,8 @@ set -euo pipefail
 
 baseline_root=/opt/lda/baseline/root
 candidate_root=/opt/lda/candidate/root
-test -s /opt/lda/baseline/libraries.list
-test -s /opt/lda/candidate/libraries.list
+test -s /opt/lda/baseline/libraries.list || test -s /opt/lda/baseline/executables.list
+test -s /opt/lda/candidate/libraries.list || test -s /opt/lda/candidate/executables.list
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -23,7 +23,7 @@ diff -u "$tmp/base.set" "$tmp/cand.set" || {
 }
 
 failures=0
-while IFS= read -r relative; do
+if test -s /opt/lda/baseline/libraries.list; then while IFS= read -r relative; do
   base="$baseline_root$relative"
   cand="$candidate_root$relative"
   for side in base cand; do
@@ -62,7 +62,35 @@ while IFS= read -r relative; do
       failures=$((failures + 1))
     fi
   fi
-done <"$tmp/base.set"
+done <"$tmp/base.set"; fi
+
+# Executable-only runtime packages have no exported library ABI. Their
+# replacement boundary is the ELF class/data/machine/interpreter and dynamic
+# NEEDED set; code and timing are intentionally left to the benchmark gates.
+if test -s /opt/lda/baseline/executables.list; then
+  sed "s#^/opt/lda/baseline##" /opt/lda/baseline/executables.list >"$tmp/base.exec.set"
+  sed "s#^/opt/lda/candidate##" /opt/lda/candidate/executables.list >"$tmp/cand.exec.set"
+  diff -u "$tmp/base.exec.set" "$tmp/cand.exec.set" || {
+    echo "shipped executable set changed" >&2; failures=$((failures + 1)); }
+  while IFS= read -r relative; do
+    base="/opt/lda/baseline$relative"
+    cand="/opt/lda/candidate$relative"
+    test -f "$cand" || { echo "candidate executable missing: $relative" >&2; failures=$((failures + 1)); continue; }
+    for side in base cand; do
+      program="${!side}"
+      readelf -h "$program" | awk -F: '/Class:|Data:|OS\/ABI:|ABI Version:|Type:|Machine:/ {key=$1; sub(/^[[:space:]]+/, "", key); value=$2; sub(/^[[:space:]]+/, "", value); print key ": " value}' >"$tmp/$side.exec.elf"
+      readelf -l "$program" | awk '/Requesting program interpreter/ {print}' >"$tmp/$side.exec.interp"
+      readelf -d "$program" | awk '/NEEDED/ {print $5}' | LC_ALL=C sort >"$tmp/$side.exec.dyn"
+    done
+    if ! diff -u "$tmp/base.exec.elf" "$tmp/cand.exec.elf" >"$tmp/exec.delta" 2>&1 ||
+       ! diff -u "$tmp/base.exec.interp" "$tmp/cand.exec.interp" >>"$tmp/exec.delta" 2>&1 ||
+       ! diff -u "$tmp/base.exec.dyn" "$tmp/cand.exec.dyn" >>"$tmp/exec.delta" 2>&1; then
+      echo "ELF compatibility changed for executable $relative:" >&2
+      cat "$tmp/exec.delta" >&2
+      failures=$((failures + 1))
+    fi
+  done <"$tmp/base.exec.set"
+fi
 
 paste -d'\n' /opt/lda/baseline/runtime-debs.list /opt/lda/candidate/runtime-debs.list >/dev/null
 while IFS= read -r base_deb && IFS= read -r cand_deb <&3; do

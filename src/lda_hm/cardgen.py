@@ -49,6 +49,10 @@ SOURCE_MAP = {
     "libgstreamer-gl1.0-0": {"source": "gst-plugins-base1.0", "runtime_debs": "libgstreamer-gl1.0-0"},
     "libgstreamer-plugins-base1.0-0": {"source": "gst-plugins-base1.0", "runtime_debs": "libgstreamer-plugins-base1.0-0"},
     "gstreamer1.0-plugins-base": {"source": "gst-plugins-base1.0", "runtime_debs": "gstreamer1.0-plugins-base"},
+    "gnome-shell": {"source": "gnome-shell", "runtime_debs": "gnome-shell", "probe": "test -x /usr/bin/gnome-shell"},
+    "libreoffice-core": {"source": "libreoffice", "runtime_debs": "libreoffice-core", "probe": "test -x /usr/lib/libreoffice/program/soffice.bin"},
+    "gnome-settings-daemon": {"source": "gnome-settings-daemon", "runtime_debs": "gnome-settings-daemon", "probe": "test -d /usr/libexec"},
+    "ibus": {"source": "ibus", "runtime_debs": "ibus", "probe": "test -x /usr/bin/ibus-daemon"},
 }
 
 # Benchmark profiles the CURRENT template supports end to end. Everything
@@ -205,6 +209,106 @@ BENCHMARK_PROFILES = {
             "max_regression_percent": 3.0,
         },
     },
+    "gnome-shell": {
+        "tests_policy": "reference",
+        "setup": ["install-top10-workbench.sh"],
+        "micro": {
+            "name": "gnome-shell-startup",
+            "script": "run-gnome-shell-startup.sh",
+            "repetitions": 5,
+            "timeout_seconds": 900,
+            "inputs": ["version-startup"],
+            "max_regression_percent": 5.0,
+        },
+        "e2e": {
+            "name": "gnome-shell-headless-startup",
+            "script": "run-gnome-shell-headless-e2e.sh",
+            "repetitions": 5,
+            "timeout_seconds": 900,
+            "inputs": ["headless-startup"],
+            "max_regression_percent": 5.0,
+        },
+    },
+    "libreoffice-core": {
+        "tests_policy": "reference",
+        "setup": ["install-top10-workbench.sh"],
+        "micro": {
+            "name": "libreoffice-convert",
+            "script": "run-libreoffice-convert.sh",
+            "repetitions": 5,
+            "timeout_seconds": 2400,
+            "inputs": ["fodt-to-pdf"],
+            "max_regression_percent": 5.0,
+        },
+        "e2e": {
+            "name": "libreoffice-document-e2e",
+            "script": "run-libreoffice-document-e2e.sh",
+            "repetitions": 5,
+            "timeout_seconds": 2400,
+            "inputs": ["document-to-pdf"],
+            "max_regression_percent": 5.0,
+        },
+    },
+    "gnome-settings-daemon": {
+        "tests_policy": "reference",
+        "setup": ["install-top10-workbench.sh"],
+        "micro": {
+            "name": "gsd-plugin-startup",
+            "script": "run-gsd-startup.sh",
+            "repetitions": 5,
+            "timeout_seconds": 900,
+            "inputs": ["plugin-version"],
+            "max_regression_percent": 5.0,
+        },
+        "e2e": {
+            "name": "gsd-session-startup",
+            "script": "run-gsd-session-e2e.sh",
+            "repetitions": 5,
+            "timeout_seconds": 1200,
+            "inputs": ["session-startup"],
+            "max_regression_percent": 5.0,
+        },
+    },
+    "gstreamer1.0-plugins-good": {
+        "tests_policy": "reference",
+        "setup": ["install-top10-workbench.sh"],
+        "micro": {
+            "name": "gst-good-demux",
+            "script": "run-gst-good-demux.sh",
+            "repetitions": 5,
+            "timeout_seconds": 1800,
+            "inputs": ["wav-flac-matroska"],
+            "max_regression_percent": 5.0,
+        },
+        "e2e": {
+            "name": "gst-good-pipeline-e2e",
+            "script": "run-gst-good-pipeline-e2e.sh",
+            "repetitions": 5,
+            "timeout_seconds": 1800,
+            "inputs": ["decode-pipeline"],
+            "max_regression_percent": 5.0,
+        },
+    },
+    "ibus": {
+        "tests_policy": "reference",
+        "setup": ["install-top10-workbench.sh"],
+        "micro": {
+            "name": "ibus-engine-list",
+            "script": "run-ibus-engine-list.sh",
+            "repetitions": 5,
+            "timeout_seconds": 900,
+            "inputs": ["engine-list"],
+            "max_regression_percent": 5.0,
+        },
+        "e2e": {
+            "name": "ibus-daemon-session",
+            "script": "run-ibus-daemon-e2e.sh",
+            "repetitions": 5,
+            "timeout_seconds": 1200,
+            "inputs": ["daemon-session"],
+            "max_regression_percent": 5.0,
+        },
+    },
 }
 
 # Card check-script names per profile family; cairo doubles as the reference
@@ -235,14 +339,34 @@ CHECKS = {
         "behavior": "run-gtk-behavior-fence.sh",
         "selfcheck": "run-gtk-selfcheck.sh",
     },
+    "gnome-shell": {
+        "ffi": "run-top10-ffi-fence.sh",
+        "behavior": "run-top10-behavior-fence.sh",
+    },
+    "libreoffice-core": {
+        "ffi": "run-top10-ffi-fence.sh",
+        "behavior": "run-top10-behavior-fence.sh",
+    },
+    "gnome-settings-daemon": {
+        "ffi": "run-top10-ffi-fence.sh",
+        "behavior": "run-top10-behavior-fence.sh",
+    },
+    "gstreamer1.0-plugins-good": {
+        "ffi": "run-top10-ffi-fence.sh",
+        "behavior": "run-top10-behavior-fence.sh",
+    },
+    "ibus": {
+        "ffi": "run-top10-ffi-fence.sh",
+        "behavior": "run-top10-behavior-fence.sh",
+    },
 }
 
 TEMPLATE_NEEDS = {
-    "gnome-shell": "full GNOME session harness; out of headless scope until template v12",
-    "libreoffice-core": "LibreOffice + document corpus (template v12)",
-    "gnome-settings-daemon": "GNOME session harness (template v12)",
-    "ibus": "ibus daemon + input fixture harness (template v12)",
-    "gstreamer1.0-plugins-good": "gstreamer runtime + gst-launch decode corpus (template v11)",
+    "gnome-shell": "headless startup probe; frame-loop acceleration is not claimed",
+    "libreoffice-core": "LibreOffice document corpus and headless conversion",
+    "gnome-settings-daemon": "headless plugin startup subset",
+    "ibus": "headless daemon and engine-list fixture",
+    "gstreamer1.0-plugins-good": "gstreamer runtime and demux/decode corpus",
     "libsoup-3.0-0": "libsoup runtime + local HTTP fixture server (template v11)",
 }
 
@@ -283,6 +407,7 @@ def generate_card(binary_package: str, apt_snapshot_card: dict) -> dict:
     runtime_debs = mapping["runtime_debs"]
     env = [
         "env",
+        f"LDA_TOP10_PACKAGE={binary_package}",
         f"LDA_PKG_SOURCE={source}",
         f"LDA_PKG_VERSION={version}",
         f"LDA_PKG_RUNTIME_DEBS={runtime_debs}",

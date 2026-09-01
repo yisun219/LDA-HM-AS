@@ -250,7 +250,8 @@ class E2BSandbox:
     ) -> SandboxResult:
         if not command:
             raise ValueError("sandbox command must not be empty")
-        merged_envs = {"TMPDIR": os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")}
+        remote_tmp = os.getenv("LDA_REMOTE_TMPDIR", "/scratch/lda-hm")
+        merged_envs = {"TMPDIR": remote_tmp, "LDA_REMOTE_TMPDIR": remote_tmp}
         if envs:
             merged_envs.update(envs)
         command = _with_envs(command, merged_envs)

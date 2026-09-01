@@ -83,7 +83,7 @@ class CardgenTest(unittest.TestCase):
             .read_text(encoding="utf-8")
         )
         with self.assertRaises(SystemExit):
-            generate_card("gnome-shell", reference["baseline"])
+            generate_card("polkitd", reference["baseline"])
 
 
 if __name__ == "__main__":

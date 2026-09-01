@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=6G
 #SBATCH --time=1-00:00:00
-#SBATCH --output=%x-%j.out
+#SBATCH --output=/fact_data/yisun/Linux-Development-Agent-Runs/slurm/%x-%j.out
 #SBATCH --requeue
 
 # Submit one card run through Slurm instead of running it on a shared login or
