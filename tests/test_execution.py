@@ -85,6 +85,8 @@ class ExecutionContractTest(unittest.TestCase):
         self.assertIn("train inputs [small, large]", rendered)
         self.assertIn("minimum speedup 1.5%", rendered)
         self.assertIn("./micro --train", rendered)
+        self.assertIn("authority for an autonomous run", rendered)
+        self.assertIn("do not wait for human decisions", rendered)
         self.assertNotIn("LDA_SECRET_HOLDOUT", rendered)
         self.assertNotIn("generate-holdout", rendered)
 

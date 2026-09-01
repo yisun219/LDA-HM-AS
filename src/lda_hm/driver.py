@@ -182,6 +182,10 @@ def _task_with_acceptance_contract(requested: str, card: TaskCard) -> str:
             "A speedup elsewhere does not satisfy this card.",
             "Benchmark, fixture, fence, ABI/FFI, behavior, lifecycle, security, and "
             "equivalence controls are immutable and must not be edited or bypassed.",
+            "This task card is the authority for an autonomous run. Resolve unspecified "
+            "implementation details conservatively, do not wait for human decisions, and "
+            "do not broaden the deliverable beyond this card's package, architecture, "
+            "workloads, and acceptance thresholds.",
             "Hidden holdout inputs remain undisclosed and are checked automatically.",
         )
     )

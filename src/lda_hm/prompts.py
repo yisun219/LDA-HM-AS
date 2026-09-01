@@ -15,7 +15,11 @@ GEN_PLAN_ANALYSIS = """You are an independent Analyst.
 
 Read the idea draft and the repository context. Return relevance, core risks,
 missing requirements, objective acceptance criteria, and questions that need a
-human decision. Do not write code or revise the plan.
+human decision. The immutable task-card context retained in the idea is already
+authorized and must not be reopened or broadened. This is an autonomous run:
+choose conservative defaults for implementation details and raise a human
+question only when the card leaves no safe bounded option. Do not write code or
+revise the plan.
 
 Idea draft:
 {idea}
@@ -25,7 +29,10 @@ GEN_PLAN = """You are the persistent Planner.
 
 Use the original idea and the independent analysis to produce a candidate plan.
 The plan must retain the original draft, define positive and negative tests,
-path boundaries, a bounded task breakdown, and unresolved user decisions.
+path boundaries, and a bounded task breakdown. The task card is the final
+authority for workload, architecture, package scope, and thresholds. Resolve
+other implementation details conservatively and keep the plan executable
+without human intervention; do not invent wider release or publication gates.
 Do not implement anything.
 
 Original idea:
@@ -40,7 +47,9 @@ GEN_PLAN_REVIEW = """You are a fresh independent Analyst.
 Review the candidate plan against the complete original idea. Use the headings
 AGREE, DISAGREE, REQUIRED_CHANGES, OPTIONAL_IMPROVEMENTS, and UNRESOLVED.
 End with CONVERGED only when there are no required changes and no disagreement
-that changes the work.
+that changes the work. Do not require architectures, workloads, publication
+scope, or acceptance criteria beyond the immutable task-card context. The plan
+must be executable autonomously rather than blocked on optional human choices.
 
 Original idea:
 {idea}
@@ -52,7 +61,8 @@ Candidate plan:
 GEN_PLAN_REVISE = """Revise the candidate plan using the independent review.
 
 Preserve the original idea and all identifiers. Resolve every required change,
-retain unresolved human decisions explicitly, and do not implement code.
+use conservative defaults for details not fixed by the task card, and do not
+leave execution blocked on optional human decisions. Do not implement code.
 
 Review:
 {review}
