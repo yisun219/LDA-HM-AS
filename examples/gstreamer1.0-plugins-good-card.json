@@ -32,7 +32,7 @@
       "LDA_PKG_VERSION=1.28.2-2",
       "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/install-top10-workbench.sh"
+      "/opt/lda/harness/checks/install-gst-workbench.sh"
     ],
     [
       "/opt/lda/harness/checks/install-test-tools.sh"
@@ -57,7 +57,17 @@
     "LDA_UPSTREAM_TESTS=reference",
     "/opt/lda/harness/checks/ensure-pkg-candidate.sh"
   ],
-  "selfcheck_commands": [],
+  "selfcheck_commands": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=gstreamer1.0-plugins-good",
+      "LDA_PKG_SOURCE=gst-plugins-good1.0",
+      "LDA_PKG_VERSION=1.28.2-2",
+      "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-gst-good-selfcheck.sh"
+    ]
+  ],
   "baseline_tests": [
     [
       "env",
@@ -105,7 +115,7 @@
       "LDA_PKG_VERSION=1.28.2-2",
       "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-ffi-fence.sh"
+      "/opt/lda/harness/checks/run-gst-good-ffi-fence.sh"
     ]
   ],
   "behavior_checks": [
@@ -116,7 +126,7 @@
       "LDA_PKG_VERSION=1.28.2-2",
       "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-gst-good-behavior-fence.sh"
     ]
   ],
   "package_lifecycle_checks": [
@@ -149,19 +159,29 @@
       "LDA_PKG_VERSION=1.28.2-2",
       "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-gst-good-behavior-fence.sh"
     ]
   ],
   "micro_benchmarks": [
     {
-      "name": "gst-good-demux",
-      "repetitions": 5,
-      "timeout_seconds": 1800,
+      "name": "gst-good-micro",
+      "repetitions": 7,
+      "timeout_seconds": 2400,
       "inputs": [
-        "wav-flac-matroska"
+        "video-filters",
+        "video-effects",
+        "audio-fx"
       ],
-      "max_regression_percent": 5.0,
-      "min_speedup_percent": 1.0,
+      "max_regression_percent": 2.0,
+      "min_speedup_percent": 2.0,
+      "holdout_min_speedup_percent": 1.0,
+      "holdout_env": "LDA_GST_FIXDIR",
+      "holdout_setup": [
+        "env",
+        "LDA_FIXTURE_DIR={dir}",
+        "LDA_FIXTURE_SEED={seed}",
+        "/opt/lda/harness/checks/prepare-gst-fixtures.sh"
+      ],
       "layer": "micro",
       "command": [
         "env",
@@ -170,7 +190,7 @@
         "LDA_PKG_VERSION=1.28.2-2",
         "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gst-good-demux.sh"
+        "/opt/lda/harness/checks/run-gst-good-micro.sh"
       ],
       "baseline_command": [
         "env",
@@ -179,20 +199,20 @@
         "LDA_PKG_VERSION=1.28.2-2",
         "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gst-good-demux.sh",
+        "/opt/lda/harness/checks/run-gst-good-micro.sh",
         "baseline"
       ]
     }
   ],
   "end_to_end_benchmarks": [
     {
-      "name": "gst-good-pipeline-e2e",
-      "repetitions": 5,
+      "name": "gst-good-transcode-e2e",
+      "repetitions": 7,
       "timeout_seconds": 1800,
       "inputs": [
-        "decode-pipeline"
+        "transcode"
       ],
-      "max_regression_percent": 5.0,
+      "max_regression_percent": 3.0,
       "layer": "end_to_end",
       "command": [
         "env",
@@ -201,7 +221,7 @@
         "LDA_PKG_VERSION=1.28.2-2",
         "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gst-good-pipeline-e2e.sh"
+        "/opt/lda/harness/checks/run-gst-good-e2e.sh"
       ],
       "baseline_command": [
         "env",
@@ -210,7 +230,7 @@
         "LDA_PKG_VERSION=1.28.2-2",
         "LDA_PKG_RUNTIME_DEBS=gstreamer1.0-plugins-good",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gst-good-pipeline-e2e.sh",
+        "/opt/lda/harness/checks/run-gst-good-e2e.sh",
         "baseline"
       ]
     }

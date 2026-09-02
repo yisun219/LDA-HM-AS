@@ -32,7 +32,7 @@
       "LDA_PKG_VERSION=50.0-1ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/install-top10-workbench.sh"
+      "/opt/lda/harness/checks/install-gsd-workbench.sh"
     ],
     [
       "/opt/lda/harness/checks/install-test-tools.sh"
@@ -57,7 +57,17 @@
     "LDA_UPSTREAM_TESTS=reference",
     "/opt/lda/harness/checks/ensure-pkg-candidate.sh"
   ],
-  "selfcheck_commands": [],
+  "selfcheck_commands": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=gnome-settings-daemon",
+      "LDA_PKG_SOURCE=gnome-settings-daemon",
+      "LDA_PKG_VERSION=50.0-1ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-gsd-selfcheck.sh"
+    ]
+  ],
   "baseline_tests": [
     [
       "env",
@@ -105,7 +115,7 @@
       "LDA_PKG_VERSION=50.0-1ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-ffi-fence.sh"
+      "/opt/lda/harness/checks/run-gsd-ffi-fence.sh"
     ]
   ],
   "behavior_checks": [
@@ -116,7 +126,7 @@
       "LDA_PKG_VERSION=50.0-1ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-gsd-behavior-fence.sh"
     ]
   ],
   "package_lifecycle_checks": [
@@ -150,19 +160,19 @@
       "LDA_PKG_VERSION=50.0-1ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-gsd-behavior-fence.sh"
     ]
   ],
   "micro_benchmarks": [
     {
       "name": "gsd-plugin-startup",
-      "repetitions": 5,
-      "timeout_seconds": 900,
+      "repetitions": 7,
+      "timeout_seconds": 1800,
       "inputs": [
-        "plugin-version"
+        "plugin-startup"
       ],
-      "max_regression_percent": 5.0,
-      "min_speedup_percent": 1.0,
+      "max_regression_percent": 2.0,
+      "min_speedup_percent": 2.0,
       "layer": "micro",
       "command": [
         "env",
@@ -171,7 +181,7 @@
         "LDA_PKG_VERSION=50.0-1ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gsd-startup.sh"
+        "/opt/lda/harness/checks/run-gsd-micro.sh"
       ],
       "baseline_command": [
         "env",
@@ -180,20 +190,20 @@
         "LDA_PKG_VERSION=50.0-1ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gsd-startup.sh",
+        "/opt/lda/harness/checks/run-gsd-micro.sh",
         "baseline"
       ]
     }
   ],
   "end_to_end_benchmarks": [
     {
-      "name": "gsd-session-startup",
-      "repetitions": 5,
-      "timeout_seconds": 1200,
+      "name": "gsd-session-start-e2e",
+      "repetitions": 7,
+      "timeout_seconds": 1800,
       "inputs": [
-        "session-startup"
+        "session-start"
       ],
-      "max_regression_percent": 5.0,
+      "max_regression_percent": 3.0,
       "layer": "end_to_end",
       "command": [
         "env",
@@ -202,7 +212,7 @@
         "LDA_PKG_VERSION=50.0-1ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gsd-session-e2e.sh"
+        "/opt/lda/harness/checks/run-gsd-e2e.sh"
       ],
       "baseline_command": [
         "env",
@@ -211,7 +221,7 @@
         "LDA_PKG_VERSION=50.0-1ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=gnome-settings-daemon",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-gsd-session-e2e.sh",
+        "/opt/lda/harness/checks/run-gsd-e2e.sh",
         "baseline"
       ]
     }
