@@ -6,6 +6,6 @@ if test "$mode" = candidate; then /opt/lda/harness/checks/ensure-pkg-candidate.s
 lda_lo_env "$mode"
 lda_lo_attribution "$mode"
 lda_lo_convert "$mode" writer >/dev/null
-lda_bench_run micro writer-to-pdf "$mode" 2 lda_lo_convert "$mode" writer
-lda_bench_run micro calc-to-pdf "$mode" 2 lda_lo_convert "$mode" calc
+lda_bench_run micro writer-to-pdf "$mode" 3 lda_lo_convert "$mode" writer
+lda_bench_run micro calc-to-pdf "$mode" 3 lda_lo_convert "$mode" calc
 printf 'libreoffice micro mode=%s complete\n' "$mode"

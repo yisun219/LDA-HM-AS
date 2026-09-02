@@ -75,6 +75,6 @@ lda_ibus_session() {
   IBUS_COMPONENT_PATH="$LDA_IBUS_SESSION_COMPONENTS" dbus-run-session -- \
     env LD_LIBRARY_PATH="$(lda_pkg_libdir "$mode")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     GI_TYPELIB_PATH="$LDA_IBUS_ROOT/usr/lib/x86_64-linux-gnu/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}" \
-    python3 /opt/lda/harness/checks/ibus-keys.py "$LDA_IBUS_ROOT/usr/bin/ibus-daemon" "$LDA_IBUS_ROOT/usr/bin/ibus" "$keys" "$IBUS_FIXDIR/keys.txt" \
+    python3 /opt/lda/harness/checks/ibus-keys.py "$LDA_IBUS_ROOT/usr/bin/ibus-daemon" "$LDA_IBUS_ROOT/usr/bin/ibus" "$keys" "$IBUS_FIXDIR/keys.txt" "$LDA_IBUS_ROOT/usr/libexec/ibus-memconf" \
     | sha256sum | cut -c1-16
 }

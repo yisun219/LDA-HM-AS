@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive key events through ibus-daemon on the current session bus.
 
-argv: ibus-daemon-path ibus-cli-path key-count keys-file
+argv: ibus-daemon-path ibus-cli-path key-count keys-file config-module-path
 Prints the committed text stream and the engine listing; the caller hashes it.
 """
 import os, subprocess, sys, time
@@ -9,8 +9,10 @@ import gi
 gi.require_version("IBus", "1.0")
 from gi.repository import GLib, IBus  # noqa: E402
 
-daemon, cli, count, keys_file = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
-proc = subprocess.Popen([daemon, "--panel=disable", "--emoji-extension=disable", "-r"],
+daemon, cli, count, keys_file, config = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+# The in-memory config module keeps the session hermetic (no dconf) and is
+# this mode's own binary, like the engine.
+proc = subprocess.Popen([daemon, "--panel=disable", "--emoji-extension=disable", "-r", "--config=" + config],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 IBus.init()
 bus = None

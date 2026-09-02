@@ -32,13 +32,13 @@ HEAD = ('<?xml version="1.0" encoding="UTF-8"?>\n'
         'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
         'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" '
         'xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" office:version="1.3" ')
-for doc in range(2):
+for doc in range(3):
     parts = [HEAD + 'office:mimetype="application/vnd.oasis.opendocument.text">',
              '<office:automatic-styles><style:style style:name="B" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>'
              '<style:style style:name="I" style:family="text"><style:text-properties fo:font-style="italic"/></style:style></office:automatic-styles>',
              '<office:body><office:text>']
     fn = 0
-    for section in range(28 + rng(8)):
+    for section in range(70 + rng(20)):
         parts.append(f'<text:h text:outline-level="{1 + rng(3)}">{escape(sentence(4 + rng(5)))}</text:h>')
         for _ in range(4 + rng(5)):
             words = paragraph().split()
@@ -59,8 +59,8 @@ for doc in range(2):
     parts.append("</office:text></office:body></office:document>")
     with open(f"{directory}/writer-{doc}.fodt", "w", encoding="utf-8") as stream:
         stream.write("\n".join(parts))
-for doc in range(2):
-    rows, cols = 220 + rng(60), 24
+for doc in range(3):
+    rows, cols = 650 + rng(150), 24
     parts = [HEAD + 'office:mimetype="application/vnd.oasis.opendocument.spreadsheet">',
              '<office:body><office:spreadsheet><table:table table:name="Data">']
     parts.append(f'<table:table-column table:number-columns-repeated="{cols}"/>')
@@ -83,5 +83,5 @@ for doc in range(2):
         stream.write("\n".join(parts))
 with open(f"{directory}/params.env", "w", encoding="utf-8") as stream:
     stream.write(f"LO_FIXTURE_SEED={seed}\n")
-print(f"libreoffice fixtures: 2 writer + 2 calc documents, seed {seed}")
+print(f"libreoffice fixtures: 3 writer + 3 calc documents, seed {seed}")
 PY

@@ -32,7 +32,7 @@
       "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/install-top10-workbench.sh"
+      "/opt/lda/harness/checks/install-lo-workbench.sh"
     ],
     [
       "/opt/lda/harness/checks/install-test-tools.sh"
@@ -57,7 +57,17 @@
     "LDA_UPSTREAM_TESTS=reference",
     "/opt/lda/harness/checks/ensure-pkg-candidate.sh"
   ],
-  "selfcheck_commands": [],
+  "selfcheck_commands": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=libreoffice-core",
+      "LDA_PKG_SOURCE=libreoffice",
+      "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
+      "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-lo-selfcheck.sh"
+    ]
+  ],
   "baseline_tests": [
     [
       "env",
@@ -105,7 +115,7 @@
       "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-ffi-fence.sh"
+      "/opt/lda/harness/checks/run-lo-ffi-fence.sh"
     ]
   ],
   "behavior_checks": [
@@ -116,7 +126,7 @@
       "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-lo-behavior-fence.sh"
     ]
   ],
   "package_lifecycle_checks": [
@@ -150,19 +160,28 @@
       "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
       "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-lo-behavior-fence.sh"
     ]
   ],
   "micro_benchmarks": [
     {
-      "name": "libreoffice-convert",
-      "repetitions": 5,
+      "name": "libreoffice-convert-micro",
+      "repetitions": 7,
       "timeout_seconds": 2400,
       "inputs": [
-        "fodt-to-pdf"
+        "writer-to-pdf",
+        "calc-to-pdf"
       ],
-      "max_regression_percent": 5.0,
-      "min_speedup_percent": 1.0,
+      "max_regression_percent": 2.0,
+      "min_speedup_percent": 2.0,
+      "holdout_min_speedup_percent": 1.0,
+      "holdout_env": "LDA_LO_FIXDIR",
+      "holdout_setup": [
+        "env",
+        "LDA_FIXTURE_DIR={dir}",
+        "LDA_FIXTURE_SEED={seed}",
+        "/opt/lda/harness/checks/prepare-lo-fixtures.sh"
+      ],
       "layer": "micro",
       "command": [
         "env",
@@ -171,7 +190,7 @@
         "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-libreoffice-convert.sh"
+        "/opt/lda/harness/checks/run-lo-micro.sh"
       ],
       "baseline_command": [
         "env",
@@ -180,20 +199,20 @@
         "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-libreoffice-convert.sh",
+        "/opt/lda/harness/checks/run-lo-micro.sh",
         "baseline"
       ]
     }
   ],
   "end_to_end_benchmarks": [
     {
-      "name": "libreoffice-document-e2e",
-      "repetitions": 5,
+      "name": "libreoffice-roundtrip-e2e",
+      "repetitions": 7,
       "timeout_seconds": 2400,
       "inputs": [
-        "document-to-pdf"
+        "office-roundtrip"
       ],
-      "max_regression_percent": 5.0,
+      "max_regression_percent": 3.0,
       "layer": "end_to_end",
       "command": [
         "env",
@@ -202,7 +221,7 @@
         "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-libreoffice-document-e2e.sh"
+        "/opt/lda/harness/checks/run-lo-e2e.sh"
       ],
       "baseline_command": [
         "env",
@@ -211,7 +230,7 @@
         "LDA_PKG_VERSION=4:26.2.2.2-0ubuntu1",
         "LDA_PKG_RUNTIME_DEBS=libreoffice-core",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-libreoffice-document-e2e.sh",
+        "/opt/lda/harness/checks/run-lo-e2e.sh",
         "baseline"
       ]
     }
