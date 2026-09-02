@@ -45,10 +45,28 @@ if test "$mode" = baseline; then
   fi
 fi
 
+cached_artifacts_complete() {
+  local deb
+  test -s "$output_root/runtime-debs.list" || return 1
+  test -d "$package_root" && test -n "$(find "$package_root" -type f -print -quit)" || return 1
+  test -d "$package_dir" || return 1
+  test -s "$output_root/libraries.list" || test -s "$output_root/executables.list" || return 1
+  test -s "$output_root/runtime-deb.sha256" || return 1
+  test -s "$output_root/upstream-tests-state" || return 1
+  test -f "$output_root/upstream-tests-passed" || return 1
+  while IFS= read -r deb; do
+    test -f "$deb" || return 1
+  done <"$output_root/runtime-debs.list"
+  sha256sum --status -c "$output_root/runtime-deb.sha256" || return 1
+}
+
+# A killed build can leave the early identity markers behind. Only reuse a
+# cache after proving the package payload and the final test marker exist.
 if test -f "$output_root/source-commit" &&
    test "$(cat "$output_root/source-commit")" = "$source_commit" &&
    test -f "$output_root/artifact-schema" &&
-   test "$(cat "$output_root/artifact-schema")" = "$artifact_schema"; then
+   test "$(cat "$output_root/artifact-schema")" = "$artifact_schema" &&
+   cached_artifacts_complete; then
   exit 0
 fi
 
@@ -58,7 +76,7 @@ rm -rf "$package_root" "$package_dir" \
   "$output_root/libraries.list" "$output_root/runtime-debs.list" \
   "$output_root/upstream-tests-state" "$output_root/upstream-tests-passed" \
   "$output_root/upstream-tests-failures" "$output_root/build.log" \
-  "$output_root/executables.list"
+  "$output_root/executables.list" "$output_root/runtime-deb.sha256"
 mkdir -p "$package_dir" "$package_root"
 find /opt/lda -maxdepth 1 -type f \
   \( -name '*.deb' -o -name '*.ddeb' -o -name '*.changes' -o -name '*.buildinfo' \) \

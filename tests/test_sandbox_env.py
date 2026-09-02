@@ -133,6 +133,32 @@ class BaselineArtifactGuardTest(unittest.TestCase):
             script[guard:cleanup],
         )
 
+    def test_package_cache_requires_complete_payload_and_test_evidence(self) -> None:
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "sandbox/lda-base/checks/build-package.sh"
+        ).read_text(encoding="utf-8")
+        guard = script[script.index("cached_artifacts_complete()") : script.index("# Clear build outputs only")]
+        for required in (
+            "runtime-debs.list",
+            "runtime-deb.sha256",
+            "libraries.list",
+            "executables.list",
+            "upstream-tests-state",
+            "upstream-tests-passed",
+            "sha256sum --status -c",
+        ):
+            self.assertIn(required, guard)
+
+    def test_source_branch_normalizes_debian_version_characters(self) -> None:
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "sandbox/lda-base/checks/prepare-ubuntu-source.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("branch_suffix=", script)
+        self.assertIn("git check-ref-format", script)
+        self.assertNotIn('git init -b "lda/${package}-${version//:/_}"', script)
+
     def test_source_snapshot_tracks_ignored_source_files(self) -> None:
         script = (
             Path(__file__).resolve().parents[1]

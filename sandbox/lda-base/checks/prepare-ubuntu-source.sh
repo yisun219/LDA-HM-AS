@@ -87,7 +87,16 @@ test "$actual_version" = "$version"
 sudo apt-get "${apt_options[@]}" build-dep -y .
 find . -maxdepth 1 -type f \( -name '*.dsc' -o -name '*.tar.*' -o -name '*.diff.gz' \) -delete
 
-git init -b "lda/${package}-${version//:/_}"
+# Debian versions may contain characters such as '~' and ':' which Git refs
+# reject. Keep a readable branch while normalizing the complete package/version
+# suffix, then ask Git to validate it before creating the repository.
+branch_suffix="$(
+  printf '%s-%s' "$package" "$version" \
+    | sed -E 's/[^A-Za-z0-9._-]+/_/g; s/\.\.+/_/g; s/^[-.]//; s/[.]$//'
+)"
+branch="lda/${branch_suffix}-source"
+git check-ref-format "refs/heads/$branch"
+git init -b "$branch"
 git config user.email lda@localhost
 git config user.name LDA
 # Debian source archives can intentionally contain files matched by upstream
