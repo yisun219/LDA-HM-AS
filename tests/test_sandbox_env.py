@@ -175,6 +175,9 @@ class BaselineArtifactGuardTest(unittest.TestCase):
         self.assertIn("source_index_has_version", script)
         self.assertIn("Acquire::Retries=10", script)
         self.assertIn("source_fetched=false", script)
+        self.assertIn("build_deps_installed=false", script)
+        self.assertIn("build-dep.log", script)
+        self.assertIn("package-source transport failures", script)
         self.assertIn("exit 75", script)
 
     def test_snapshot_alignment_retries_without_discarding_the_sandbox(self) -> None:

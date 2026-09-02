@@ -124,7 +124,29 @@ rmdir "$source_dir"
 actual_version="$(dpkg-parsechangelog -S Version)"
 test "$actual_version" = "$version"
 
-sudo apt-get "${apt_options[@]}" build-dep -y .
+build_dep_log="$apt_root/build-dep.log"
+: >"$build_dep_log"
+build_deps_installed=false
+for attempt in 1 2 3; do
+  if sudo apt-get "${apt_options[@]}" build-dep -y . 2>&1 \
+      | tee -a "$build_dep_log"; then
+    build_deps_installed=true
+    break
+  fi
+  echo "build dependency download attempt $attempt failed for $package=$version" \
+    | tee -a "$build_dep_log" >&2
+  test "$attempt" -eq 3 || sleep $((attempt * 15))
+done
+if test "$build_deps_installed" != true; then
+  if grep -Eiq \
+      'Failed to fetch|Bad Gateway|Service Unavailable|Could not connect|Temporary failure|Connection failed' \
+      "$build_dep_log"; then
+    echo "build dependencies remained unavailable because of package-source transport failures" >&2
+    exit 75
+  fi
+  echo "build dependency resolution failed for $package=$version" >&2
+  exit 1
+fi
 find . -maxdepth 1 -type f \( -name '*.dsc' -o -name '*.tar.*' -o -name '*.diff.gz' \) -delete
 
 # Debian versions may contain characters such as '~' and ':' which Git refs
