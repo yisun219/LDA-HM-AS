@@ -165,7 +165,13 @@ def main() -> int:
         local.unlink(missing_ok=True)
 
     effort = {"xhigh": "max"}.get(args.effort, args.effort) or "high"
-    environment = [f"LDA_AGENT_THINKING={effort}", f"LDA_TURN_TIMEOUT={os.getenv('LDA_TURN_TIMEOUT', '4200')}"]
+    environment = [
+        f"LDA_AGENT_THINKING={effort}",
+        f"LDA_TURN_TIMEOUT={os.getenv('LDA_TURN_TIMEOUT', '4200')}",
+        # Keep focused tests from creating untracked bytecode under protected
+        # test paths, which the candidate fence must reject.
+        "PYTHONDONTWRITEBYTECODE=1",
+    ]
     if args.model:
         environment.append(f"LDA_AGENT_MODEL_{args.role.upper()}={args.model}")
     command = (
