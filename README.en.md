@@ -17,11 +17,28 @@ benchmark, and agent turn executes inside an E2B sandbox created from one
 pinned template; nothing runs on a bare host.
 
 - **Quick start** → [jump](#quick-start)
+- **What a run delivers** → [output](#what-the-workflow-delivers)
+- **How benchmarks stay honest on a noisy host** → [jump](#benchmarks-on-a-noisy-multi-tenant-host)
+- **What each of the ten packages measures** → [jump](#what-each-of-the-ten-packages-measures)
 - **What makes an optimization acceptable** → [the surgical-replacement boundary](#the-surgical-replacement-boundary-abiffi)
 - **How the workflow is built on Humanize** → [jump](#how-this-workflow-is-built-on-humanize-2)
 - **Measured speedups** → [certified results, at the bottom](#certified-results)
 
 ---
+
+## What the workflow delivers
+
+A finished card leaves three things in `runs/<run-id>/` under the results
+root, archived into this repository's `runs/<run-id>/` by
+`tools/archive-run.py`:
+
+| Deliverable | Where | What it is |
+|---|---|---|
+| **drop-in `.deb` set** | `packages/*.deb` + `SHA256SUMS` | binary packages rebuilt from the pinned Ubuntu 26.04 source with `Package`/`Version`/`Architecture` identical to stock: `dpkg -i` installs them over the stock packages, `dpkg -i` of the stock packages rolls back. This is the surgical replacement itself. |
+| **source patch** | `candidate.patch` + `candidate-log.txt` | the git diff against the pinned source package; applied in a fresh sandbox it rebuilds the same `.deb` set (certification does exactly that) |
+| **evidence bundle** | `benchmark-summary.json`, `certification-summary.json`, `rounds/`, `raw-traces/*.jsonl.gz`, `finalize-summary.md`, `speedup-report.md` | paired benchmarks (train + hidden holdout), fresh-sandbox re-certification, per-round fences and verdicts, the complete stream-json trace of every agent turn, and the mechanism report |
+
+A speedup without a `.deb` is not delivered; a `.deb` without its traces is not certified.
 
 ## The surgical-replacement boundary (ABI/FFI)
 
@@ -248,6 +265,23 @@ it away. Every rule below exists because noise broke a run first:
 - before certification is trusted on a host, the baseline is measured against
   itself (an **A-A null run**): a harness that resolves an effect where none
   exists is a false-positive generator and its verdicts are refused;
+- **fixed-rule extension**: a candidate whose point estimate clears the
+  target while the paired t-interval still spans 1.0 is under-sampled, not
+  refuted: up to two more blocks of the card's repetitions are added and the
+  verdict is taken on the pooled sample (`LDA_BENCH_EXTENSION_BLOCKS`). The
+  rule lives in code, never with the Builder: a candidate below target gets
+  no extension, and the pooled interval must exclude 1.0 on its own.
+- **installed-state A/B**: packages whose typelibs, private library
+  directories or data are loaded by absolute path (gnome-shell,
+  gnome-settings-daemon, LibreOffice, sssd) get each side's own `.deb` set
+  installed with `dpkg -i` outside the timed region, so what is measured is
+  what a user installs, not an `LD_LIBRARY_PATH` approximation.
+- **attribution before timing**: every workbench first proves the timed code
+  comes from the side under test (loaded `.so` paths, sha256 of installed
+  files, plugin file names), and each card records with `perf` the share of
+  timed cycles spent in the package's own code before the card opens: a
+  package with a small share earns an honest "cannot be moved" rather than a
+  number inside the noise.
 - **finalize replays in fresh sandboxes** that land on other hosts, so a
   speedup that only existed on one machine does not certify.
 
@@ -257,6 +291,32 @@ software sampling (`linux-perf` from the pinned snapshot). The target CPU
 (Intel Xeon Gold 6548Y+, Emerald Rapids) reports the full AVX-512/AMX flag
 set, and architecture-specific work targets those flags behind runtime
 dispatch so the package stays correct anywhere.
+
+## What each of the ten packages measures
+
+Every micro workload spends its timed cycles in the package's **own** code,
+runs for seconds per repetition, hashes its output byte for byte, and gets a
+hidden holdout regenerated from a host-held seed; every e2e is a real consumer
+path through the package. "Own share" is the baseline's self-cycle share
+recorded with `perf cpu-clock` before the card opened; it is the ceiling a
+package has under these fences.
+
+| Package | micro (the Builder's local reward) | e2e (real consumer path) | Own share |
+|---|---|---|---|
+| libgtk-4-1 / libgtk-3-0t64 | compiled dlopen workbench: CSS parsing, selector matching, full-tree layout | GObject-introspection churn | high (gtk's own machinery) |
+| libcairo2 | dashed bezier stroking, self-intersecting fills, corpus text paths | cairo stack PNG load | high (pixman/libz excluded) |
+| libsoup-3.0-0 | HTTP header parsing: quality lists, parameter lists, case-insensitive lookups | local HTTP round trip | high |
+| sssd-common | seeded NSS lookup table through an installed proxy-files domain | fresh-process `getent` | medium (responder + client) |
+| gstreamer1.0-plugins-good | package-owned video filters (videoflip/balance/gamma/median/box/crop), effectv effects, integer audio effect chain; per-side plugin farm and private registry | WAV→FLAC transcode + MJPEG-in-AVI capture-style encode | 42–48% |
+| libreoffice-core | seeded ODF corpus (long Writer documents, Calc sheets whose formulas carry no cached values) → PDF in one batched soffice call | DOCX/XLSX export and re-import | ~40% (libmergedlo + sal) |
+| gnome-shell | full headless shell startup: mutter headless backend, GNOME's own mock-session runner and test tool, automation script exiting once the shell is ready | overview shown/hidden three times after startup | ~3% C (the rest is the shell's own JS in gjs plus software rendering) |
+| gnome-settings-daemon | each plugin from start to owning its `org.gnome.SettingsDaemon.*` bus name on private buses (dbusmock logind/UPower/NM/polkit/gnome-session) | all plugins started in parallel, the way gnome-session does | low (startup path) |
+| ibus | registry: seeded component corpus (~280 components, ~11k engine descriptions) written to cache and read back | daemon key session: 12k key events through the simple engine (compose sequences included) | ~1–2% (GLib/IPC dominated) |
+
+The share column is an honest ceiling: for gnome-shell and ibus, recompiling the
+package's C code can barely move the timed path; any speedup has to come from
+their own startup logic (JS, configuration, serialisation), and the fences judge
+it just the same.
 
 ## Supervision (the command layer)
 
@@ -331,7 +391,7 @@ python3.12 -m venv ~/.venvs/ldahm
 ~/.venvs/ldahm/bin/pip install -e .          # provides the `lda` command
 export PATH="$HOME/.venvs/ldahm/bin:$PATH"
 
-# 2. sanity check: 100 engine tests, no sandbox and no model calls needed
+# 2. sanity check: 117 engine tests, no sandbox and no model calls needed
 python -m unittest discover -s tests         # expect: OK
 bin/lda-hmz check                            # expect: drives: ('builder', 'reviewer')
 
@@ -369,6 +429,16 @@ lda init-card ~/lda-work-soup examples/libsoup3-card.json
 LDA_RESULTS_ROOT=~/lda-runs bin/lda-hmz-drive ~/lda-work-soup soup-production-001
 ```
 
+On a Slurm cluster `tools/slurm/run-card.sbatch` wraps the same thing as a
+job (the host side only orchestrates: 2 cores, 6 GB; `LDA_AGENT_BACKEND=claude|codex`
+selects the agent backend, `LDA_TASK_FILE` carries the card's task hint):
+
+```bash
+sbatch --export=ALL,PKG=libcairo2,WORKSPACE=~/lda-work-cairo,RUN_ID=cairo-001 \
+       tools/slurm/run-card.sbatch
+tools/archive-run.py ~/lda-runs/runs/cairo-001     # afterwards: evidence + traces into runs/
+```
+
 `bin/lda-hmz-drive` is the production entry point: it keeps one run alive
 across transient failures. **Interrupting a run loses nothing** — starting the
 same command again resumes from the state hmz kept, and an infrastructure
@@ -384,6 +454,8 @@ Useful knobs:
 | `LDA_CERT_REPLICATIONS` | fresh-sandbox certification replications (default 2) |
 | `LDA_TURN_TIMEOUT` | wall-clock bound on one agent turn (default 4200s) |
 | `LDA_AGENT_MODEL` | model for both sides (default `claude-opus-4-8`); `LDA_AGENT_MODEL_REVIEWER` overrides the reader side |
+| `LDA_AGENT_BACKEND` | in-sandbox agent CLI: `claude` (default) or `codex`; per role via `LDA_AGENT_BACKEND_REVIEWER` |
+| `LDA_BENCH_EXTENSION_BLOCKS` | how many repetition blocks an under-sampled candidate may add (default 2) |
 | `lda trace <run-dir>` | render a run's behavioral timeline |
 | `tools/e2b/reap-sandboxes.py` | collect sandboxes a SIGKILL'd driver could not release |
 
@@ -406,9 +478,11 @@ src/lda_hm/
   cardgen.py         task-card generator for profiled candidates
   candidates.py priority.py   the ranked list and its scoring
 sandbox/lda-base/    template recipe: Dockerfile, checks, harness, skills
-examples/            generated task cards (libpng, cairo, soup, gtk3/4, sssd)
+examples/            generated task cards (all top-10 plus libpng)
+runs/                archived runs: evidence, candidate patch, .deb checksums, agent traces (gzip)
+tools/               archive-run.py, slurm/run-card.sbatch, e2b/reap-sandboxes.py
 data/                ranked top-30 candidates from the ISO dependency graph
-tests/               100 engine and card tests (no model calls, no sandbox)
+tests/               117 engine and card tests (no model calls, no sandbox)
 docs/FLOW.md         flow mechanics in depth
 docs/BASELINE.md     baseline capture and snapshot alignment
 ```
@@ -423,7 +497,7 @@ skills.
 ## Development
 
 ```bash
-python -m unittest discover -s tests -v   # 100 tests, no model or sandbox needed
+python -m unittest discover -s tests -v   # 117 tests, no model or sandbox needed
 bin/lda-hmz check                         # verify the flow declaration
 ```
 
@@ -479,24 +553,25 @@ executed actions) before certification could run. Re-run queued.
 
 ## Top-10 status
 
-Verdicts as of 2026-08-31. Every candidate is explored with measurements
-*before* any optimization is attempted; per-package evidence sits in
-`explore/<package>/` under the results root.
+Campaign `claude-0902-top10` (from 2026-09-02): all ten cards run through the
+same workflow on Slurm, agent backend Claude (claude-opus-4-8), one E2B sandbox
+per card; per-run evidence lands in `runs/`. The table is updated as runs are
+harvested; until a certified result exists, the status column is the status.
 
-| # | Package | Score | Status | What the evidence says |
-|---|---|---|---|---|
-| 1 | libgtk-4-1 | 71.50 | carded, run queued | the gi driver diluted attribution (~11% of cycles in libgtk-4), so the card uses a compiled dlopen workbench whose three inputs (CSS parse, selector match, full-tree layout) are gtk's own machinery by construction — probed deterministic and linearly scaling before the card opened |
-| 2 | libgtk-3-0t64 | 69.42 | carded, run queued | same compiled workbench, gtk3 API variant; gtk3 style resolution costs ~6× gtk4's per iteration, which is exactly the in-package surface the card rewards |
-| 3 | gnome-shell | 64.28 | **falsified honestly** | the frame loop lives in libmutter/clutter and the JS in gjs; recompiling gnome-shell itself cannot move those hot paths |
-| 4 | libreoffice-core | 63.34 | deferred: not operable per-round | headless convert-to-pdf is a ready e2e workload, but one candidate rebuild costs hours in-sandbox (56G build tree) |
-| 5 | sssd-common | 60.69 | carded, run queued | headless proxy-files domain workbench: installed-mode A/B (`dpkg -i` + daemon restart outside the timed region), seeded NSS lookup schedules with a hidden holdout, fresh-process `getent` e2e |
-| 6 | libcairo2 | 60.20 | measured negative so far | the first deck was mis-attributed (paint/mask are pixman's code, png-load is libz's); on the corrected cairo-owned deck (dashed-bezier stroking, self-intersecting fills, corpus text paths), re-enabling the LTO the packaging had disabled measured +1.38% summed — real but below the pre-registered 2% bar. `target_clones` stacked on LTO regressed (IFUNC defeats cross-TU inlining on serial scan-converter code). The next candidate needs a second mechanism on top of LTO. |
-| 7 | gnome-settings-daemon | 59.67 | deferred: needs a session harness | most gsd plugins need a live session bus; only a startup subset is measurable headlessly |
-| 8 | gstreamer1.0-plugins-good | 59.55 | **falsified for decode** | perf shows 90.3% of decode cycles in the external codec (libvpx); the package's own demux/parse share is under 3% |
-| 9 | ibus | 57.77 | deferred: needs an input fixture | a truthful key-roundtrip benchmark needs a focused window and synthetic input events |
-| 10 | libsoup-3.0-0 | 54.01 | mechanism proven, re-run queued | header parsing (quality lists, params, case-insensitive lookups) is string-heavy `-O2` code entirely inside the package; measured +8.0% train / +7.4% holdout with byte-identical output (see above) |
+| # | Package | Score | Run | Status | Mechanism / verdict |
+|---|---|---|---|---|---|
+| 1 | libgtk-4-1 | 71.50 | `gtk4-c0902-001` | running | known start: flags alone (-O3 -mtune) measured +1.73%, below the 2% gate; needs a source-level CSS parse/match mechanism on top |
+| 2 | libgtk-3-0t64 | 69.42 | `gtk3-c0902-001` | running | an earlier uncertified run measured +3.55% micro / +1.72% e2e |
+| 3 | gnome-shell | 64.28 | `gnome-shell-c0902-001` | running | full headless startup; ~3% own C share, ceiling is the shell's own JS startup logic |
+| 4 | libreoffice-core | 63.34 | `libreoffice-c0902-001` | running | full package build takes hours (~56 GB build tree); one round per day |
+| 5 | sssd-common | 60.69 | `sssd-c0902-001` | running | client mmap decoder route measured −0.2% (excluded); profile first |
+| 6 | libcairo2 | 60.20 | `cairo-c0902-001` | running | re-enabled LTO measured +1.38%; needs a second, additive mechanism |
+| 7 | gnome-settings-daemon | 59.67 | `gsd-c0902-001` | running | plugin start to name ownership; low own share on the startup path |
+| 8 | gstreamer1.0-plugins-good | 59.55 | `gst-good-c0902-001` | running | package-owned filters/effects/audio effects carry the timed work (42–48%) |
+| 9 | ibus | 57.77 | `ibus-c0902-001` | running | registry + key session; ~1–2% own share |
+| 10 | libsoup-3.0-0 | 54.01 | `soup-c0902-001` | running | mechanism proven (header parsing +8.0% / holdout +7.4%); this run certifies it |
 
 "Falsified" is a deliberate, useful outcome: the exploration proved that
-recompiling *that* package cannot move the measured hot paths, because the hot
-code lives somewhere else. Recording it costs one probe and saves a whole run —
-and it is the reason the certified numbers above can be taken at face value.
+recompiling *that* package cannot move the measured hot path because the hot
+code lives elsewhere. Recording it costs one probe and saves a whole run, and
+it is why the certified numbers above deserve to be taken at face value.

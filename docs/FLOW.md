@@ -209,6 +209,15 @@ sandbox, then:
   ratios excludes 1.0. Fewer than three repetitions never certify.
 - The hidden holdout (fixtures from a host-held secret seed the Builder has
   never seen) must independently clear its own minimum.
+- Fixed-rule extension: when the point estimate clears the minimum but the
+  interval still spans 1.0, up to `LDA_BENCH_EXTENSION_BLOCKS` (default 2)
+  further blocks of the card's repetitions are run and the pooled sample is
+  judged. A candidate below the minimum gets no extension.
+- Attribution precedes timing: a workbench refuses to time anything until it
+  has proved the code under test is the side's own build (loaded library
+  paths, installed-file digests, plugin file names). Packages whose binaries
+  are found by absolute path use installed-state A/B: each side's `.deb` set
+  is installed with dpkg outside the timed region.
 
 ## Fresh-sandbox certification (A/B/A')
 
