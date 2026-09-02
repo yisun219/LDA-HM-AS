@@ -41,9 +41,37 @@ apt_options=(
   -o "Dir::Cache=$apt_root/cache"
   -o "APT::Get::List-Cleanup=0"
   -o "Acquire::Check-Valid-Until=false"
+  -o "Acquire::Retries=10"
+  -o "Acquire::http::Timeout=30"
+  -o "Acquire::https::Timeout=30"
 )
 
-apt_update() { apt-get "${apt_options[@]}" update >"$apt_root/update.log" 2>&1; }
+source_index_has_version() {
+  apt-cache "${apt_options[@]}" showsrc "$package" 2>/dev/null \
+    | awk -v wanted="$version" '
+        $1 == "Version:" && $2 == wanted { found = 1 }
+        END { exit(found ? 0 : 1) }
+      '
+}
+
+apt_update() {
+  local attempt
+  : >"$apt_root/update.log"
+  for attempt in 1 2 3; do
+    if apt-get "${apt_options[@]}" update >>"$apt_root/update.log" 2>&1 \
+        && source_index_has_version; then
+      return 0
+    fi
+    echo "APT index attempt $attempt did not expose $package=$version" \
+      >>"$apt_root/update.log"
+    if test "$attempt" -lt 3; then
+      rm -rf "$apt_root/lists/partial"
+      mkdir -p "$apt_root/lists/partial"
+      sleep $((attempt * 10))
+    fi
+  done
+  return 1
+}
 
 origin="$snapshot"
 fallback_used=false
@@ -71,9 +99,21 @@ export LDA_APT_FALLBACK_USED="$fallback_used"
 /opt/lda/harness/checks/align-to-snapshot.sh
 
 mkdir -p "$work"
-find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 cd "$work"
-apt-get "${apt_options[@]}" source "$package=$version"
+source_fetched=false
+for attempt in 1 2 3; do
+  find "$work" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+  if apt-get "${apt_options[@]}" source "$package=$version"; then
+    source_fetched=true
+    break
+  fi
+  echo "source download attempt $attempt failed for $package=$version" >&2
+  test "$attempt" -eq 3 || sleep $((attempt * 15))
+done
+if test "$source_fetched" != true; then
+  echo "source download remained unavailable after retries" >&2
+  exit 75
+fi
 
 source_dir="$(find . -mindepth 1 -maxdepth 1 -type d | head -1)"
 test -n "$source_dir"

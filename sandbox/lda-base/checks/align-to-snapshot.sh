@@ -17,6 +17,9 @@ fi
 OPTS=(-o "Dir::Etc::sourcelist=$sources" -o "Dir::Etc::sourceparts=-"
       -o "Dir::State::lists=$apt_root/lists" -o "Dir::Cache=$apt_root/cache"
       -o "APT::Get::List-Cleanup=0" -o "Acquire::Check-Valid-Until=false")
+OPTS+=(-o "Acquire::Retries=10"
+      -o "Acquire::http::Timeout=30"
+      -o "Acquire::https::Timeout=30")
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 dpkg-query -W -f='${Package} ${Version}\n' | sort >"$tmp/installed"
