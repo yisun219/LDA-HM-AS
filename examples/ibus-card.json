@@ -20,7 +20,7 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/build-package.sh",
       "baseline"
@@ -30,9 +30,9 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/install-top10-workbench.sh"
+      "/opt/lda/harness/checks/install-ibus-workbench.sh"
     ],
     [
       "/opt/lda/harness/checks/install-test-tools.sh"
@@ -42,7 +42,7 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
       "baseline"
@@ -53,18 +53,28 @@
     "LDA_TOP10_PACKAGE=ibus",
     "LDA_PKG_SOURCE=ibus",
     "LDA_PKG_VERSION=1.5.34~rc2-1",
-    "LDA_PKG_RUNTIME_DEBS=ibus",
+    "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
     "LDA_UPSTREAM_TESTS=reference",
     "/opt/lda/harness/checks/ensure-pkg-candidate.sh"
   ],
-  "selfcheck_commands": [],
+  "selfcheck_commands": [
+    [
+      "env",
+      "LDA_TOP10_PACKAGE=ibus",
+      "LDA_PKG_SOURCE=ibus",
+      "LDA_PKG_VERSION=1.5.34~rc2-1",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
+      "LDA_UPSTREAM_TESTS=reference",
+      "/opt/lda/harness/checks/run-ibus-selfcheck.sh"
+    ]
+  ],
   "baseline_tests": [
     [
       "env",
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-generic-build-tests.sh"
     ]
@@ -75,7 +85,7 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-autopkgtest-fence.sh",
       "candidate"
@@ -92,7 +102,7 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-generic-abi-fence.sh"
     ]
@@ -103,9 +113,9 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-ffi-fence.sh"
+      "/opt/lda/harness/checks/run-ibus-ffi-fence.sh"
     ]
   ],
   "behavior_checks": [
@@ -114,9 +124,9 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-ibus-behavior-fence.sh"
     ]
   ],
   "package_lifecycle_checks": [
@@ -125,7 +135,7 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
       "LDA_PKG_PROBE=test -x /usr/bin/ibus-daemon",
       "/opt/lda/harness/checks/run-generic-lifecycle.sh"
@@ -137,7 +147,7 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
       "/opt/lda/harness/checks/run-generic-security-fence.sh"
     ]
@@ -148,70 +158,78 @@
       "LDA_TOP10_PACKAGE=ibus",
       "LDA_PKG_SOURCE=ibus",
       "LDA_PKG_VERSION=1.5.34~rc2-1",
-      "LDA_PKG_RUNTIME_DEBS=ibus",
+      "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
       "LDA_UPSTREAM_TESTS=reference",
-      "/opt/lda/harness/checks/run-top10-behavior-fence.sh"
+      "/opt/lda/harness/checks/run-ibus-behavior-fence.sh"
     ]
   ],
   "micro_benchmarks": [
     {
-      "name": "ibus-engine-list",
-      "repetitions": 5,
-      "timeout_seconds": 900,
+      "name": "ibus-registry-micro",
+      "repetitions": 7,
+      "timeout_seconds": 2400,
       "inputs": [
-        "engine-list"
+        "registry"
       ],
-      "max_regression_percent": 5.0,
-      "min_speedup_percent": 1.0,
+      "max_regression_percent": 2.0,
+      "min_speedup_percent": 2.0,
+      "holdout_min_speedup_percent": 1.0,
+      "holdout_env": "LDA_IBUS_FIXDIR",
+      "holdout_setup": [
+        "env",
+        "LDA_FIXTURE_DIR={dir}",
+        "LDA_FIXTURE_SEED={seed}",
+        "/opt/lda/harness/checks/prepare-ibus-fixtures.sh"
+      ],
       "layer": "micro",
       "command": [
         "env",
         "LDA_TOP10_PACKAGE=ibus",
         "LDA_PKG_SOURCE=ibus",
         "LDA_PKG_VERSION=1.5.34~rc2-1",
-        "LDA_PKG_RUNTIME_DEBS=ibus",
+        "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-ibus-engine-list.sh"
+        "/opt/lda/harness/checks/run-ibus-micro.sh"
       ],
       "baseline_command": [
         "env",
         "LDA_TOP10_PACKAGE=ibus",
         "LDA_PKG_SOURCE=ibus",
         "LDA_PKG_VERSION=1.5.34~rc2-1",
-        "LDA_PKG_RUNTIME_DEBS=ibus",
+        "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-ibus-engine-list.sh",
+        "/opt/lda/harness/checks/run-ibus-micro.sh",
         "baseline"
       ]
     }
   ],
   "end_to_end_benchmarks": [
     {
-      "name": "ibus-daemon-session",
-      "repetitions": 5,
-      "timeout_seconds": 1200,
+      "name": "ibus-key-session-e2e",
+      "repetitions": 7,
+      "timeout_seconds": 2400,
       "inputs": [
-        "daemon-session"
+        "key-session"
       ],
-      "max_regression_percent": 5.0,
+      "max_regression_percent": 3.0,
       "layer": "end_to_end",
       "command": [
         "env",
         "LDA_TOP10_PACKAGE=ibus",
         "LDA_PKG_SOURCE=ibus",
         "LDA_PKG_VERSION=1.5.34~rc2-1",
-        "LDA_PKG_RUNTIME_DEBS=ibus",
+        "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-ibus-daemon-e2e.sh"
+        "/opt/lda/harness/checks/run-ibus-e2e.sh"
       ],
       "baseline_command": [
         "env",
         "LDA_TOP10_PACKAGE=ibus",
         "LDA_PKG_SOURCE=ibus",
         "LDA_PKG_VERSION=1.5.34~rc2-1",
-        "LDA_PKG_RUNTIME_DEBS=ibus",
+        "LDA_PKG_RUNTIME_DEBS=ibus libibus-1.0-5",
         "LDA_UPSTREAM_TESTS=reference",
-        "/opt/lda/harness/checks/run-ibus-daemon-e2e.sh",
+        "/opt/lda/harness/checks/run-ibus-e2e.sh",
         "baseline"
       ]
     }

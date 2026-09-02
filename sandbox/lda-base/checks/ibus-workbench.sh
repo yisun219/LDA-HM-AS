@@ -71,8 +71,13 @@ lda_ibus_registry() {
 # drive key events through an input context (the path every keystroke
 # takes), list engines, and hash the committed text plus engine listing.
 lda_ibus_session() {
-  local mode="$1" keys="$2"
-  IBUS_COMPONENT_PATH="$LDA_IBUS_SESSION_COMPONENTS" dbus-run-session -- \
+  local mode="$1" keys="$2" cache
+  # A fresh registry cache per session: the daemon would otherwise reuse the
+  # registry built from the micro corpus and never see the session's own
+  # component set (no xkb engines -> no engine attached to the context).
+  cache="$LDA_IBUS_SCRATCH/ibus-session-cache-$mode"
+  rm -rf "$cache"; mkdir -p "$cache"
+  XDG_CACHE_HOME="$cache" IBUS_COMPONENT_PATH="$LDA_IBUS_SESSION_COMPONENTS" dbus-run-session -- \
     env LD_LIBRARY_PATH="$(lda_pkg_libdir "$mode")${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     GI_TYPELIB_PATH="$LDA_IBUS_ROOT/usr/lib/x86_64-linux-gnu/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}" \
     python3 /opt/lda/harness/checks/ibus-keys.py "$LDA_IBUS_ROOT/usr/bin/ibus-daemon" "$LDA_IBUS_ROOT/usr/bin/ibus" "$keys" "$IBUS_FIXDIR/keys.txt" "$LDA_IBUS_ROOT/usr/libexec/ibus-memconf" \
