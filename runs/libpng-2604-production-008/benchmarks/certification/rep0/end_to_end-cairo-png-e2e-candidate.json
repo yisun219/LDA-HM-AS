@@ -1,0 +1,156 @@
+{
+  "instrumented": true,
+  "layer": "end_to_end",
+  "median_seconds": 4.965134,
+  "name": "cairo-png-e2e-candidate",
+  "observations": [
+    {
+      "duration_seconds": 5.1294931950978935,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 0,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 4.972725,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045f5-40c8-7883-baa3-16eb35e09c2a",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 85ad80b284dc10bb\nLDA_BENCH[85ad80b284dc10bb] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"candidate\",\"seconds\":4.972725,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=candidate passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.137216488365084,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 1,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 4.976102,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045f5-40c8-7883-baa3-16eb35e09c2a",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE b0701c55cc38a8aa\nLDA_BENCH[b0701c55cc38a8aa] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"candidate\",\"seconds\":4.976102,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=candidate passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.117748069111258,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 2,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 4.962432,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045f5-40c8-7883-baa3-16eb35e09c2a",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE ce5f9820d1ec5e8b\nLDA_BENCH[ce5f9820d1ec5e8b] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"candidate\",\"seconds\":4.962432,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=candidate passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.1251289723441005,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 3,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 4.965134,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045f5-40c8-7883-baa3-16eb35e09c2a",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE e384b577cbc28cf5\nLDA_BENCH[e384b577cbc28cf5] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"candidate\",\"seconds\":4.965134,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=candidate passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.116815865971148,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 4,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 4.958507,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045f5-40c8-7883-baa3-16eb35e09c2a",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 5f8b38fd6403e733\nLDA_BENCH[5f8b38fd6403e733] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"candidate\",\"seconds\":4.958507,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=candidate passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.123877075035125,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 5,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 4.963333,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045f5-40c8-7883-baa3-16eb35e09c2a",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE b33d8d4f35f3c6c2\nLDA_BENCH[b33d8d4f35f3c6c2] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"candidate\",\"seconds\":4.963333,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=candidate passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.129229232203215,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 6,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 0.93,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 4.966978,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045f5-40c8-7883-baa3-16eb35e09c2a",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE d5ab06ca9b20ff9d\nLDA_BENCH[d5ab06ca9b20ff9d] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"candidate\",\"seconds\":4.966978,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":0.93,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=candidate passes=16 files=24 complete\n"
+    }
+  ],
+  "successful": true
+}

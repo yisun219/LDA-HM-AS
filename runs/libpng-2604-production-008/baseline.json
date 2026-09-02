@@ -1,0 +1,20 @@
+{
+  "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260423T120000Z",
+  "architecture": "amd64",
+  "codename": "resolute",
+  "edition": "desktop",
+  "iso_artifact": "https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso",
+  "iso_build_id": "20260423.1",
+  "iso_sha256": "487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2",
+  "manifest_path": "/opt/lda/baseline/manifest/debian-packages.tsv",
+  "manifest_sha256": "2e5f3af7017042ceb8f815f1a11524795881e2959c1c17a6b950e52eead6df80",
+  "metadata_path": "/opt/lda/baseline/baseline.json",
+  "mode": "iso_snapshot",
+  "package_inventory_digest": "a20a71a0735eec63991b4195eefc048ae83327265194f9ebd4c8fad210e13a87",
+  "release": "26.04",
+  "rootfs_digest": "74e340a35a5306017d742150fd7e778e99e0b58023caeaa4b55721f165997690",
+  "snap_inventory_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "snap_manifest_path": "/opt/lda/baseline/manifest/snaps.tsv",
+  "snap_manifest_sha256": "09fcf64fa9471d6dd42b294c059dbf7b0bfa6c5808a78c5fb28a0ffc49e9d454",
+  "template": "01a03892-ee93-7952-9da0-bbc04fb1fdec"
+}

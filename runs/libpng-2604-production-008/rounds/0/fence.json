@@ -1,0 +1,54 @@
+{
+  "results": [
+    {
+      "name": "integrity",
+      "passed": true,
+      "reason": "pinned directories unchanged"
+    },
+    {
+      "name": "baseline_tests",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "dependency_tests",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "abi_checks",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "ffi_checks",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "behavior_checks",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "package_lifecycle_checks",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "security_checks",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "result_equivalence_checks",
+      "passed": true,
+      "reason": "passed"
+    },
+    {
+      "name": "builder_trace",
+      "passed": true,
+      "reason": "passed"
+    }
+  ]
+}

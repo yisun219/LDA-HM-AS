@@ -14,9 +14,27 @@ agent harness（执行框架）是 [Humanize 2](https://github.com/humanfia/huma
 任何东西都不在裸机上跑。
 
 - **快速开始** → [跳转](#快速开始)
+- **工作流交付的是什么** → [输出](#工作流的输出)
 - **什么样的优化才算合格** → [手术刀式替换边界](#手术刀式替换边界abiffi)
 - **工作流如何构建在 Humanize 之上** → [跳转](#工作流如何构建在-humanize-2-之上)
+- **噪声主机上怎么把基准做对** → [跳转](#多租户噪声主机上的基准测试)
+- **十个包各自测什么** → [跳转](#十个包各自测什么)
 - **已测得的加速** → [认证结果，在最底部](#认证结果)
+
+---
+
+## 工作流的输出
+
+一张卡跑完，交付物是三样东西，全部落在 results root 的 `runs/<run-id>/` 里，
+并由 `tools/archive-run.py` 归档进本仓库的 `runs/<run-id>/`：
+
+| 交付物 | 位置 | 说明 |
+|---|---|---|
+| **drop-in `.deb` 包集** | `packages/*.deb` + `SHA256SUMS` | 由固定 Ubuntu 26.04 源码重构建的二进制包，`Package`/`Version`/`Architecture` 与原生完全相同，`dpkg -i` 直接覆盖安装原生包、`dpkg -i` 原生包即回滚；这就是"手术刀式替换"的实体 |
+| **源码补丁** | `candidate.patch` + `candidate-log.txt` | 对固定版本 Ubuntu 源码包的 git diff；任何人在新沙箱里 `apply` 它都能重建出同一套 `.deb`（认证阶段正是这么做的） |
+| **证据包** | `benchmark-summary.json`、`certification-summary.json`、`rounds/`、`raw-traces/*.jsonl.gz`、`finalize-summary.md`、`speedup-report.md` | 配对基准（训练集 + 隐藏 holdout）、新沙箱重认证、逐轮围栏与裁决、每个 agent 回合的完整 stream-json 轨迹、加速机制报告 |
+
+没有 `.deb` 的加速不算交付；没有轨迹的 `.deb` 不算认证。
 
 ---
 
@@ -221,11 +239,50 @@ E2B 沙箱和其他租户共享宿主，所以基准策略的设计目标是让�
   能在无效应处解出效应的 harness 是假阳性发生器，其裁决一律拒收；
 - **finalize 在新沙箱中重放**，新沙箱落在其他宿主上 ——
   只在一台机器上存在的加速不会通过认证。
+- **固定规则扩样**：点估计过了门槛但配对 t 区间仍含 1.0 的候选，
+  不是被否定而是欠采样 —— 自动再补最多两块同样次数的重复，
+  在合并样本上重判（`LDA_BENCH_EXTENSION_BLOCKS`）。规则写死在代码里、
+  与 Builder 无关：低于门槛的候选一次也不补，合并后的区间仍必须自己排除 1.0；
+  这堵住了"7 次重复量不出真实的 2% 效应"这个假阴性来源，又不给钓鱼留门。
+- **安装态 A/B**：typelib、私有库目录、数据文件按绝对路径加载的包
+  （gnome-shell、gnome-settings-daemon、LibreOffice、sssd），
+  每一侧在计时区外用 `dpkg -i` 装上自己那套 `.deb` 再测 ——
+  被测的就是用户会装的那个东西，而不是靠 `LD_LIBRARY_PATH` 拼出来的近似。
+- **归因先于计时**：每个 workbench 在计时前先证明被计时的代码确实来自
+  被测那一侧的构建（加载的 `.so` 路径、安装文件的 sha256、插件文件名），
+  并在开卡前用 `perf` 记录包自身代码占计时周期的份额 ——
+  份额小的包（见下表）会诚实地得到"推不动"的结论，而不是一个噪声里的数字。
+
+E2B 上的基准**是否可信**，这里的答案是：单次数字不可信，配对裁决可信。
+一切裁决只看同一沙箱内交替测出的成对比值，噪声进入区间宽度而不是进入结论；
+A-A 空跑证明仪器不会无中生有；隐藏 holdout 和新沙箱重放证明效应不属于某一台机器。
 
 沙箱测量能力（逐 run 探测并记录）：Firecracker 客户机不暴露 PMU ——
 `cycles` 事件不可用 —— 剖析因此使用软件采样（固定快照里的 `linux-perf`）。
 目标 CPU（Intel Xeon Gold 6548Y+，Emerald Rapids）报告完整的 AVX-512/AMX
 标志集；架构特定工作面向这些标志、但藏在运行时分发之后，包在任何机器上都保持正确。
+
+## 十个包各自测什么
+
+每个包的 micro 工作负载都由包**自己的**代码承担计时工作，每次重复跑数秒，
+输出逐字节哈希，holdout 用宿主持有的种子重新生成；e2e 是穿过该包的真实消费路径。
+"包内份额"是开卡前 `perf cpu-clock` 记录的基线自身周期占比 —— 它决定一个包
+在这套围栏下的天花板。
+
+| 包 | micro（Builder 的局部奖励） | e2e（真实消费路径） | 包内份额 |
+|---|---|---|---|
+| libgtk-4-1 / libgtk-3-0t64 | 编译式 dlopen workbench：CSS 解析、选择器匹配、整树布局（三输入） | GObject-introspection churn | 高（gtk 自有机制） |
+| libcairo2 | 虚线贝塞尔描边、自交填充、语料文本路径（cairo 自有描边器/扫描转换器） | cairo 渲染栈 PNG 加载 | 高（pixman/libz 被排除） |
+| libsoup-3.0-0 | HTTP 头部解析：quality list、参数列表、大小写不敏感查找 | 本地 HTTP 往返 | 高 |
+| sssd-common | 安装态 proxy-files 域上的种子化 NSS 查询表 | 新进程 `getent` | 中（responder + client） |
+| gstreamer1.0-plugins-good | 包内视频滤镜（videoflip/balance/gamma/median/box/crop）、effectv 特效、整数音频效果链（audiodynamic/panorama/amplify/karaoke/invert/level）；每侧独立插件目录 + 私有注册表 | WAV→FLAC 转码 + MJPEG-in-AVI 采集式编码 | 42–48% |
+| libreoffice-core | 种子化 ODF 文档语料（Writer 长文档、Calc 无缓存值公式表）→ PDF，单次 soffice 批量转换 | DOCX/XLSX 导出再导入 | ~40%（libmergedlo + sal） |
+| gnome-shell | 整壳 headless 启动：mutter headless 后端 + GNOME 自己的 mock-session runner 与 test-tool，自动化脚本在壳就绪后退出 | 启动后 overview 显示/隐藏三次 | ~3% C（其余是壳自带 JS 在 gjs 里执行 + 软渲染） |
+| gnome-settings-daemon | 逐个插件启动到占住 `org.gnome.SettingsDaemon.*` 总线名（私有 session/system 总线 + dbusmock 的 logind/UPower/NM/polkit/gnome-session） | 全部插件并行启动（gnome-session 的方式） | 低（启动路径） |
+| ibus | 注册表：种子化组件语料（~280 组件、~11k 引擎描述）写缓存 + 读回 | 守护进程按键会话：12k 次按键经 simple 引擎（含 compose 序列）往返 | ~1–2%（GLib/IPC 为主） |
+
+份额栏是诚实的天花板声明：gnome-shell 与 ibus 这类包，重编译自身 C 代码几乎推不动计时路径，
+能拿到的加速只可能来自它们自己的启动逻辑（JS/配置/序列化），围栏照样判。
 
 ## 监督层（指挥层）
 
@@ -287,7 +344,7 @@ python3.12 -m venv ~/.venvs/ldahm
 export PATH="$HOME/.venvs/ldahm/bin:$PATH"
 
 # 2. 自检：100 个引擎测试，不需要沙箱、不需要模型调用
-python -m unittest discover -s tests         # 预期：OK
+python -m unittest discover -s tests         # 预期：OK（117 个测试）
 bin/lda-hmz check                            # 预期：drives: ('builder', 'reviewer')
 
 # 3. E2B 访问凭据，放在仓库之外（创建沙箱时自动加载）
@@ -324,6 +381,16 @@ lda init-card ~/lda-work-soup examples/libsoup3-card.json
 LDA_RESULTS_ROOT=~/lda-runs bin/lda-hmz-drive ~/lda-work-soup soup-production-001
 ```
 
+在 Slurm 集群上，`tools/slurm/run-card.sbatch` 是同一件事的作业封装
+（宿主侧只做编排，2 核 6G；`LDA_AGENT_BACKEND=claude|codex` 选 agent 后端，
+`LDA_TASK_FILE` 给这张卡的任务提示）：
+
+```bash
+sbatch --export=ALL,PKG=libcairo2,WORKSPACE=~/lda-work-cairo,RUN_ID=cairo-001 \
+       tools/slurm/run-card.sbatch
+tools/archive-run.py ~/lda-runs/runs/cairo-001     # 跑完：证据 + 轨迹归档进仓库 runs/
+```
+
 `bin/lda-hmz-drive` 是生产入口：它让一个 run 跨瞬时故障持续存活。
 **打断一个 run 不会丢任何东西** —— 重新执行同一条命令就从 hmz 保存的状态恢复，
 基础设施故障会把 run 停靠而不是终结。
@@ -338,6 +405,8 @@ LDA_RESULTS_ROOT=~/lda-runs bin/lda-hmz-drive ~/lda-work-soup soup-production-00
 | `LDA_CERT_REPLICATIONS` | 新沙箱认证重放次数（默认 2） |
 | `LDA_TURN_TIMEOUT` | 单个 agent 回合的墙钟上限（默认 4200 秒） |
 | `LDA_AGENT_MODEL` | 两侧模型（默认 `claude-opus-4-8`）；`LDA_AGENT_MODEL_REVIEWER` 覆盖读者侧 |
+| `LDA_AGENT_BACKEND` | 沙箱内 agent CLI：`claude`（默认）或 `codex`；可按角色 `LDA_AGENT_BACKEND_REVIEWER` 覆盖 |
+| `LDA_BENCH_EXTENSION_BLOCKS` | 欠采样候选最多补几块重复（默认 2） |
 | `lda trace <run-dir>` | 渲染一个 run 的行为时间线 |
 | `tools/e2b/reap-sandboxes.py` | 回收被 SIGKILL 的驱动进程没能释放的沙箱 |
 
@@ -360,9 +429,11 @@ src/lda_hm/
   cardgen.py         已剖析候选的任务卡生成器
   candidates.py priority.py   榜单与打分
 sandbox/lda-base/    模板配方：Dockerfile、检查、harness、技能
-examples/            已生成的任务卡（libpng、cairo、soup、gtk3/4、sssd）
+examples/            已生成的任务卡（top-10 全部 + libpng）
+runs/                归档的 run：证据、候选补丁、.deb 校验和、agent 轨迹（gzip）
+tools/               archive-run.py、slurm/run-card.sbatch、e2b/reap-sandboxes.py
 data/                ISO 依赖图排出的 top-30 候选
-tests/               100 个引擎与卡片测试（无模型调用、无沙箱）
+tests/               117 个引擎与卡片测试（无模型调用、无沙箱）
 docs/FLOW.md         流程机制详述
 docs/BASELINE.md     基线采集与快照对齐
 ```
@@ -375,7 +446,7 @@ LDA 的围栏、micro 基准、端到端基准与对抗评审契约，实测出�
 ## 开发
 
 ```bash
-python -m unittest discover -s tests -v   # 100 个测试，不需要模型或沙箱
+python -m unittest discover -s tests -v   # 117 个测试，不需要模型或沙箱
 bin/lda-hmz check                         # 校验流程声明
 ```
 
@@ -426,21 +497,22 @@ GSList+strdup 翻腾；分配次数不变，输出逐字节一致。该 run 在�
 
 ## Top-10 状态
 
-判定截至 2026-08-31。每个候选都在尝试任何优化*之前*先做带测量的探索；
-逐包证据在 results root 的 `explore/<包名>/` 下。
+Campaign `claude-0902-top10`（2026-09-02 起）：十张卡全部在 Slurm 上经同一条工作流运行，
+agent 后端 Claude（claude-opus-4-8），每张卡一只 E2B 沙箱；逐 run 证据见 `runs/`。
+下表随收割更新；在认证结果落地之前，状态栏就是状态，不预告数字。
 
-| # | 包 | 分数 | 状态 | 证据说明 |
-|---|---|---|---|---|
-| 1 | libgtk-4-1 | 71.50 | 已开卡，run 排队中 | gi 驱动稀释了归因（libgtk-4 只占 ~11% cycles），所以卡片改用编译式 dlopen workbench，三个输入（CSS 解析、选择器匹配、全树布局）构造上就是 gtk 自己的机制 —— 开卡前已探明确定性与线性扩展 |
-| 2 | libgtk-3-0t64 | 69.42 | 已开卡，run 排队中 | 同一 workbench 的 gtk3 API 变体；gtk3 样式解析每次迭代的成本约为 gtk4 的 6 倍，恰好是卡片奖励的包内表面 |
-| 3 | gnome-shell | 64.28 | **诚实证伪** | 帧循环在 libmutter/clutter，JS 在 gjs；重编译 gnome-shell 本身推不动那些热路径 |
-| 4 | libreoffice-core | 63.34 | 暂缓：单轮不可操作 | headless convert-to-pdf 是现成的 e2e 工作负载，但一次候选重构建在沙箱内要数小时（56G 构建树） |
-| 5 | sssd-common | 60.69 | 已开卡，run 排队中 | headless proxy-files 域 workbench：安装态 A/B（`dpkg -i` + 守护进程重启在计时区外）、带隐藏 holdout 的种子化 NSS 查询表、新进程 `getent` e2e |
-| 6 | libcairo2 | 60.20 | 目前实测为负 | 第一版 deck 归因错误（paint/mask 是 pixman 的代码、png-load 是 libz 的）；在修正后的 cairo 自有 deck（虚线贝塞尔描边、自交填充、语料文本路径）上，重新启用打包时被禁用的 LTO 实测合计 +1.38% —— 真实但低于预注册的 2% 门槛。LTO 之上再叠 `target_clones` 反而回退（IFUNC 破坏串行扫描转换器代码的跨 TU 内联）。下一个候选需要 LTO 之外的第二种机制。 |
-| 7 | gnome-settings-daemon | 59.67 | 暂缓：需要会话 harness | 多数 gsd 插件需要活的 session bus；headless 只能测启动子集 |
-| 8 | gstreamer1.0-plugins-good | 59.55 | **解码方向证伪** | perf 显示 90.3% 的解码 cycles 在外部编解码器（libvpx）里；包自身 demux/parse 占比不足 3% |
-| 9 | ibus | 57.77 | 暂缓：需要输入 fixture | 真实的按键往返基准需要聚焦窗口与合成输入事件 |
-| 10 | libsoup-3.0-0 | 54.01 | 机制已证明，重跑排队中 | 头部解析（quality list、参数、大小写不敏感查找）是完全在包内的字符串密集 `-O2` 代码；实测 +8.0% 训练 / +7.4% holdout 且输出逐字节一致（见上） |
+| # | 包 | 分数 | run | 状态 | 机制 / 判定 |
+|---|---|---|---|---|---|
+| 1 | libgtk-4-1 | 71.50 | `gtk4-c0902-001` | 运行中 | 已知起点：仅编译选项（-O3 -mtune）实测 +1.73%，低于 2% 门槛，需叠加 CSS 解析/匹配的源码级机制 |
+| 2 | libgtk-3-0t64 | 69.42 | `gtk3-c0902-001` | 运行中 | 早前未认证 run 实测 +3.55% micro / +1.72% e2e |
+| 3 | gnome-shell | 64.28 | `gnome-shell-c0902-001` | 运行中 | 整壳 headless 启动；包内 C 份额 ~3%，天花板在壳自身 JS 启动逻辑 |
+| 4 | libreoffice-core | 63.34 | `libreoffice-c0902-001` | 运行中 | 整包构建以小时计（构建树 ~56G），一轮一天量级 |
+| 5 | sssd-common | 60.69 | `sssd-c0902-001` | 运行中 | 客户端 mmap 解码路线实测 −0.2%（已排除）；剖析先行 |
+| 6 | libcairo2 | 60.20 | `cairo-c0902-001` | 运行中 | 重开 LTO 实测 +1.38%，需第二种叠加机制 |
+| 7 | gnome-settings-daemon | 59.67 | `gsd-c0902-001` | 运行中 | 插件启动到占名；启动路径包内份额低 |
+| 8 | gstreamer1.0-plugins-good | 59.55 | `gst-good-c0902-001` | 运行中 | 包内滤镜/特效/音频效果为计时主体（42–48%） |
+| 9 | ibus | 57.77 | `ibus-c0902-001` | 运行中 | 注册表 + 按键会话；包内份额 ~1–2% |
+| 10 | libsoup-3.0-0 | 54.01 | `soup-c0902-001` | 运行中 | 机制已证明（头部解析 +8.0% / holdout +7.4%），本次重跑认证 |
 
 「证伪」是有意义的产出：探索证明了重编译*那个*包推不动实测热点 ——
 因为热点代码在别处。记下它只花一次探针、省下一整个 run ——

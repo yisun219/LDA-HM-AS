@@ -1,0 +1,189 @@
+{
+  "abi_checks": [
+    [
+      "/opt/lda/harness/checks/run-abi-fence.sh"
+    ]
+  ],
+  "baseline": {
+    "apt_snapshot": "https://snapshot.ubuntu.com/ubuntu/20260423T120000Z",
+    "architecture": "amd64",
+    "codename": "resolute",
+    "edition": "desktop",
+    "iso_artifact": "https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso",
+    "iso_build_id": "20260423.1",
+    "iso_sha256": "487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2",
+    "manifest_path": "/opt/lda/baseline/manifest/debian-packages.tsv",
+    "manifest_sha256": "2e5f3af7017042ceb8f815f1a11524795881e2959c1c17a6b950e52eead6df80",
+    "metadata_path": "/opt/lda/baseline/baseline.json",
+    "mode": "iso_snapshot",
+    "package_inventory_digest": "a20a71a0735eec63991b4195eefc048ae83327265194f9ebd4c8fad210e13a87",
+    "release": "26.04",
+    "rootfs_digest": "74e340a35a5306017d742150fd7e778e99e0b58023caeaa4b55721f165997690",
+    "snap_inventory_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "snap_manifest_path": "/opt/lda/baseline/manifest/snaps.tsv",
+    "snap_manifest_sha256": "09fcf64fa9471d6dd42b294c059dbf7b0bfa6c5808a78c5fb28a0ffc49e9d454",
+    "template": "01a03892-ee93-7952-9da0-bbc04fb1fdec"
+  },
+  "baseline_tests": [
+    [
+      "/opt/lda/harness/checks/run-baseline-tests.sh"
+    ]
+  ],
+  "behavior_checks": [
+    [
+      "/opt/lda/harness/checks/run-behavior-fence.sh"
+    ]
+  ],
+  "compatibility": {
+    "abi_types_unchanged": true,
+    "behavior_unchanged": true,
+    "configuration_preserved": true,
+    "exported_symbols_unchanged": true,
+    "ffi_call_surface_unchanged": true,
+    "result_equivalence_required": true,
+    "security_defaults_preserved": true,
+    "soname_unchanged": true
+  },
+  "dependency_tests": [
+    [
+      "/opt/lda/harness/checks/run-dependency-tests.sh"
+    ]
+  ],
+  "end_to_end_benchmarks": [
+    {
+      "baseline_command": [
+        "/opt/lda/harness/checks/run-cairo-e2e.sh",
+        "baseline"
+      ],
+      "command": [
+        "/opt/lda/harness/checks/run-cairo-e2e.sh"
+      ],
+      "holdout_env": "",
+      "holdout_min_speedup_percent": null,
+      "holdout_setup": [],
+      "inputs": [
+        "cairo-png-load"
+      ],
+      "layer": "end_to_end",
+      "max_regression_percent": 3.0,
+      "min_speedup_percent": 3.0,
+      "name": "cairo-png-e2e",
+      "repetitions": 7,
+      "timeout_seconds": 1800
+    },
+    {
+      "baseline_command": [
+        "/opt/lda/harness/checks/run-pixbuf-e2e.sh",
+        "baseline"
+      ],
+      "command": [
+        "/opt/lda/harness/checks/run-pixbuf-e2e.sh"
+      ],
+      "holdout_env": "",
+      "holdout_min_speedup_percent": null,
+      "holdout_setup": [],
+      "inputs": [
+        "pixbuf-decode"
+      ],
+      "layer": "end_to_end",
+      "max_regression_percent": 3.0,
+      "min_speedup_percent": null,
+      "name": "pixbuf-decode-e2e",
+      "repetitions": 5,
+      "timeout_seconds": 1800
+    }
+  ],
+  "ffi_checks": [
+    [
+      "/opt/lda/harness/checks/run-ffi-fence.sh"
+    ]
+  ],
+  "goal": "Optimize Ubuntu 26.04 libpng for the target CPU while preserving surgical replacement compatibility",
+  "integrity_paths": [
+    "/opt/lda/harness",
+    "/opt/lda/fixtures",
+    "/opt/lda/baseline/root",
+    "/opt/lda/baseline/baseline.json",
+    "/opt/lda/baseline/manifest"
+  ],
+  "lane": "mainline",
+  "metadata": {
+    "execution_template_alias": "lda-production-2604-v10",
+    "execution_template_id": "01a03892-ee93-7952-9da0-bbc04fb1fdec",
+    "iso_package_count": 1814,
+    "iso_snap_count": 14,
+    "optimization_policy": "compatibility-first",
+    "target_cpu": "INTEL(R) XEON(R) GOLD 6548Y+",
+    "target_release": "ubuntu-26.04"
+  },
+  "micro_benchmarks": [
+    {
+      "baseline_command": [
+        "/opt/lda/harness/checks/run-micro-benchmark.sh",
+        "baseline"
+      ],
+      "command": [
+        "/opt/lda/harness/checks/run-micro-benchmark.sh"
+      ],
+      "holdout_env": "LDA_MICRO_FIXTURE_DIR",
+      "holdout_min_speedup_percent": 1.0,
+      "holdout_setup": [
+        "env",
+        "LDA_FIXTURE_DIR={dir}",
+        "LDA_FIXTURE_SEED={seed}",
+        "LDA_FIXTURE_PNGS_ONLY=1",
+        "/opt/lda/harness/checks/prepare-libpng-fixtures.sh"
+      ],
+      "inputs": [
+        "small",
+        "large",
+        "boundary",
+        "incompressible"
+      ],
+      "layer": "micro",
+      "max_regression_percent": 2.0,
+      "min_speedup_percent": 2.0,
+      "name": "libpng-micro",
+      "repetitions": 7,
+      "timeout_seconds": 900
+    }
+  ],
+  "package": {
+    "architecture_fit": 1.0,
+    "dependency_centrality": 0.8,
+    "package": "libpng",
+    "performance_criticality": 0.92,
+    "rationale": "Common image path used by browsers, GUI stacks, and tooling",
+    "usage_frequency": 0.9
+  },
+  "package_lifecycle_checks": [
+    [
+      "/opt/lda/harness/checks/run-package-lifecycle.sh"
+    ]
+  ],
+  "result_equivalence_checks": [
+    [
+      "/opt/lda/harness/checks/run-result-equivalence.sh"
+    ]
+  ],
+  "security_checks": [
+    [
+      "/opt/lda/harness/checks/run-security-fence.sh"
+    ]
+  ],
+  "setup_commands": [
+    [
+      "/opt/lda/harness/checks/prepare-ubuntu-source.sh",
+      "libpng1.6",
+      "1.6.57-1"
+    ],
+    [
+      "/opt/lda/harness/checks/build-libpng-package.sh",
+      "baseline"
+    ],
+    [
+      "/opt/lda/harness/checks/prepare-libpng-fixtures.sh"
+    ]
+  ],
+  "source_reference": "ubuntu:resolute/libpng1.6=1.6.57-1@20260423T120000Z"
+}

@@ -1,0 +1,114 @@
+{
+  "instrumented": true,
+  "layer": "end_to_end",
+  "median_seconds": 14.177134,
+  "name": "pixbuf-decode-e2e",
+  "observations": [
+    {
+      "duration_seconds": 14.378756635822356,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "pixbuf-decode-e2e",
+      "repetition": 0,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "pixbuf-decode",
+          "iterations": 960,
+          "load1": 0.92,
+          "output_hash": "2374fb4d39a0eac3",
+          "seconds": 14.177134,
+          "steal_ticks": 1
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 841e533c9c45a64a\nLDA_BENCH[841e533c9c45a64a] {\"layer\":\"end_to_end\",\"input\":\"pixbuf-decode\",\"mode\":\"baseline\",\"seconds\":14.177134,\"iterations\":960,\"hash\":\"2374fb4d39a0eac3\",\"load1\":0.92,\"steal_ticks\":1,\"cpus\":2}\npixbuf e2e mode=baseline passes=40 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 14.318655811715871,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "pixbuf-decode-e2e",
+      "repetition": 1,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "pixbuf-decode",
+          "iterations": 960,
+          "load1": 1.02,
+          "output_hash": "2374fb4d39a0eac3",
+          "seconds": 14.119199,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE a49bef1b3f77c724\nLDA_BENCH[a49bef1b3f77c724] {\"layer\":\"end_to_end\",\"input\":\"pixbuf-decode\",\"mode\":\"baseline\",\"seconds\":14.119199,\"iterations\":960,\"hash\":\"2374fb4d39a0eac3\",\"load1\":1.02,\"steal_ticks\":0,\"cpus\":2}\npixbuf e2e mode=baseline passes=40 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 14.503275204915553,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "pixbuf-decode-e2e",
+      "repetition": 2,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "pixbuf-decode",
+          "iterations": 960,
+          "load1": 1.02,
+          "output_hash": "2374fb4d39a0eac3",
+          "seconds": 14.30829,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 1a6005a0e36a34b1\nLDA_BENCH[1a6005a0e36a34b1] {\"layer\":\"end_to_end\",\"input\":\"pixbuf-decode\",\"mode\":\"baseline\",\"seconds\":14.308290,\"iterations\":960,\"hash\":\"2374fb4d39a0eac3\",\"load1\":1.02,\"steal_ticks\":0,\"cpus\":2}\npixbuf e2e mode=baseline passes=40 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 14.39976915391162,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "pixbuf-decode-e2e",
+      "repetition": 3,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "pixbuf-decode",
+          "iterations": 960,
+          "load1": 1.16,
+          "output_hash": "2374fb4d39a0eac3",
+          "seconds": 14.190173,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE eedeac5f755fff31\nLDA_BENCH[eedeac5f755fff31] {\"layer\":\"end_to_end\",\"input\":\"pixbuf-decode\",\"mode\":\"baseline\",\"seconds\":14.190173,\"iterations\":960,\"hash\":\"2374fb4d39a0eac3\",\"load1\":1.16,\"steal_ticks\":0,\"cpus\":2}\npixbuf e2e mode=baseline passes=40 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 14.279353999067098,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "pixbuf-decode-e2e",
+      "repetition": 4,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "pixbuf-decode",
+          "iterations": 960,
+          "load1": 1.19,
+          "output_hash": "2374fb4d39a0eac3",
+          "seconds": 14.080701,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE b9db9f6885a3f06d\nLDA_BENCH[b9db9f6885a3f06d] {\"layer\":\"end_to_end\",\"input\":\"pixbuf-decode\",\"mode\":\"baseline\",\"seconds\":14.080701,\"iterations\":960,\"hash\":\"2374fb4d39a0eac3\",\"load1\":1.19,\"steal_ticks\":0,\"cpus\":2}\npixbuf e2e mode=baseline passes=40 files=24 complete\n"
+    }
+  ],
+  "successful": true
+}

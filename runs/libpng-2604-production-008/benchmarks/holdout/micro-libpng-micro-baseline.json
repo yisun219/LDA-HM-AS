@@ -1,0 +1,345 @@
+{
+  "instrumented": true,
+  "layer": "micro",
+  "median_seconds": 10.305533,
+  "name": "libpng-micro-baseline",
+  "observations": [
+    {
+      "duration_seconds": 10.462248841300607,
+      "exit_code": 0,
+      "layer": "micro",
+      "name": "libpng-micro",
+      "repetition": 0,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "boundary",
+          "iterations": 240000,
+          "load1": 1.01,
+          "output_hash": "9dd1c3dc612fa203",
+          "seconds": 0.636965,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "small",
+          "iterations": 24000,
+          "load1": 1.01,
+          "output_hash": "12ce2bcbbc6fb9c3",
+          "seconds": 1.255545,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "large",
+          "iterations": 240,
+          "load1": 1.0,
+          "output_hash": "1d16dbb20b9f4893",
+          "seconds": 3.187181,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "incompressible",
+          "iterations": 720,
+          "load1": 1.0,
+          "output_hash": "1fd4d5de15f82253",
+          "seconds": 5.225842,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 11d75e5106a06884\nLDA_BENCH[11d75e5106a06884] {\"layer\":\"micro\",\"input\":\"boundary\",\"mode\":\"baseline\",\"seconds\":0.636965,\"iterations\":240000,\"hash\":\"9dd1c3dc612fa203\",\"load1\":1.01,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[11d75e5106a06884] {\"layer\":\"micro\",\"input\":\"small\",\"mode\":\"baseline\",\"seconds\":1.255545,\"iterations\":24000,\"hash\":\"12ce2bcbbc6fb9c3\",\"load1\":1.01,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[11d75e5106a06884] {\"layer\":\"micro\",\"input\":\"large\",\"mode\":\"baseline\",\"seconds\":3.187181,\"iterations\":240,\"hash\":\"1d16dbb20b9f4893\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[11d75e5106a06884] {\"layer\":\"micro\",\"input\":\"incompressible\",\"mode\":\"baseline\",\"seconds\":5.225842,\"iterations\":720,\"hash\":\"1fd4d5de15f82253\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nmicro mode=baseline fixdir=/tmp/lda-holdout-libpng-2604-production-008-r0 mult=20 complete\n"
+    },
+    {
+      "duration_seconds": 10.536081991158426,
+      "exit_code": 0,
+      "layer": "micro",
+      "name": "libpng-micro",
+      "repetition": 1,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "boundary",
+          "iterations": 240000,
+          "load1": 1.0,
+          "output_hash": "9dd1c3dc612fa203",
+          "seconds": 0.674799,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "small",
+          "iterations": 24000,
+          "load1": 1.0,
+          "output_hash": "12ce2bcbbc6fb9c3",
+          "seconds": 1.261015,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "large",
+          "iterations": 240,
+          "load1": 1.0,
+          "output_hash": "1d16dbb20b9f4893",
+          "seconds": 3.217247,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "incompressible",
+          "iterations": 720,
+          "load1": 1.0,
+          "output_hash": "1fd4d5de15f82253",
+          "seconds": 5.220377,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 8b865e80f1a6b57f\nLDA_BENCH[8b865e80f1a6b57f] {\"layer\":\"micro\",\"input\":\"boundary\",\"mode\":\"baseline\",\"seconds\":0.674799,\"iterations\":240000,\"hash\":\"9dd1c3dc612fa203\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[8b865e80f1a6b57f] {\"layer\":\"micro\",\"input\":\"small\",\"mode\":\"baseline\",\"seconds\":1.261015,\"iterations\":24000,\"hash\":\"12ce2bcbbc6fb9c3\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[8b865e80f1a6b57f] {\"layer\":\"micro\",\"input\":\"large\",\"mode\":\"baseline\",\"seconds\":3.217247,\"iterations\":240,\"hash\":\"1d16dbb20b9f4893\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[8b865e80f1a6b57f] {\"layer\":\"micro\",\"input\":\"incompressible\",\"mode\":\"baseline\",\"seconds\":5.220377,\"iterations\":720,\"hash\":\"1fd4d5de15f82253\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nmicro mode=baseline fixdir=/tmp/lda-holdout-libpng-2604-production-008-r0 mult=20 complete\n"
+    },
+    {
+      "duration_seconds": 10.45676183886826,
+      "exit_code": 0,
+      "layer": "micro",
+      "name": "libpng-micro",
+      "repetition": 2,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "boundary",
+          "iterations": 240000,
+          "load1": 1.0,
+          "output_hash": "9dd1c3dc612fa203",
+          "seconds": 0.632615,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "small",
+          "iterations": 24000,
+          "load1": 1.0,
+          "output_hash": "12ce2bcbbc6fb9c3",
+          "seconds": 1.253693,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "large",
+          "iterations": 240,
+          "load1": 1.0,
+          "output_hash": "1d16dbb20b9f4893",
+          "seconds": 3.185039,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "incompressible",
+          "iterations": 720,
+          "load1": 1.0,
+          "output_hash": "1fd4d5de15f82253",
+          "seconds": 5.221204,
+          "steal_ticks": 1
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE a72a1d63349b78ec\nLDA_BENCH[a72a1d63349b78ec] {\"layer\":\"micro\",\"input\":\"boundary\",\"mode\":\"baseline\",\"seconds\":0.632615,\"iterations\":240000,\"hash\":\"9dd1c3dc612fa203\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[a72a1d63349b78ec] {\"layer\":\"micro\",\"input\":\"small\",\"mode\":\"baseline\",\"seconds\":1.253693,\"iterations\":24000,\"hash\":\"12ce2bcbbc6fb9c3\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[a72a1d63349b78ec] {\"layer\":\"micro\",\"input\":\"large\",\"mode\":\"baseline\",\"seconds\":3.185039,\"iterations\":240,\"hash\":\"1d16dbb20b9f4893\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[a72a1d63349b78ec] {\"layer\":\"micro\",\"input\":\"incompressible\",\"mode\":\"baseline\",\"seconds\":5.221204,\"iterations\":720,\"hash\":\"1fd4d5de15f82253\",\"load1\":1.00,\"steal_ticks\":1,\"cpus\":2}\nmicro mode=baseline fixdir=/tmp/lda-holdout-libpng-2604-production-008-r0 mult=20 complete\n"
+    },
+    {
+      "duration_seconds": 10.450157856103033,
+      "exit_code": 0,
+      "layer": "micro",
+      "name": "libpng-micro",
+      "repetition": 3,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "boundary",
+          "iterations": 240000,
+          "load1": 1.0,
+          "output_hash": "9dd1c3dc612fa203",
+          "seconds": 0.640724,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "small",
+          "iterations": 24000,
+          "load1": 1.0,
+          "output_hash": "12ce2bcbbc6fb9c3",
+          "seconds": 1.253066,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "large",
+          "iterations": 240,
+          "load1": 1.0,
+          "output_hash": "1d16dbb20b9f4893",
+          "seconds": 3.182072,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "incompressible",
+          "iterations": 720,
+          "load1": 1.0,
+          "output_hash": "1fd4d5de15f82253",
+          "seconds": 5.214873,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 47bad384ea8b34ce\nLDA_BENCH[47bad384ea8b34ce] {\"layer\":\"micro\",\"input\":\"boundary\",\"mode\":\"baseline\",\"seconds\":0.640724,\"iterations\":240000,\"hash\":\"9dd1c3dc612fa203\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[47bad384ea8b34ce] {\"layer\":\"micro\",\"input\":\"small\",\"mode\":\"baseline\",\"seconds\":1.253066,\"iterations\":24000,\"hash\":\"12ce2bcbbc6fb9c3\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[47bad384ea8b34ce] {\"layer\":\"micro\",\"input\":\"large\",\"mode\":\"baseline\",\"seconds\":3.182072,\"iterations\":240,\"hash\":\"1d16dbb20b9f4893\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[47bad384ea8b34ce] {\"layer\":\"micro\",\"input\":\"incompressible\",\"mode\":\"baseline\",\"seconds\":5.214873,\"iterations\":720,\"hash\":\"1fd4d5de15f82253\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nmicro mode=baseline fixdir=/tmp/lda-holdout-libpng-2604-production-008-r0 mult=20 complete\n"
+    },
+    {
+      "duration_seconds": 10.465115933679044,
+      "exit_code": 0,
+      "layer": "micro",
+      "name": "libpng-micro",
+      "repetition": 4,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "boundary",
+          "iterations": 240000,
+          "load1": 1.0,
+          "output_hash": "9dd1c3dc612fa203",
+          "seconds": 0.63535,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "small",
+          "iterations": 24000,
+          "load1": 1.0,
+          "output_hash": "12ce2bcbbc6fb9c3",
+          "seconds": 1.263684,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "large",
+          "iterations": 240,
+          "load1": 1.0,
+          "output_hash": "1d16dbb20b9f4893",
+          "seconds": 3.186751,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "incompressible",
+          "iterations": 720,
+          "load1": 1.0,
+          "output_hash": "1fd4d5de15f82253",
+          "seconds": 5.223167,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 331a8bcd7247258b\nLDA_BENCH[331a8bcd7247258b] {\"layer\":\"micro\",\"input\":\"boundary\",\"mode\":\"baseline\",\"seconds\":0.635350,\"iterations\":240000,\"hash\":\"9dd1c3dc612fa203\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[331a8bcd7247258b] {\"layer\":\"micro\",\"input\":\"small\",\"mode\":\"baseline\",\"seconds\":1.263684,\"iterations\":24000,\"hash\":\"12ce2bcbbc6fb9c3\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[331a8bcd7247258b] {\"layer\":\"micro\",\"input\":\"large\",\"mode\":\"baseline\",\"seconds\":3.186751,\"iterations\":240,\"hash\":\"1d16dbb20b9f4893\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[331a8bcd7247258b] {\"layer\":\"micro\",\"input\":\"incompressible\",\"mode\":\"baseline\",\"seconds\":5.223167,\"iterations\":720,\"hash\":\"1fd4d5de15f82253\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nmicro mode=baseline fixdir=/tmp/lda-holdout-libpng-2604-production-008-r0 mult=20 complete\n"
+    },
+    {
+      "duration_seconds": 10.454177305102348,
+      "exit_code": 0,
+      "layer": "micro",
+      "name": "libpng-micro",
+      "repetition": 5,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "boundary",
+          "iterations": 240000,
+          "load1": 1.0,
+          "output_hash": "9dd1c3dc612fa203",
+          "seconds": 0.633444,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "small",
+          "iterations": 24000,
+          "load1": 1.0,
+          "output_hash": "12ce2bcbbc6fb9c3",
+          "seconds": 1.25268,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "large",
+          "iterations": 240,
+          "load1": 1.0,
+          "output_hash": "1d16dbb20b9f4893",
+          "seconds": 3.192384,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "incompressible",
+          "iterations": 720,
+          "load1": 1.0,
+          "output_hash": "1fd4d5de15f82253",
+          "seconds": 5.220126,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE fcb1e50262fe1ec9\nLDA_BENCH[fcb1e50262fe1ec9] {\"layer\":\"micro\",\"input\":\"boundary\",\"mode\":\"baseline\",\"seconds\":0.633444,\"iterations\":240000,\"hash\":\"9dd1c3dc612fa203\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[fcb1e50262fe1ec9] {\"layer\":\"micro\",\"input\":\"small\",\"mode\":\"baseline\",\"seconds\":1.252680,\"iterations\":24000,\"hash\":\"12ce2bcbbc6fb9c3\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[fcb1e50262fe1ec9] {\"layer\":\"micro\",\"input\":\"large\",\"mode\":\"baseline\",\"seconds\":3.192384,\"iterations\":240,\"hash\":\"1d16dbb20b9f4893\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[fcb1e50262fe1ec9] {\"layer\":\"micro\",\"input\":\"incompressible\",\"mode\":\"baseline\",\"seconds\":5.220126,\"iterations\":720,\"hash\":\"1fd4d5de15f82253\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nmicro mode=baseline fixdir=/tmp/lda-holdout-libpng-2604-production-008-r0 mult=20 complete\n"
+    },
+    {
+      "duration_seconds": 10.473747288808227,
+      "exit_code": 0,
+      "layer": "micro",
+      "name": "libpng-micro",
+      "repetition": 6,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "boundary",
+          "iterations": 240000,
+          "load1": 1.0,
+          "output_hash": "9dd1c3dc612fa203",
+          "seconds": 0.656822,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "small",
+          "iterations": 24000,
+          "load1": 1.0,
+          "output_hash": "12ce2bcbbc6fb9c3",
+          "seconds": 1.248215,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "large",
+          "iterations": 240,
+          "load1": 1.0,
+          "output_hash": "1d16dbb20b9f4893",
+          "seconds": 3.18968,
+          "steal_ticks": 0
+        },
+        {
+          "cpus": 2,
+          "input": "incompressible",
+          "iterations": 720,
+          "load1": 1.0,
+          "output_hash": "1fd4d5de15f82253",
+          "seconds": 5.221972,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 51faf11d2afd9d96\nLDA_BENCH[51faf11d2afd9d96] {\"layer\":\"micro\",\"input\":\"boundary\",\"mode\":\"baseline\",\"seconds\":0.656822,\"iterations\":240000,\"hash\":\"9dd1c3dc612fa203\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[51faf11d2afd9d96] {\"layer\":\"micro\",\"input\":\"small\",\"mode\":\"baseline\",\"seconds\":1.248215,\"iterations\":24000,\"hash\":\"12ce2bcbbc6fb9c3\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[51faf11d2afd9d96] {\"layer\":\"micro\",\"input\":\"large\",\"mode\":\"baseline\",\"seconds\":3.189680,\"iterations\":240,\"hash\":\"1d16dbb20b9f4893\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nLDA_BENCH[51faf11d2afd9d96] {\"layer\":\"micro\",\"input\":\"incompressible\",\"mode\":\"baseline\",\"seconds\":5.221972,\"iterations\":720,\"hash\":\"1fd4d5de15f82253\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\nmicro mode=baseline fixdir=/tmp/lda-holdout-libpng-2604-production-008-r0 mult=20 complete\n"
+    }
+  ],
+  "successful": true
+}

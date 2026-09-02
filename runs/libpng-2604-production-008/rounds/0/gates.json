@@ -1,0 +1,94 @@
+{
+  "results": [
+    {
+      "name": "state_schema",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "branch_anchor",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "plan_integrity",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "open_blocking_tasks",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "git_status_available",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "large_changed_files",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "methodology_phase",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "git_clean",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "unpushed_commits",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "round_summary",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "round_contract",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "bitlesson_delta",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "goal_tracker",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "max_iterations",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    },
+    {
+      "name": "finalize_complete",
+      "passed": true,
+      "reason": "",
+      "terminal_phase": null
+    }
+  ]
+}

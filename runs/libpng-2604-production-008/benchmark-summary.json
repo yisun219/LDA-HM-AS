@@ -1,0 +1,172 @@
+{
+  "comparisons": [
+    {
+      "baseline_drift_percent": 2.4807755657540036,
+      "baseline_total_median": 10.324231000000001,
+      "candidate_total_median": 9.675671999999999,
+      "certified": true,
+      "holdout": {
+        "baseline_drift_percent": 0.8025106513171167,
+        "baseline_total_median": 10.305533,
+        "candidate_total_median": 9.652358,
+        "layer": "micro",
+        "max_load1": 1.01,
+        "max_steal_fraction": 0.0009807165625178367,
+        "max_steal_ticks": 1,
+        "min_speedup_percent": 1.0,
+        "name": "libpng-micro",
+        "noise_percent": 0.38466291667334507,
+        "overall_ratio_median": 0.9366407234202128,
+        "overall_speedup_percent": 6.764522937720052,
+        "per_input": {
+          "boundary": {
+            "baseline_median_seconds": 0.636965,
+            "candidate_median_seconds": 0.643699,
+            "ratio_of_medians": 1.0105720094510688,
+            "rep_ratio_max": 1.0208892736287087,
+            "rep_ratio_min": 0.9475992110243198,
+            "speedup_percent": -1.0461411311808888
+          },
+          "incompressible": {
+            "baseline_median_seconds": 5.221204,
+            "candidate_median_seconds": 5.100009,
+            "ratio_of_medians": 0.9767879209469693,
+            "rep_ratio_max": 0.9819892318121852,
+            "rep_ratio_min": 0.9737900396445297,
+            "speedup_percent": 2.376368355428382
+          },
+          "large": {
+            "baseline_median_seconds": 3.187181,
+            "candidate_median_seconds": 2.806155,
+            "ratio_of_medians": 0.8804504670428194,
+            "rep_ratio_max": 0.8827628664593385,
+            "rep_ratio_min": 0.872839107472942,
+            "speedup_percent": 13.578223583515525
+          },
+          "small": {
+            "baseline_median_seconds": 1.253693,
+            "candidate_median_seconds": 1.104091,
+            "ratio_of_medians": 0.880670945757853,
+            "rep_ratio_max": 0.8901680146868491,
+            "rep_ratio_min": 0.8707366715096495,
+            "speedup_percent": 13.54978892138421
+          }
+        },
+        "ratio_ci95_lower": 0.93426347878167,
+        "ratio_ci95_upper": 0.9391066106854847,
+        "repetitions": 7,
+        "speedup_ci95_lower_percent": 6.484182799018656
+      },
+      "layer": "micro",
+      "max_load1": 1.01,
+      "max_regression_percent": 2.0,
+      "max_steal_fraction": 0.0015473428100859518,
+      "max_steal_ticks": 1,
+      "min_speedup_percent": 2.0,
+      "name": "libpng-micro",
+      "noise_percent": 2.654968166967464,
+      "overall_ratio_median": 0.9366199959528518,
+      "overall_speedup_percent": 6.7668856442328895,
+      "per_input": {
+        "boundary": {
+          "baseline_median_seconds": 0.657961,
+          "candidate_median_seconds": 0.663486,
+          "ratio_of_medians": 1.0083971542386252,
+          "rep_ratio_max": 1.0449079407732549,
+          "rep_ratio_min": 0.9813081450256491,
+          "speedup_percent": -0.8327229210563725
+        },
+        "incompressible": {
+          "baseline_median_seconds": 5.200304,
+          "candidate_median_seconds": 5.086256,
+          "ratio_of_medians": 0.9780689744291872,
+          "rep_ratio_max": 1.0149952771991793,
+          "rep_ratio_min": 0.9579973089915808,
+          "speedup_percent": 2.242278013532939
+        },
+        "large": {
+          "baseline_median_seconds": 3.199387,
+          "candidate_median_seconds": 2.810362,
+          "ratio_of_medians": 0.8784063947249895,
+          "rep_ratio_max": 0.9182263660085389,
+          "rep_ratio_min": 0.8503101690992618,
+          "speedup_percent": 13.84252277820437
+        },
+        "small": {
+          "baseline_median_seconds": 1.274493,
+          "candidate_median_seconds": 1.120654,
+          "ratio_of_medians": 0.8792939623834732,
+          "rep_ratio_max": 0.8863614336541047,
+          "rep_ratio_min": 0.8743660644343813,
+          "speedup_percent": 13.727609056854305
+        }
+      },
+      "ratio_ci95_lower": 0.9229167709796134,
+      "ratio_ci95_upper": 0.952640878937392,
+      "repetitions": 7,
+      "speedup_ci95_lower_percent": 4.971350916143136
+    },
+    {
+      "baseline_drift_percent": 0.6122102226453721,
+      "baseline_total_median": 5.579456,
+      "candidate_total_median": 4.962293,
+      "certified": true,
+      "layer": "end_to_end",
+      "max_load1": 1.0,
+      "max_regression_percent": 3.0,
+      "max_steal_fraction": 0.0010063946314884777,
+      "max_steal_ticks": 1,
+      "min_speedup_percent": 3.0,
+      "name": "cairo-png-e2e",
+      "noise_percent": 0.3591543860565871,
+      "overall_ratio_median": 0.889653989326079,
+      "overall_speedup_percent": 12.403250252101849,
+      "per_input": {
+        "cairo-png-load": {
+          "baseline_median_seconds": 5.579456,
+          "candidate_median_seconds": 4.962293,
+          "ratio_of_medians": 0.8893865280055976,
+          "rep_ratio_max": 0.891202634886315,
+          "rep_ratio_min": 0.8840195471651833,
+          "speedup_percent": 12.437052789909831
+        }
+      },
+      "ratio_ci95_lower": 0.8869042750988737,
+      "ratio_ci95_upper": 0.8911785168424732,
+      "repetitions": 7,
+      "speedup_ci95_lower_percent": 12.210963471504144
+    },
+    {
+      "baseline_drift_percent": 2.3616321104434324,
+      "baseline_total_median": 14.301042,
+      "candidate_total_median": 14.462672,
+      "certified": false,
+      "layer": "end_to_end",
+      "max_load1": 1.24,
+      "max_regression_percent": 3.0,
+      "max_steal_fraction": 0.00034538071938382974,
+      "max_steal_ticks": 1,
+      "min_speedup_percent": null,
+      "name": "pixbuf-decode-e2e",
+      "noise_percent": 1.6127914458000825,
+      "overall_ratio_median": 1.0118238237465493,
+      "overall_speedup_percent": -1.1685654625889774,
+      "per_input": {
+        "pixbuf-decode": {
+          "baseline_median_seconds": 14.301042,
+          "candidate_median_seconds": 14.462672,
+          "ratio_of_medians": 1.0113019736603808,
+          "rep_ratio_max": 1.0181897031077312,
+          "rep_ratio_min": 0.9859338741917295,
+          "speedup_percent": -1.1175666571156317
+        }
+      },
+      "ratio_ci95_lower": 0.9897045495770656,
+      "ratio_ci95_upper": 1.0238948702589254,
+      "repetitions": 5,
+      "speedup_ci95_lower_percent": -2.3337230171768364
+    }
+  ],
+  "pairing": "same sandbox, per-repetition alternating order",
+  "timing_source": "in-sandbox LDA_BENCH samples (host transport excluded)"
+}

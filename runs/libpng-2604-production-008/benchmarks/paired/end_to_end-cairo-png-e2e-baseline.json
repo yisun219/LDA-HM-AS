@@ -1,0 +1,156 @@
+{
+  "instrumented": true,
+  "layer": "end_to_end",
+  "median_seconds": 5.579456,
+  "name": "cairo-png-e2e-baseline",
+  "observations": [
+    {
+      "duration_seconds": 5.7424339088611305,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 0,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 5.576863,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE e51695010fdd1e2b\nLDA_BENCH[e51695010fdd1e2b] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"baseline\",\"seconds\":5.576863,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=baseline passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.745651015080512,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 1,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 5.579456,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 98d876779630dfc5\nLDA_BENCH[98d876779630dfc5] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"baseline\",\"seconds\":5.579456,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=baseline passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.751901973970234,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 2,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 5.575658,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 7aad9a87ae519be6\nLDA_BENCH[7aad9a87ae519be6] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"baseline\",\"seconds\":5.575658,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=baseline passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 6.005796500016004,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 3,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 5.576099,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 74571b0511a01080\nLDA_BENCH[74571b0511a01080] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"baseline\",\"seconds\":5.576099,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=baseline passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.756859650835395,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 4,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 5.589199,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE 0649840c99da5bfe\nLDA_BENCH[0649840c99da5bfe] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"baseline\",\"seconds\":5.589199,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=baseline passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.75207230495289,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 5,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 5.584452,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE f8ee01d0ab44119e\nLDA_BENCH[f8ee01d0ab44119e] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"baseline\",\"seconds\":5.584452,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=baseline passes=16 files=24 complete\n"
+    },
+    {
+      "duration_seconds": 5.775971530005336,
+      "exit_code": 0,
+      "layer": "end_to_end",
+      "name": "cairo-png-e2e",
+      "repetition": 6,
+      "samples": [
+        {
+          "cpus": 2,
+          "input": "cairo-png-load",
+          "iterations": 384,
+          "load1": 1.0,
+          "output_hash": "4925f5244f3fa503",
+          "seconds": 5.609816,
+          "steal_ticks": 0
+        }
+      ],
+      "sandbox_id": "01a045cc-55c9-7a61-858d-3e683f819775",
+      "stderr_tail": "",
+      "stdout_tail": "LDA_BENCH_NONCE e3b68617f0c71bc3\nLDA_BENCH[e3b68617f0c71bc3] {\"layer\":\"end_to_end\",\"input\":\"cairo-png-load\",\"mode\":\"baseline\",\"seconds\":5.609816,\"iterations\":384,\"hash\":\"4925f5244f3fa503\",\"load1\":1.00,\"steal_ticks\":0,\"cpus\":2}\ncairo e2e mode=baseline passes=16 files=24 complete\n"
+    }
+  ],
+  "successful": true
+}

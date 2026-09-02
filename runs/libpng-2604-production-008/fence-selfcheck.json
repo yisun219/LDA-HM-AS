@@ -1,0 +1,5 @@
+{
+  "passed": true,
+  "stderr": "",
+  "stdout": "SELFCHECK abi comparator flags a wrong library\nSELFCHECK abidiff does not accept a wrong library\nSELFCHECK abidiff self-comparison completes with debug info\nSELFCHECK behavior hash is deterministic and content-sensitive\nSELFCHECK in-sandbox timer sane (A/A ratio ok)\nSELFCHECK all known-bad probes behaved\n"
+}

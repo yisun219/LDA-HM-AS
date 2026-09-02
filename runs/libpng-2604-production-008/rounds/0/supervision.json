@@ -1,0 +1,31 @@
+{
+  "decision": {
+    "action": "continue",
+    "contract": "Advance the highest-priority unmet acceptance criterion",
+    "reason": "on track",
+    "source": "rules"
+  },
+  "epoch": 1787878711.1526706,
+  "pulse": {
+    "benchmark_summary": "",
+    "budget_usd": 300.0,
+    "builder_trace": {
+      "errors": 0,
+      "events": 0,
+      "output_tokens": 0,
+      "results": 0,
+      "tool_uses": 0,
+      "total_cost_usd": 0.0,
+      "turns": 0
+    },
+    "last_verdict": "",
+    "phase": "implementation",
+    "recent_blocks": [],
+    "recent_feedback": [],
+    "round": 0,
+    "sandbox_disk_avail_gb": 56.0,
+    "sandbox_load1": 0.0,
+    "spent_usd": 3.3433325000000003,
+    "stall_count": 0
+  }
+}

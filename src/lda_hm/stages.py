@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from .benchmark import BenchmarkEnvironmentError
 from .flow import HumanizeFlow
-from .fence import FenceResult, FenceSuite, parse_p_severity
+from .fence import sha256_file, FenceResult, FenceSuite, parse_p_severity
 from .gates import GateContext, GateRunner
 from .prompts import (
     BUILDER_ROUND,
@@ -416,14 +416,42 @@ class HumanizeStages:
             reason = "final candidate identity is unavailable"
             self.flow.reopen_from_finalize(reason)
             return reason
+        packages_note = self._export_candidate_packages(sandbox)
         summary = (
             "Final deterministic fences passed.\n\n"
             f"{certification_note}\n\n"
             f"Git commit: {commit.stdout.strip()}\n\n"
-            f"Candidate package: {package.stdout.strip()}"
+            f"Candidate package: {package.stdout.strip()}\n\n"
+            f"{packages_note}"
         )
         self.flow.record_finalize(summary)
         return summary
+
+    def _export_candidate_packages(self, sandbox) -> str:
+        """Copy the certified drop-in .debs out of the sandbox.
+
+        The durable deliverable of a run is the candidate .deb set (same
+        Package/Version/Architecture as stock, installable with dpkg -i over
+        the stock packages) next to the patch and the evidence. The patch
+        alone can always rebuild them in a fresh sandbox; keeping the built
+        artifacts saves a user from having to.
+        """
+        get = getattr(sandbox, "get", None)
+        listing = sandbox.run(("cat", "/opt/lda/candidate/runtime-debs.list"))
+        if get is None or not listing.ok or not listing.stdout.strip():
+            return "Packages: not exported (no runtime deb list in the sandbox)"
+        target = self.flow.store.root / "packages"
+        target.mkdir(parents=True, exist_ok=True)
+        exported = []
+        for remote in listing.stdout.split():
+            local = target / Path(remote).name
+            try:
+                get(remote, local)
+            except Exception as error:  # evidence first: never fail finalize on a copy
+                return f"Packages: export failed for {remote}: {error}"
+            exported.append(f"{sha256_file(local)}  {local.name}")
+        (target / "SHA256SUMS").write_text("\n".join(exported) + "\n", encoding="utf-8")
+        return "Packages: " + ", ".join(Path(line.split()[-1]).name for line in exported) + f" (in {target})"
 
     def methodology_analysis(self) -> str:
         answer = self.topology.fresh_analyst().ask(METHODOLOGY_ANALYSIS)

@@ -1,0 +1,1 @@
+ad9e005 (HEAD -> lda/libpng-1.6.57-1) libpng: SSE4.1 Paeth unfilter + SSE2 Up filter with runtime dispatch
