@@ -182,7 +182,7 @@ if test "$backend" = codex; then
     # Auth, gateway, quota, transport, and timeout failures describe the
     # execution infrastructure, never a package candidate.
     if test "$codex_rc" = 124 || grep -Eqi \
-      'unsupported_country|401 Unauthorized|403 Forbidden|429|5[0-9][0-9]|timed? out|connection|transport|rate.?limit|overloaded|API Error' \
+      'unsupported_country|401 Unauthorized|403 Forbidden|429|5[0-9][0-9]|timed? out|connection|transport|rate.?limit|overloaded|API Error|Concurrency limit exceeded|stream disconnected|Reconnecting' \
       "$turn_file"; then
       rm -f "$turn_file"
       exit 75

@@ -57,6 +57,10 @@ class RoleSession:
             "Error 524",
             "Error 502",
             "Error 503",
+            "Concurrency limit exceeded",
+            "stream disconnected",
+            "Reconnecting...",
+            "overloaded",
         )
         from .flow import InfrastructureOutage
 
