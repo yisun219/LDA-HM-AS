@@ -175,7 +175,13 @@ or temporary files before your turn ends. Commit the changes when your backend
 permits it. Codex workspace-write intentionally exposes Git metadata read-only;
 if `.git/index.lock` cannot be created, do not work around that boundary or
 discard the patch - the outer E2B controller stages and commits it immediately
-after your turn. Use the pinned Intel performance skills
+after your turn. The task card's official candidate build, paired benchmarks,
+and deterministic fences are controller-owned and run automatically after the
+Builder returns. Do not invoke those commands from the Builder turn: they write
+to protected output paths and repeating them only delays the authoritative run.
+Use source-local builds, tests, and profiling under the repository or scratch,
+then end the turn once the intended diff is clean and reviewable.
+Use the pinned Intel performance skills
 where relevant. Implement one bounded mainline objective, run focused checks,
 and leave a reviewable source diff. Do not weaken tests or
 manufacture benchmark evidence.

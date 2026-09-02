@@ -21,6 +21,7 @@ from lda_hm import (
 )
 from lda_hm.driver import _task_with_acceptance_contract
 from lda_hm.execution import LDAExecution
+from lda_hm.prompts import BUILDER_ROUND
 
 
 class ExecutionContractTest(unittest.TestCase):
@@ -90,6 +91,12 @@ class ExecutionContractTest(unittest.TestCase):
         self.assertIn("do not wait for human decisions", rendered)
         self.assertNotIn("LDA_SECRET_HOLDOUT", rendered)
         self.assertNotIn("generate-holdout", rendered)
+
+    def test_builder_defers_controller_owned_acceptance_commands(self) -> None:
+        self.assertIn("controller-owned and run automatically", BUILDER_ROUND)
+        self.assertIn(
+            "Do not invoke those commands from the Builder turn", BUILDER_ROUND
+        )
 
     def test_controller_commits_codex_workspace_changes(self) -> None:
         class GitSandbox:
