@@ -10,10 +10,12 @@ from typing import Callable
 
 from .benchmark import (
     BenchmarkEnvironmentError,
+    BenchmarkIndeterminate,
     BenchmarkReport,
     BenchmarkRunner,
     PairedComparison,
     compare_paired,
+    merge_reports,
 )
 from .fence import FenceResult, FenceSuite, integrity_manifest_command, sha256_file
 from .flow import HumanizeFlow
@@ -112,6 +114,15 @@ MAX_STEAL_FRACTION = 0.10
 # target it is calibrating for cannot certify that target: the instrument is
 # manufacturing more signal than the effect being claimed.
 NULL_RUN_BIAS_FRACTION = 0.5
+
+# Fixed-rule sequential extension. A candidate whose point estimate clears the
+# target while the paired Student-t interval still spans 1.0 is not refuted,
+# only under-sampled for its effect size on this host: it earns up to this many
+# further blocks of the card's repetitions, and the verdict is taken on the
+# pooled sample. The rule is pre-registered here (never per run, never by the
+# Builder), so it cannot be used to fish: a candidate below the target gets no
+# extension at all, and the pooled interval must exclude 1.0 on its own.
+EXTENSION_BLOCKS = int(os.getenv("LDA_BENCH_EXTENSION_BLOCKS", "2"))
 
 
 def judge_null_run(
@@ -226,7 +237,7 @@ def judge_comparison(
                 f"half-range={noise:.3f}% against a {min_speedup_percent:.3f}% target "
                 f"(speedup={speedup:.3f}%); rerun the paired benchmark on a quieter host"
             )
-        raise RuntimeError(
+        raise BenchmarkIndeterminate(
             f"benchmark speedup not certifiable [{stage}] {spec.layer}/{spec.name}: "
             f"speedup={speedup:.3f}% is within measurement noise "
             f"(ratio CI95=[{comparison.ratio_ci95_lower:.4f}, "
@@ -266,36 +277,55 @@ def paired_with_retry(
         else spec.min_speedup_percent
     )
     last_environment_error: BenchmarkEnvironmentError | None = None
+
+    def require_success(baseline: BenchmarkReport, candidate: BenchmarkReport) -> None:
+        if baseline.successful and candidate.successful:
+            return
+        observations = [
+            observation
+            for report in (baseline, candidate)
+            for observation in report.observations
+        ]
+        exit_codes = {observation.exit_code for observation in observations}
+        if 125 in exit_codes:
+            raise BenchmarkEnvironmentError(
+                f"sandbox transport died during paired benchmark "
+                f"{spec.layer}/{spec.name} (exit=125)"
+            )
+        raise RuntimeError(
+            f"paired benchmark failed: {spec.layer}/{spec.name}: "
+            f"exits={sorted(exit_codes)}: "
+            + (candidate.observations[-1].stderr_tail if candidate.observations else "")[-500:]
+        )
+
     for attempt in range(2):
         baseline, candidate = runner.run_paired(spec, envs=envs)
-        if not baseline.successful or not candidate.successful:
-            observations = [
-                observation
-                for report in (baseline, candidate)
-                for observation in report.observations
-            ]
-            exit_codes = {observation.exit_code for observation in observations}
-            if 125 in exit_codes:
-                raise BenchmarkEnvironmentError(
-                    f"sandbox transport died during paired benchmark "
-                    f"{spec.layer}/{spec.name} (exit=125)"
-                )
-            raise RuntimeError(
-                f"paired benchmark failed: {spec.layer}/{spec.name}: "
-                f"exits={sorted(exit_codes)}: "
-                + (candidate.observations[-1].stderr_tail if candidate.observations else "")[-500:]
-            )
+        require_success(baseline, candidate)
         comparison = compare_paired(spec, baseline, candidate)
-        if on_comparison is not None:
-            on_comparison(baseline, candidate, comparison)
-        try:
-            judge_comparison(spec, comparison, minimum, stage=stage)
-        except BenchmarkEnvironmentError as error:
-            last_environment_error = error
-            if attempt == 0:
+        extensions = 0
+        while True:
+            if on_comparison is not None:
+                on_comparison(baseline, candidate, comparison)
+            try:
+                judge_comparison(spec, comparison, minimum, stage=stage)
+            except BenchmarkIndeterminate:
+                if extensions >= EXTENSION_BLOCKS:
+                    raise
+                extensions += 1
+                more_baseline, more_candidate = runner.run_paired(
+                    spec, envs=envs, start=comparison.repetitions
+                )
+                require_success(more_baseline, more_candidate)
+                baseline = merge_reports(baseline, more_baseline)
+                candidate = merge_reports(candidate, more_candidate)
+                comparison = compare_paired(spec, baseline, candidate)
                 continue
-            raise
-        return baseline, candidate, comparison
+            except BenchmarkEnvironmentError as error:
+                last_environment_error = error
+                break
+            return baseline, candidate, comparison
+        if attempt == 1:
+            raise last_environment_error
     raise last_environment_error  # pragma: no cover - loop always returns or raises
 
 

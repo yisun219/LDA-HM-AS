@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=lda-card
 #SBATCH --partition=cpu-scavenger
+#SBATCH --exclude=deep-space,quantum,natural-selection
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=6G
 #SBATCH --time=1-00:00:00
@@ -15,7 +16,10 @@
 # from hmz kept state rather than restarting.
 #
 #   sbatch --export=ALL,PKG=libcairo2,WORKSPACE=/path/to/ws,RUN_ID=cairo-001 \
-#          tools/slurm/run-card.sbatch
+#          [,LDA_TASK_FILE=/path/to/task.txt] tools/slurm/run-card.sbatch
+#
+# Agent backend: LDA_AGENT_BACKEND=claude (default) or codex. Each backend reads
+# its gateway credentials from a private file under ~/.config; nothing here.
 set -uo pipefail
 
 PKG="${PKG:?PKG required}"
@@ -34,20 +38,36 @@ export PATH="$HOME/.venvs/ldahm/bin:$PATH"
 # commands as well; both ceilings are still below the Slurm job limit.
 export LDA_SETUP_TIMEOUT="${LDA_SETUP_TIMEOUT:-10800}"
 export LDA_SANDBOX_TIMEOUT="${LDA_SANDBOX_TIMEOUT:-21600}"
+export LDA_FENCE_TIMEOUT="${LDA_FENCE_TIMEOUT:-5400}"
+export LDA_BUDGET_USD="${LDA_BUDGET_USD:-250}"
+export LDA_STALL_LIMIT="${LDA_STALL_LIMIT:-5}"
 export PYTHONUNBUFFERED=1
 mkdir -p "$XDG_CACHE_HOME" "$TMPDIR" "$LDA_RESULTS_ROOT"
 
 set -a
 . "$HOME/.config/lda-hm/e2b.env"
-. "$HOME/.config/lda/codex.env"
 set +a
-# New campaign runs use the Codex login copied into each E2B sandbox. Keep the
-# model and reasoning budget explicit so template-local config cannot silently
-# select a different model.
-export LDA_AGENT_BACKEND=codex
-export LDA_AGENT_MODEL="${LDA_AGENT_MODEL:-gpt-5.6-sol}"
-export LDA_AGENT_THINKING="${LDA_AGENT_THINKING:-max}"
 
-echo "$(date -Is) slurm job ${SLURM_JOB_ID:-none} on $(hostname): $PKG run $RUN_ID"
+backend="${LDA_AGENT_BACKEND:-claude}"
+case "$backend" in
+  claude)
+    set -a; . "$HOME/.config/lda/factlab-claude.env"; set +a
+    export LDA_AGENT_MODEL="${LDA_AGENT_MODEL:-claude-opus-4-8}"
+    ;;
+  codex)
+    set -a; . "$HOME/.config/lda/codex.env"; set +a
+    export LDA_AGENT_MODEL="${LDA_AGENT_MODEL:-gpt-5.6-sol}"
+    ;;
+  *) echo "unsupported LDA_AGENT_BACKEND=$backend" >&2; exit 64 ;;
+esac
+export LDA_AGENT_BACKEND="$backend"
+export LDA_AGENT_THINKING="${LDA_AGENT_THINKING:-high}"
+
+extra=()
+if [ -n "${LDA_TASK_FILE:-}" ]; then
+  extra+=(--task "$(cat "$LDA_TASK_FILE")")
+fi
+
+echo "$(date -Is) slurm job ${SLURM_JOB_ID:-none} on $(hostname): $PKG run $RUN_ID backend=$backend model=$LDA_AGENT_MODEL"
 cd "$REPO" || exit 1
-exec bin/lda-hmz-drive "$WORKSPACE" "$RUN_ID"
+exec bin/lda-hmz-drive "$WORKSPACE" "$RUN_ID" "${extra[@]}"

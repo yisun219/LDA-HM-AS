@@ -365,3 +365,25 @@ class WatchdogTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodexTraceStatsTest(unittest.TestCase):
+    def test_counts_codex_items_as_tool_uses(self) -> None:
+        import json as _json
+
+        lines = [
+            _json.dumps({"kind": "turn_start", "role": "builder", "session": "s", "exit": 0, "epoch": 1}),
+            _json.dumps({"type": "thread.started", "thread_id": "t"}),
+            _json.dumps({"type": "item.started", "item": {"type": "command_execution", "command": "ls"}}),
+            _json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "ls", "exit_code": 0}}),
+            _json.dumps({"type": "item.completed", "item": {"type": "file_change", "changes": []}}),
+            _json.dumps({"type": "item.completed", "item": {"type": "reasoning", "text": "..."}}),
+            _json.dumps({"type": "error", "message": "stream disconnected"}),
+            _json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 7}}),
+        ]
+        stats = TraceStats.from_lines(lines)
+        self.assertEqual(stats.turns, 1)
+        self.assertEqual(stats.tool_uses, 2)
+        self.assertEqual(stats.errors, 1)
+        self.assertEqual(stats.output_tokens, 7)
+        self.assertEqual(stats.results, 1)

@@ -32,6 +32,20 @@ class BenchmarkEnvironmentError(RuntimeError):
     """
 
 
+class BenchmarkIndeterminate(RuntimeError):
+    """The candidate clears the target but the paired interval still spans 1.0.
+
+    Neither a pass nor a refutation: the sample is too small for the effect
+    size on this host. Callers may extend the sample by a fixed rule (see
+    `paired_with_retry`) before recording a verdict.
+    """
+
+
+def merge_reports(first: "BenchmarkReport", more: "BenchmarkReport") -> "BenchmarkReport":
+    """Pool two reports of the same benchmark (an extension block onto a base)."""
+    return BenchmarkReport(first.layer, first.name, first.observations + more.observations)
+
+
 # Two-sided 95% Student-t critical values by degrees of freedom. The paired
 # per-repetition ratios are few (3-9 in practice), so a normal approximation
 # would understate uncertainty exactly where E2B co-tenant noise matters most.
@@ -345,11 +359,19 @@ class BenchmarkRunner:
         spec: BenchmarkSpec,
         *,
         envs: dict[str, str] | None = None,
+        start: int = 0,
+        repetitions: int | None = None,
     ) -> tuple[BenchmarkReport, BenchmarkReport]:
+        """Run `repetitions` paired repetitions numbered from `start`.
+
+        An extension block passes `start` so the baseline/candidate order keeps
+        alternating across the pooled sample exactly as within one block.
+        """
         baseline_command = spec.baseline_command or spec.command
         baseline: list[BenchmarkObservation] = []
         candidate: list[BenchmarkObservation] = []
-        for repetition in range(spec.repetitions):
+        count = spec.repetitions if repetitions is None else repetitions
+        for repetition in range(start, start + count):
             ordered = (
                 ((baseline_command, baseline), (spec.command, candidate))
                 if repetition % 2 == 0

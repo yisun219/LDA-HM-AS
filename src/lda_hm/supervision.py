@@ -84,6 +84,27 @@ class TraceStats:
                 for block in message.get("content") or ():
                     if isinstance(block, dict) and block.get("type") == "tool_use":
                         tool_uses += 1
+            # Codex `exec --json` streams items instead of assistant blocks:
+            # each completed command, file change or tool call is one tool use,
+            # and the turn total carries the token usage.
+            if event.get("type") == "item.completed":
+                item = event.get("item") or {}
+                if isinstance(item, dict):
+                    if item.get("type") in (
+                        "command_execution",
+                        "file_change",
+                        "mcp_tool_call",
+                        "web_search",
+                    ):
+                        tool_uses += 1
+                    elif item.get("type") == "error":
+                        errors += 1
+            if event.get("type") == "turn.completed":
+                results += 1
+                usage = event.get("usage") or {}
+                output_tokens += int(usage.get("output_tokens") or 0)
+            if event.get("type") == "error":
+                errors += 1
             if event.get("is_error") is True or event.get("subtype") == "error":
                 errors += 1
         return TraceStats(

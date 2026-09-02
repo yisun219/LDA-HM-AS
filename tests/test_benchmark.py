@@ -277,3 +277,62 @@ class HoldoutSetupTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExtensionPolicyTest(unittest.TestCase):
+    """A real effect above target but under-sampled earns a fixed extension."""
+
+    class _Runner:
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, int]] = []
+
+        def run_paired(self, spec, *, envs=None, start=0, repetitions=None):
+            count = spec.repetitions if repetitions is None else repetitions
+            self.calls.append((start, count))
+            # Genuine ~4% win with one noisy repetition per block: three
+            # repetitions alone leave the t-interval spanning 1.0.
+            base = [{"small": 1.00}] * count
+            cand = [{"small": 0.96}] * (count - 1) + [{"small": 1.01}]
+            baseline = _report("-baseline", base, "baseline")
+            candidate = _report("-candidate", cand, "candidate")
+            shift = [
+                BenchmarkObservation(
+                    layer=o.layer, name=o.name, repetition=o.repetition + start,
+                    exit_code=o.exit_code, duration_seconds=o.duration_seconds,
+                    sandbox_id=o.sandbox_id, samples=o.samples,
+                )
+                for o in baseline.observations
+            ]
+            baseline = BenchmarkReport(baseline.layer, baseline.name, tuple(shift))
+            return baseline, candidate
+
+    def test_indeterminate_effect_is_pooled_then_certified(self) -> None:
+        from lda_hm.execution import paired_with_retry
+
+        runner = self._Runner()
+        seen = []
+        baseline, candidate, comparison = paired_with_retry(
+            runner, SPEC, stage="train", on_comparison=lambda b, c, x: seen.append(x.repetitions)
+        )
+        self.assertEqual(runner.calls[0], (0, 3))
+        self.assertGreater(len(runner.calls), 1)
+        self.assertEqual(runner.calls[1], (3, 3))
+        self.assertEqual(comparison.repetitions, len(baseline.observations))
+        self.assertLess(comparison.ratio_ci95_upper, 1.0)
+        self.assertGreaterEqual(comparison.overall_speedup_percent, SPEC.min_speedup_percent)
+        self.assertEqual(seen[0], 3)
+
+    def test_below_target_gets_no_extension(self) -> None:
+        from lda_hm.execution import paired_with_retry
+
+        class Below(self._Runner):
+            def run_paired(self, spec, *, envs=None, start=0, repetitions=None):
+                self.calls.append((start, spec.repetitions))
+                baseline = _report("-baseline", [{"small": 1.00}] * 3, "baseline")
+                candidate = _report("-candidate", [{"small": 0.995}] * 3, "candidate")
+                return baseline, candidate
+
+        runner = Below()
+        with self.assertRaisesRegex(RuntimeError, "target not met"):
+            paired_with_retry(runner, SPEC, stage="train")
+        self.assertEqual(len(runner.calls), 1)
