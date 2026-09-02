@@ -42,14 +42,28 @@ echo "aligning $count installed packages to snapshot versions"
 # Benchmark validity does not rest on it — baseline and candidate are built
 # from one source tree in one sandbox and measured interleaved, so the
 # installed set is common to both sides of every pair.
-# shellcheck disable=SC2046
-if sudo -n apt-get "${OPTS[@]}" install -y --allow-downgrades $(cat "$tmp/requests"); then
+# Keep successful downloads and package transactions in this sandbox when the
+# snapshot service drops one archive. Re-running apt-get resumes from its cache
+# instead of forcing the driver to discard forty minutes of setup work.
+aligned=false
+for attempt in 1 2 3; do
+  # shellcheck disable=SC2046
+  if sudo -n apt-get "${OPTS[@]}" install -y --allow-downgrades $(cat "$tmp/requests"); then
+    aligned=true
+    break
+  fi
+  echo "snapshot alignment attempt $attempt failed" >&2
+  test "$attempt" -eq 3 || sleep $((attempt * 15))
+done
+if test "$aligned" = true; then
   touch "$marker"
   echo "aligned $count packages to the snapshot"
 elif test "${LDA_APT_FALLBACK_USED:-false}" = true; then
   touch "$marker"
   echo "alignment skipped: release-archive fallback cannot reproduce snapshot versions" >&2
 else
-  echo "alignment against the pinned snapshot failed" >&2
-  exit 1
+  echo "alignment against the pinned snapshot remained unavailable after retries" >&2
+  # EX_TEMPFAIL: a broken snapshot transport is infrastructure, not a source
+  # or candidate failure. The outer driver will preserve state and resume.
+  exit 75
 fi

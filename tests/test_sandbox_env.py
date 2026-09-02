@@ -177,6 +177,16 @@ class BaselineArtifactGuardTest(unittest.TestCase):
         self.assertIn("source_fetched=false", script)
         self.assertIn("exit 75", script)
 
+    def test_snapshot_alignment_retries_without_discarding_the_sandbox(self) -> None:
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "sandbox/lda-base/checks/align-to-snapshot.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("for attempt in 1 2 3", script)
+        self.assertIn('test "$aligned" = true', script)
+        self.assertIn("remained unavailable after retries", script)
+        self.assertIn("exit 75", script)
+
 
 class X11DisplayReadyTest(unittest.TestCase):
     def test_detects_abstract_x11_socket_without_filesystem_entry(self) -> None:
