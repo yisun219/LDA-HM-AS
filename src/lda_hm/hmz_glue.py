@@ -69,7 +69,15 @@ class RoleSession:
             try:
                 answer = self._session(prompt)
             except Exception as error:
-                detail = str(error)[-4000:]
+                # hmz wraps command failures in CalledProcessError; its string
+                # often omits the useful gateway stderr, so include both
+                # streams when classifying an infrastructure outage.
+                pieces = [str(error)]
+                for attribute in ("stderr", "stdout"):
+                    value = getattr(error, attribute, None)
+                    if value:
+                        pieces.append(str(value))
+                detail = "\n".join(pieces)[-4000:]
                 if any(marker.lower() in detail.lower() for marker in infrastructure_markers):
                     last = InfrastructureOutage(
                         "agent model infrastructure failed: " + detail[-1500:]
